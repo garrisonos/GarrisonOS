@@ -132,9 +132,10 @@ export function registerRoutes(router: Router): void {
   });
 
   // --- Lease Balance & Ledger ---
-  router.get('/api/v1/accounting/balance/:leaseId', (req, res) => {
-    const balance = AccountingRepository.getLeaseBalance(req.params.leaseId!);
-    const transactions = AccountingRepository.getLeaseTransactions(req.params.leaseId!);
+  router.get('/api/v1/accounting/balance/:lease_id', (req, res) => {
+    const leaseId = req.params.lease_id || req.params.leaseId;
+    const balance = AccountingRepository.getLeaseBalance(leaseId!);
+    const transactions = AccountingRepository.getLeaseTransactions(leaseId!);
     successResponse(res, { balance, transactions });
   });
 
@@ -390,8 +391,9 @@ export function registerRoutes(router: Router): void {
     res.end(csv);
   });
 
-  router.get('/api/v1/accounting/export/ledger/:leaseId.csv', (req, res) => {
-    const transactions = AccountingRepository.getLeaseTransactions(req.params.leaseId!);
+  router.get('/api/v1/accounting/export/ledger/:lease_id.csv', (req, res) => {
+    const leaseId = req.params.lease_id || req.params.leaseId;
+    const transactions = AccountingRepository.getLeaseTransactions(leaseId!);
     let csv = 'Date,Type,Category,Description,Amount ($),Running Balance ($)\n';
     let running = 0;
     for (const tx of transactions) {
@@ -405,7 +407,7 @@ export function registerRoutes(router: Router): void {
     }
     res.writeHead(200, {
       'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="ledger-${req.params.leaseId}-${Date.now()}.csv"`
+      'Content-Disposition': `attachment; filename="ledger-${leaseId}-${Date.now()}.csv"`
     });
     res.end(csv);
   });

@@ -582,7 +582,7 @@ Decoupled asynchronous cross-module messaging using `node:events.EventEmitter`:
 
 - Built directly on `node:http.IncomingMessage` and `node:http.ServerResponse`.
 - Supports standard HTTP verbs: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`.
-- Route parameter extraction (e.g., `/api/v1/properties/:id/units/:unitId`).
+- Route parameter extraction (e.g., `/api/v1/properties/:id/units/:unit_id`).
 - Automatic streaming JSON request body parser with a 1MB default payload ceiling.
 
 ### 6.2. Standard Response Envelopes (`api/response.ts`)
@@ -625,7 +625,7 @@ All REST endpoints return standardized JSON structures:
 
 - `GET /api/v1/accounting/export/rent-roll.csv`: Streams standard CSV Rent Roll.
 - `GET /api/v1/accounting/export/schedule-e.csv`: Streams IRS Schedule E year-end income & expense breakdown.
-- `GET /api/v1/accounting/export/ledger/:leaseId.csv`: Streams itemized tenant ledger statement.
+- `GET /api/v1/accounting/export/ledger/:lease_id.csv`: Streams itemized tenant ledger statement.
 - `GET /api/v1/accounting/chart-of-accounts`: Lists Chart of Accounts.
 - `GET /api/v1/accounting/quickbooks/preview`: Previews balanced double-entry journal entries.
 - `GET /api/v1/accounting/export/quickbooks/qbo-journal.csv`: Streams QuickBooks Online Journal CSV.

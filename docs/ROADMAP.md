@@ -10,7 +10,7 @@ Continuous evaluations track implementation maturity against the non-negotiable 
 
 ### Overall Project Health Progression
 
-| Metric Category | Baseline (2026-09-15) | Post-Sprint 1 (2026-09-17) | Post-Sprint 2 (2026-09-17) | Post-Sprint 3 (2026-09-18) | Target (v0.1.0 GA - Sprint 5) |
+| Metric Category | Baseline (2026-09-15) | Post-Sprint 1 (2026-09-17) | Post-Sprint 2 (2026-09-17) | Post-Sprint 3 (2026-09-18) | Target (v0.1.5-alpha - Sprint 5) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Architecture & Design** | 92% | 96% | 98% | **100%** | 100% |
 | **Core Implementation** | 85% | 92% | 96% | **98%** | 100% |
@@ -81,19 +81,24 @@ Progress across the seven canonical architectural phases leading to Foundational
   - [x] Granular Subuser Permissions & Dual Scoping (`user_portfolio_access`, `user_module_access`, and User Management API `/api/v1/users`).
   - [x] Setup Wizard Architecture Selector (Single-Operator Mode vs. Multi-Operator Mode) with automatic environment binding.
   - [x] Pre-release security review & zero-dependency architectural compliance verification.
-- [ ] **Sprint 4 (Weeks 7–8): Financial Modernization, Client Accounting & Policy Engine** (Planned, Target: v0.1.0-beta)
+- [ ] **Sprint 4 (Weeks 7–8): Financial Modernization, Client Accounting & Policy Engine** (Planned, Target: v0.1.1-alpha)
   - [ ] Deprecation and removal of legacy single-entry accounting (`transactions` table) and abandoned aliases (`tenants` view).
-  - [ ] Client Accounting & Management Fees (fiduciary portfolio accounting, capital contributions, client distributions, automated management fee rules).
-  - [ ] Leasing AR & Fee Policy Engine (recurring lease charges, late fee policy engine, credit memos/concessions, deposit refunds).
-  - [ ] Universal Conversations & Notes Subsystem across all primary operational entities.
+  - [ ] Client Accounting & Management Fees: Fiduciary portfolio accounting, Client Capital Contributions (`client_capital_contributions`), automated management fee calculation (% of rent / flat unit fee), and Client Distribution / Draw engine based on net operating cash.
+  - [ ] Leasing AR & Fee Policy Engine: Granular sub-resources for recurring lease charges (`recurring_lease_charges`), configurable late fee policies (`late_fee_policies`), one-off adjustments, discounts, promotional concessions, and move-out deposit disposition refunds.
+  - [ ] Universal Conversations & Notes Subsystem: Polymorphic threaded notes and audit comments across properties, buildings, units, leases, contacts, and work orders.
+  - [ ] TypeScript SSR Presentation Layer (UI): Client Accounting overview & contribution modal, Lease AR transaction manager & adjustment modal, and Universal Conversation sidebar component.
   - [ ] Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling.
-- [ ] **Sprint 5 (Weeks 9–10): Foundational General Availability MVP Release** (Planned, Target: v0.1.0 GA)
+- [ ] **Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable** (Planned, Target: v0.1.5-alpha)
+  - [ ] **Accounts Payable (AP) Core Subsystem**: Bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property bill allocations (`bill_allocations`), and recurring scheduled bills (`recurring_bills`).
+  - [ ] **Vendor Credit Memos & Bill Offsets**: Vendor credit issuance and allocation offsets against accounts payable liabilities.
+  - [ ] **Vendor Check Register CRUD & PDF Printing**: Native vector stream check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications, check number auditing, and void check operations.
+  - [ ] **Bank Deposits & Batched Clearing**: Grouping undeposited receipts into statement-reconciled bank deposit slips with voiding capability.
+  - [ ] **Amenities & Marketing Syndication Profiles**: Standardized amenities catalog (`/api/v1/amenities`), property/unit junctions, pet policies, and rental listing advertising metadata (`published_for_rent`, `posting_title`, `specials`).
+  - [ ] **Dynamic Custom Fields Engine**: Metadata schema definitions API (`/api/v1/custom_fields/definitions`), entity mutation endpoints, and standardized `YYYY-MM-DD` date formatting.
+  - [ ] **Standardized Bulk & Temporal API Conventions**: Transactional bulk creation (`POST /api/v1/:resource/bulk`), date interval filtering (`*_start`, `*_end`), and multi-key `order_by` sorting.
   - [ ] **Packaged GUI Installers**: Super-simple click-through graphical setup wizards for Windows (`.exe`/`.msi`), macOS (`.pkg`/`.dmg`), and Linux (`.deb`).
   - [ ] **Public-Facing Tenant Self-Service Portal**: Hosted on isolated subdomain (`portal.<domain>`) with magic-link passwordless email login, mobile-first presentation, and safe mobile maintenance photo uploads.
-  - [ ] **Accounts Payable (AP) Core Subsystem**: Bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property bill allocations, and recurring bills.
-  - [ ] **Zero-Dependency PDF Vendor Check Printing**: Native vector stream check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications.
-  - [ ] **Bank Deposits & Batched Clearing**: Grouping receipts into deposit batches matching physical bank statements.
-  - [ ] **Dynamic Custom Fields Engine**: Validated JSON custom fields across primary entities.
+  - [ ] **TypeScript SSR Presentation Layer (UI)**: AP bill entry & multi-property allocation queue, Check register & printing batch preview screen, Bank deposit batching dashboard, Dynamic custom fields form renderer component, and Amenities/Marketing editor.
 
 ---
 
@@ -223,44 +228,50 @@ GarrisonOS organizes engineering work into structured two-week execution sprints
 ---
 
 ### Sprint 4 (Weeks 7–8): Financial Modernization, Client Accounting & Policy Engine
-> **Status**: Planned | **Release Target**: v0.1.0-beta | **Effort**: ~44 hours
+> **Status**: Planned | **Release Target**: v0.1.1-alpha | **Effort**: ~48 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
 | 20 | **Deprecation & Removal of Legacy Single-Entry Accounting & Abandoned Aliases**: sunset legacy `transactions` table, refactor all ledger and QuickBooks queries directly to `journal_entries`/`journal_lines`, remove legacy `tenants` compatibility view, and prune stale route aliases | 8h | High | Planned |
-| 21 | **Client Accounting & Management Fees**: portfolio and property-level fiduciary accounting, Client Capital Contributions, automated management fee calculation (% of rent / flat unit fee), and Client Distribution / Draw engine based on net operating cash | 10h | High | Planned |
-| 22 | **Leasing AR & Fee Policy Engine**: itemized `recurring_lease_charges` (recurring pet rent, parking, utilities), configurable `late_fee_policies` (due day, grace period, flat/pct), credit memos/discounts, and tenant refunds | 10h | High | Planned |
-| 23 | **Universal Conversations & Notes Subsystem**: polymorphic threaded notes and audit comments on leases, contacts, work orders, and properties | 6h | Medium | Planned |
-| 24 | Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling engine (HVAC, alarms, winterization) | 6h | High | Planned |
-| 25 | Periodic balance snapshotting & checkpointing for high-volume tenancies | 4h | Medium | Planned |
+| 21 | **Client Accounting & Management Fees**: portfolio and property-level fiduciary accounting, Client Capital Contributions (`client_capital_contributions`), automated management fee calculation (% of rent / flat unit fee), and Client Distribution / Draw engine based on net operating cash | 10h | High | Planned |
+| 22 | **Leasing AR & Fee Policy Engine**: itemized `recurring_lease_charges` (recurring pet rent, parking, utilities), configurable `late_fee_policies` (due day, grace period, flat/pct), credit memos/concessions, and tenant refunds | 10h | High | Planned |
+| 23 | **Universal Conversations & Notes Subsystem**: polymorphic threaded notes and audit comments on leases, contacts, work orders, properties, buildings, and units | 6h | Medium | Planned |
+| 24 | **Client Accounting & Lease AR SSR UI Views**: server-rendered client portfolio overview, capital contribution modal, Lease AR transaction manager, and Universal Conversation sidebar component (`web/templates/conversations.ts`) | 8h | High | Planned |
+| 25 | Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling engine (HVAC, alarms, winterization) | 6h | High | Planned |
 
 ---
 
-### Sprint 5 (Weeks 9–10): Foundational General Availability MVP (v0.1.0 GA)
-> **Status**: Planned | **Release Target**: v0.1.0 (Foundational MVP GA) | **Effort**: ~56 hours
+### Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable
+
+> **Status**: Planned | **Release Target**: v0.1.5-alpha | **Effort**: ~60 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
-| 26 | **Packaged GUI Installers (Turnkey Click-Through Setup Wizards)**: graphical installer packaging (Windows `.exe`/`.msi` via NSIS/InnoSetup, macOS `.pkg`/`.dmg`, Linux `.deb`) that bundles or detects verified Node.js runtimes, provisions system services/launch daemons, configures data paths, and launches the initial browser handshake | 8h | High | Planned |
-| 27 | **Public-Facing Tenant Self-Service Portal (Subdomain Architecture)**: `portal.<domain>` isolated subdomain routing, magic-link passwordless email authentication, mobile-first responsive presentation, and public security hardening (rate limiting, anti-brute force, zero session leakage) | 12h | High | Planned |
-| 28 | **Safe Mobile Photo Upload Pipeline**: tenant maintenance submission with automated EXIF metadata stripping (PII/GPS sanitization), bounded stream downsampling to compact safe WebP/JPEG, and anti-polyglot file verification | 6h | High | Planned |
-| 29 | **Accounts Payable (AP) Core Subsystem**: integrated into `modules/accounting/` (`backend/bills.ts`, `bills_repository.ts`), managing bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), payment terms, due dates, and work order expense recovery | 10h | High | Planned |
-| 30 | **Multi-Entity Bill Allocations & Recurring Bills**: allocate bills across portfolios, properties, units, and GL expense accounts; interval-scheduled recurring bills for utilities and service contracts | 6h | High | Planned |
-| 31 | **Zero-Dependency PDF Vendor Check Printing**: native server-rendered PDF check generator (`web/lib/pdf.ts`) supporting user-provided check template specifications (voucher/standard/MICR positioning) with strict PDF structural hygiene | 6h | High | Planned |
-| 32 | **Bank Deposits & Batched Clearing**: grouping multiple cash/check/electronic receipts into deposit slip batches for 3-way reconciliation | 4h | High | Planned |
-| 33 | **Dynamic Custom Fields Engine**: validated JSON column (`custom_fields`) on primary entities governed by `custom_field_definitions` schema table | 4h | Medium | Planned |
+| 26 | **Packaged GUI Installers (Turnkey Click-Through Setup Wizards)**: graphical installer packaging (Windows `.exe`/`.msi` via NSIS/InnoSetup, macOS `.pkg`/`.dmg`, Linux `.deb`) bundling or detecting verified Node.js runtimes, provisioning system services/launch daemons, and launching initial browser handshake | 8h | High | Planned |
+| 27 | **Public-Facing Tenant Self-Service Portal (Subdomain Architecture)**: `portal.<domain>` isolated subdomain routing, magic-link passwordless email authentication, mobile-first responsive presentation, and public security hardening (rate limiting, anti-brute force, zero session leakage) | 10h | High | Planned |
+| 28 | **Accounts Payable (AP) Core Subsystem**: integrated into `modules/accounting/`, managing bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property allocations (`bill_allocations`), and recurring bills (`recurring_bills`) | 8h | High | Planned |
+| 29 | **Vendor Credit Memos & Bill Offsets**: vendor credit issuance (`vendor_credits`) and allocation offsets against accounts payable liabilities | 4h | High | Planned |
+| 30 | **Zero-Dependency PDF Vendor Check Printing & Check Register**: native server-rendered PDF check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications with check register CRUD and void operations | 6h | High | Planned |
+| 31 | **Bank Deposits & Batched Clearing**: grouping multiple cash/check/electronic receipts into deposit slip batches (`bank_deposits`) for bank statement clearing reconciliation with voiding support | 4h | High | Planned |
+| 32 | **Property & Unit Amenities Catalog & Marketing Syndication Profiles**: amenities catalog (`/api/v1/amenities`), property and unit junctions, pet policies, and rental listing advertising copy (`published_for_rent`, `posting_title`, `specials`) | 6h | High | Planned |
+| 33 | **Dynamic Custom Fields Engine**: validated JSON column (`custom_fields`) on primary entities governed by `custom_field_definitions` schema table with standardized `YYYY-MM-DD` date formatting | 4h | Medium | Planned |
+| 34 | **Standardized Bulk Ingestion & Temporal Query Conventions**: transactional bulk creation (`POST /api/v1/:resource/bulk`), timestamp interval filtering (`*_start`/`*_end`), and multi-key `order_by` sorting across all collections | 4h | High | Planned |
+| 35 | **AP, Banking, Custom Fields & Marketing SSR UI Views**: AP bill entry with multi-property allocations, check register preview and print dashboard, bank deposit batching screen, dynamic custom field form generator, and amenities/marketing editor | 6h | High | Planned |
 
 ---
 
-### Sprint 6 (Weeks 11–12): Dual-Engine Architecture & Native PostgreSQL Integration
-> **Status**: Planned | **Release Target**: v0.2.0 | **Effort**: ~44 hours
+### Sprint 6 (Weeks 11–12): Dual-Engine Architecture & Field Operations
+
+> **Status**: Planned | **Release Target**: v0.2.0-beta | **Effort**: ~52 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
-| 34 | Native PostgreSQL driver adapter implementing zero-dependency boundary | 16h | High | Planned |
-| 35 | Dual-engine migration validation harness (SQLite & PostgreSQL) | 10h | High | Planned |
-| 36 | Multi-instance clustering support behind load balancers with connection pooling | 10h | Medium | Planned |
-| 37 | S3-compatible shared object storage driver for multi-node deployments | 8h | Medium | Planned |
+| 36 | Native PostgreSQL driver adapter implementing zero-dependency boundary | 16h | High | Planned |
+| 37 | Dual-engine migration validation harness (SQLite & PostgreSQL) | 8h | High | Planned |
+| 38 | Multi-instance clustering support behind load balancers with connection pooling | 8h | Medium | Planned |
+| 39 | **Work Order Subtasks, Task Delegations & Comments**: task checklists (`work_order_tasks`), assignee delegation, task-level comments, and formal work order closure contract | 8h | High | Planned |
+| 40 | **Field Technician Timecards & Labor Tracking**: billable hours, labor rates, and labor surcharges (`technician_timecards`) linked to vendor bills and work orders | 6h | High | Planned |
+| 41 | **Field Maintenance SSR UI Views**: interactive work order subtask checklist component, task comments thread, and technician timecard logging modal | 6h | High | Planned |
 
 ---
 
@@ -269,31 +280,34 @@ GarrisonOS organizes engineering work into structured two-week execution sprints
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
-| 38 | Triple Net (NNN) leases & Common Area Maintenance (CAM) reconciliation engine | 14h | High | Planned |
-| 39 | CPI-indexed and fixed-percentage annual lease escalation schedules | 8h | Medium | Planned |
-| 40 | Direct OFX/QBO bank statement import parser & reconciliation matching | 12h | High | Planned |
-| 41 | Payment processor webhook ingestion & settlement journal entries | 6h | Medium | Planned |
+| 42 | Triple Net (NNN) leases & Common Area Maintenance (CAM) reconciliation engine | 14h | High | Planned |
+| 43 | CPI-indexed and fixed-percentage annual lease escalation schedules | 8h | Medium | Planned |
+| 44 | Direct OFX/QBO bank statement import parser & reconciliation matching | 12h | High | Planned |
+| 45 | Payment processor webhook ingestion & settlement journal entries | 6h | Medium | Planned |
 
 ---
 
 ## 4. Post-MVP Architectural Horizons
 
-The following domains are cataloged in Post-MVP Architectural Horizons, with clean-room forward-compatibility covenants preserved in earlier database schemas:
+The following operational domains are cataloged in Post-MVP Architectural Horizons, with clean-room forward-compatibility covenants preserved in earlier database schemas:
 
-1. **SMS Dispatch & Mobile Messaging Rails**:
-   - Outbound messaging rails for tenant magic links, maintenance alerts, and rent reminders via zero-dependency webhook dispatcher.
-   - *Forward compatibility*: Notification dispatcher designed with transport adapter pattern (`email`, `sms`, `webhook`).
-2. **Client Self-Service Portal**:
-   - Subdomain portal (`client.<domain>`) for property owners/investors to view portfolio net cash, download distribution statements, and approve repair expenses above threshold limits.
-   - *Forward compatibility*: RBAC engine and session manager admit `client` role credentials natively.
-3. **Property Condition Inspections Subsystem**:
-   - Clean-room inspection hierarchy: `inspections` $\to$ `inspection_zones` $\to$ `inspection_elements` with standard condition grading (`clean`, `good`, `fair`, `poor`, `damaged`) and photo evidence.
-   - *Forward compatibility*: Core `attachments` table provides photo storage; turnover state machine (`turnover` $\to$ `make_ready`) is wired with EventBus hooks for future `inspection.completed` events.
-4. **Prospects & Lead-to-Lease Pipeline**:
-   - Inquiring applicant intake, showing logs, desired unit/budget/pet specs, marketing campaign source tracking, and one-click conversion to lease.
+1. **Property Condition Inspections Subsystem**:
+   - Clean-room inspection hierarchy: `inspections` $\to$ `inspection_areas` $\to$ `inspection_items` with standard condition grading (`clean`, `good`, `fair`, `poor`, `damaged`), room-by-room checklists, inspector scheduling, and photo attachment logs.
+   - *UI Presentation*: Mobile-first walk-through inspection interface optimized for tablet/mobile viewports with quick-toggle condition buttons and direct camera photo uploads.
+   - *Forward compatibility*: Core `attachments` table provides photo storage. EventBus hooks for future `inspection.completed` events preserve the established unit states (`vacant`, `turnover`, `maintenance_hold`); entering `turnover` can trigger creation of a `make_ready` work order rather than a `make_ready` unit-state transition.
+2. **Prospects & Lead-to-Lease Pipeline (CRM)**:
+   - Inquiring applicant intake, tour scheduling, desired unit/budget/pet specs, marketing campaign source tracking, call tracking routing metadata (`campaign_tracking`), and one-click conversion to active lease.
+   - *UI Presentation*: Interactive lead Kanban pipeline (`inquiry` $\to$ `showing_scheduled` $\to$ `application_submitted` $\to$ `approved` $\to$ `lease_drafted`), campaign attribution analytics, and prospect inquiry modal.
    - *Forward compatibility*: `contacts` table supports `contact_type = 'prospect'`; `leases` schema reserves nullable `prospect_id` origin link.
-5. **Work Order Task Checklists & Technician Time Cards**:
-   - Maintenance task checklists (`work_order_tasks`) and labor hour tracking (`technician_timecards`).
-   - *Forward compatibility*: `work_orders` UUIDv7 primary keys allow 1-to-many task tables without migration rewrites; Sprint 5 AP bills include nullable `work_order_id` for labor invoicing.
-6. **High-Throughput Enterprise Batch Ingestion APIs**:
-   - Bulk ingestion endpoints (`/api/v1/bulk/*`) for institutional portfolios.
+3. **Scheduled Tenant Auto-Payments (Electronic Rails)**:
+   - Tokenized tenant bank account payment methods, scheduled recurring debit mandates (`scheduled_tenant_payments`), and automated general ledger clearing journal entries.
+   - *UI Presentation*: Tenant self-service portal auto-pay enrollment wizard and payment method manager.
+   - *Forward compatibility*: Double-entry accounting rules map directly to `1030 Undeposited Funds` and `1010 Operating Checking`.
+4. **Commercial Real Estate (CRE) & Expense Recovery**:
+   - Expense recovery charges (`expense_recovery_charges`) for pass-through utilities, CAM reconciliations, and modular commercial lease clause addenda (`lease_clauses`).
+   - *UI Presentation*: Annual CAM reconciliation workbook spreadsheet view and commercial lease clause builder.
+5. **Client Self-Service Portal**:
+   - Subdomain portal (`client.<domain>`) for property owners/investors to view portfolio net cash flow, download distribution statements, and review repair work orders.
+   - *Forward compatibility*: RBAC engine and session manager admit `client` role credentials natively.
+6. **SMS Dispatch & Mobile Messaging Rails**:
+   - Outbound messaging rails for tenant magic links, emergency maintenance alerts, and rent balance reminders via zero-dependency webhook dispatcher.

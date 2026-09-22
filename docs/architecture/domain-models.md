@@ -177,12 +177,35 @@ CREATE TABLE IF NOT EXISTS properties (
     postal_code TEXT NOT NULL,
     country TEXT NOT NULL DEFAULT 'USA',
     year_built INTEGER,
+    published_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (published_for_rent IN (0, 1)),
+    published_for_sale INTEGER NOT NULL DEFAULT 0 CHECK (published_for_sale IN (0, 1)),
+    featured_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (featured_for_rent IN (0, 1)),
+    syndicate INTEGER NOT NULL DEFAULT 0 CHECK (syndicate IN (0, 1)),
+    posting_title TEXT,
+    specials TEXT,
+    short_description TEXT,
+    long_description TEXT,
+    target_rent_cents INTEGER,
+    target_deposit_cents INTEGER,
+    other_monthly_charges_cents INTEGER,
+    available_date INTEGER,
+    pets_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pets_allowed IN (0, 1)),
+    pet_deposit_cents INTEGER DEFAULT 0,
+    pet_fee_cents INTEGER DEFAULT 0,
+    pet_rent_cents INTEGER DEFAULT 0,
+    pet_dog_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_dog_allowed IN (0, 1)),
+    pet_cat_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_cat_allowed IN (0, 1)),
+    pet_other_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_other_allowed IN (0, 1)),
+    smoking_allowed INTEGER NOT NULL DEFAULT 0 CHECK (smoking_allowed IN (0, 1)),
+    pet_weight_limit_lbs INTEGER,
+    featured_image_url TEXT,
     custom_fields TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_properties_operator_portfolio ON properties(operator_id, portfolio_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_properties_operator_published ON properties(operator_id, published_for_rent) WHERE deleted_at IS NULL;
 ```
 
 ### 2.3 Buildings (`buildings`)
@@ -196,6 +219,23 @@ CREATE TABLE IF NOT EXISTS buildings (
     building_number TEXT,
     floors INTEGER DEFAULT 1,
     notes TEXT,
+    published_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (published_for_rent IN (0, 1)),
+    published_for_sale INTEGER NOT NULL DEFAULT 0 CHECK (published_for_sale IN (0, 1)),
+    featured_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (featured_for_rent IN (0, 1)),
+    syndicate INTEGER NOT NULL DEFAULT 0 CHECK (syndicate IN (0, 1)),
+    posting_title TEXT,
+    specials TEXT,
+    short_description TEXT,
+    long_description TEXT,
+    available_date INTEGER,
+    target_rent_cents INTEGER,
+    target_deposit_cents INTEGER,
+    other_monthly_charges_cents INTEGER,
+    pets_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pets_allowed IN (0, 1)),
+    pet_dog_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_dog_allowed IN (0, 1)),
+    pet_cat_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_cat_allowed IN (0, 1)),
+    pet_other_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_other_allowed IN (0, 1)),
+    smoking_allowed INTEGER NOT NULL DEFAULT 0 CHECK (smoking_allowed IN (0, 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
@@ -217,6 +257,26 @@ CREATE TABLE IF NOT EXISTS units (
     square_feet INTEGER,
     market_rent_cents INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'vacant' CHECK (status IN ('vacant', 'occupied', 'turnover', 'maintenance_hold')),
+    published_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (published_for_rent IN (0, 1)),
+    published_for_sale INTEGER NOT NULL DEFAULT 0 CHECK (published_for_sale IN (0, 1)),
+    featured_for_rent INTEGER NOT NULL DEFAULT 0 CHECK (featured_for_rent IN (0, 1)),
+    syndicate INTEGER NOT NULL DEFAULT 0 CHECK (syndicate IN (0, 1)),
+    posting_title TEXT,
+    specials TEXT,
+    short_description TEXT,
+    long_description TEXT,
+    target_rent_cents INTEGER,
+    target_deposit_cents INTEGER,
+    other_monthly_charges_cents INTEGER,
+    available_date INTEGER,
+    pets_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pets_allowed IN (0, 1)),
+    pet_dog_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_dog_allowed IN (0, 1)),
+    pet_cat_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_cat_allowed IN (0, 1)),
+    pet_other_allowed INTEGER NOT NULL DEFAULT 0 CHECK (pet_other_allowed IN (0, 1)),
+    smoking_allowed INTEGER NOT NULL DEFAULT 0 CHECK (smoking_allowed IN (0, 1)),
+    pet_deposit_cents INTEGER DEFAULT 0,
+    pet_rent_cents INTEGER DEFAULT 0,
+    featured_image_url TEXT,
     custom_fields TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -224,7 +284,44 @@ CREATE TABLE IF NOT EXISTS units (
 );
 CREATE INDEX IF NOT EXISTS idx_units_operator_property ON units(operator_id, property_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_units_operator_building ON units(operator_id, building_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_units_operator_status ON units(operator_id, status) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_units_property_number ON units(property_id, unit_number) WHERE deleted_at IS NULL;
+```
+
+### 2.5 Amenities Dictionary & Junctions (`amenities`, `property_amenities`, `unit_amenities`)
+Standardized catalog of property and unit amenities supporting syndication filters and listing presentation.
+```sql
+CREATE TABLE IF NOT EXISTS amenities (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('community', 'unit', 'accessibility', 'pet', 'eco')),
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_amenities_operator_name ON amenities(operator_id, name) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS property_amenities (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    property_id TEXT NOT NULL REFERENCES properties(id),
+    amenity_id TEXT NOT NULL REFERENCES amenities(id),
+    created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_property_amenities_unique ON property_amenities(operator_id, property_id, amenity_id);
+CREATE INDEX IF NOT EXISTS idx_property_amenities_property ON property_amenities(operator_id, property_id);
+
+CREATE TABLE IF NOT EXISTS unit_amenities (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    unit_id TEXT NOT NULL REFERENCES units(id),
+    amenity_id TEXT NOT NULL REFERENCES amenities(id),
+    created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_amenities_unique ON unit_amenities(operator_id, unit_id, amenity_id);
+CREATE INDEX IF NOT EXISTS idx_unit_amenities_unit ON unit_amenities(operator_id, unit_id);
 ```
 
 ---
@@ -236,7 +333,7 @@ Directory of tenants, clients (owners), vendors, and contractors.
 CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    contact_type TEXT NOT NULL CHECK (contact_type IN ('tenant', 'client', 'vendor', 'emergency', 'prospect')),
+    contact_type TEXT NOT NULL CHECK (contact_type IN ('tenant', 'owner', 'client', 'vendor', 'guarantor', 'emergency', 'prospect')),
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     company_name TEXT,
@@ -247,11 +344,21 @@ CREATE TABLE IF NOT EXISTS contacts (
     city TEXT,
     state TEXT,
     postal_code TEXT,
+    tax_id_last4 TEXT,
     tax_id_encrypted TEXT,
-    tax_classification TEXT CHECK (tax_classification IN ('individual', 'corporation', 'partnership', 'llc_single', 'llc_partnership', 'llc_corporation', 'other')),
+    tax_payer_name TEXT,
+    tax_classification TEXT CHECK (tax_classification IN ('individual', 'llc', 'corporation', 'partnership', 'llc_single', 'llc_partnership', 'llc_corporation', 'other')),
     trade_specialization TEXT CHECK (trade_specialization IN ('Plumbing', 'Electrical', 'HVAC', 'General Contracting', 'Appliance Repair', 'Roofing', 'Landscaping', 'Painting', 'Pest Control', 'Cleaning', 'Locksmith', 'Legal / Professional', 'Other')),
+    vendor_specialty TEXT, -- backward-compatible alias for trade_specialization
     w9_received INTEGER NOT NULL DEFAULT 0 CHECK (w9_received IN (0, 1)),
+    vendor_insured INTEGER NOT NULL DEFAULT 0 CHECK (vendor_insured IN (0, 1)),
+    insurance_expiration_date INTEGER,
     default_gl_account_id TEXT REFERENCES chart_of_accounts(id),
+    default_bill_split_account_id TEXT REFERENCES chart_of_accounts(id),
+    markup_account_id TEXT REFERENCES chart_of_accounts(id),
+    markup_percentage_bps INTEGER DEFAULT 0,
+    payment_term_days INTEGER DEFAULT 30,
+    name_on_check TEXT,
     custom_fields TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -375,6 +482,43 @@ CREATE TABLE IF NOT EXISTS security_deposit_refunds (
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_deposit_refunds_lease ON security_deposit_refunds(operator_id, lease_id) WHERE deleted_at IS NULL;
+```
+
+### 4.6 Lease Clauses & Standard Legal Addenda (`lease_clauses`)
+Custom contractual terms, covenants, and legal addenda associated with specific leases.
+```sql
+CREATE TABLE IF NOT EXISTS lease_clauses (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    lease_id TEXT NOT NULL REFERENCES leases(id),
+    clause_title TEXT NOT NULL,
+    clause_text TEXT NOT NULL,
+    is_mandatory INTEGER NOT NULL DEFAULT 0 CHECK (is_mandatory IN (0, 1)),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_lease_clauses_lease ON lease_clauses(operator_id, lease_id) WHERE deleted_at IS NULL;
+```
+
+### 4.7 Commercial CAM & Expense Recovery Charges (`expense_recovery_charges`)
+Pro-rata common area maintenance (CAM), insurance, and property tax pass-through recoveries.
+```sql
+CREATE TABLE IF NOT EXISTS expense_recovery_charges (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    lease_id TEXT NOT NULL REFERENCES leases(id),
+    recovery_type TEXT NOT NULL CHECK (recovery_type IN ('cam', 'property_tax', 'insurance', 'utility')),
+    calculation_basis TEXT NOT NULL CHECK (calculation_basis IN ('pro_rata_sqft', 'fixed_percentage', 'actual_expense')),
+    share_percentage_bps INTEGER NOT NULL CHECK (share_percentage_bps BETWEEN 0 AND 10000), -- basis points (e.g. 1500 = 15.00%)
+    estimated_monthly_cents INTEGER NOT NULL DEFAULT 0 CHECK (estimated_monthly_cents >= 0),
+    reconciliation_frequency TEXT NOT NULL DEFAULT 'annually' CHECK (reconciliation_frequency IN ('monthly', 'quarterly', 'annually')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_expense_recovery_lease ON expense_recovery_charges(operator_id, lease_id) WHERE deleted_at IS NULL;
 ```
 
 ---
@@ -550,6 +694,78 @@ CREATE TABLE IF NOT EXISTS bank_deposit_lines (
 CREATE INDEX IF NOT EXISTS idx_deposit_lines_parent ON bank_deposit_lines(operator_id, bank_deposit_id);
 ```
 
+### 5.6 Vendor Check Register & Check Printing (`vendor_checks`, `vendor_check_allocations`)
+Disbursement check register tracking printed paper checks, MICR numbering, void reissues, and bill settlements.
+```sql
+CREATE TABLE IF NOT EXISTS vendor_checks (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    bank_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    vendor_id TEXT NOT NULL REFERENCES contacts(id),
+    check_number TEXT NOT NULL,
+    check_date INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    payee_name TEXT NOT NULL,
+    memo TEXT,
+    status TEXT NOT NULL DEFAULT 'printed' CHECK (status IN ('draft', 'printed', 'cleared', 'voided', 'reissued')),
+    voided_at INTEGER,
+    void_reason TEXT,
+    cleared_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_checks_number ON vendor_checks(operator_id, bank_account_id, check_number) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vendor_checks_vendor ON vendor_checks(operator_id, vendor_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vendor_checks_status ON vendor_checks(operator_id, status) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS vendor_check_allocations (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    check_id TEXT NOT NULL REFERENCES vendor_checks(id),
+    bill_id TEXT NOT NULL REFERENCES bills(id),
+    allocated_amount_cents INTEGER NOT NULL CHECK (allocated_amount_cents > 0),
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_check_alloc_check ON vendor_check_allocations(operator_id, check_id);
+CREATE INDEX IF NOT EXISTS idx_check_alloc_bill ON vendor_check_allocations(operator_id, bill_id);
+```
+
+### 5.7 Vendor Credits & Credit Applications (`vendor_credits`, `vendor_credit_allocations`)
+AP credit memos and refunds issued by suppliers/vendors and applied against open bills.
+```sql
+CREATE TABLE IF NOT EXISTS vendor_credits (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    vendor_id TEXT NOT NULL REFERENCES contacts(id),
+    credit_number TEXT NOT NULL,
+    credit_date INTEGER NOT NULL,
+    total_amount_cents INTEGER NOT NULL CHECK (total_amount_cents > 0),
+    remaining_amount_cents INTEGER NOT NULL CHECK (remaining_amount_cents >= 0 AND remaining_amount_cents <= total_amount_cents),
+    gl_account_id TEXT NOT NULL REFERENCES chart_of_accounts(id),
+    reason TEXT,
+    reference_number TEXT,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'partially_applied', 'fully_applied', 'voided')),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_vendor_credits_vendor ON vendor_credits(operator_id, vendor_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_vendor_credits_status ON vendor_credits(operator_id, status) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS vendor_credit_allocations (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    credit_id TEXT NOT NULL REFERENCES vendor_credits(id),
+    bill_id TEXT NOT NULL REFERENCES bills(id),
+    applied_amount_cents INTEGER NOT NULL CHECK (applied_amount_cents > 0),
+    applied_date INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_credit_alloc_credit ON vendor_credit_allocations(operator_id, credit_id);
+CREATE INDEX IF NOT EXISTS idx_credit_alloc_bill ON vendor_credit_allocations(operator_id, bill_id);
+```
+
 ---
 
 ## 6. Client Portfolio Accounting & Management Fees
@@ -568,6 +784,7 @@ CREATE TABLE IF NOT EXISTS client_capital_contributions (
     reference_number TEXT,
     memo TEXT,
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_client_contrib_portfolio ON client_capital_contributions(operator_id, portfolio_id) WHERE deleted_at IS NULL;
@@ -589,6 +806,7 @@ CREATE TABLE IF NOT EXISTS client_distributions (
     reference_number TEXT,
     memo TEXT,
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_client_dist_portfolio ON client_distributions(operator_id, portfolio_id) WHERE deleted_at IS NULL;
@@ -628,7 +846,8 @@ CREATE TABLE IF NOT EXISTS work_orders (
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'assigned', 'in_progress', 'completed', 'cancelled')),
     category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('plumbing', 'electrical', 'hvac', 'appliance', 'structural', 'make_ready', 'other')),
     assigned_vendor_id TEXT REFERENCES contacts(id),
-    cost_cents INTEGER NOT NULL DEFAULT 0,
+    completion_notes TEXT,
+    actual_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (actual_cost_cents >= 0),
     created_by_contact_id TEXT REFERENCES contacts(id), -- tenant submission link
     completed_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -639,7 +858,7 @@ CREATE INDEX IF NOT EXISTS idx_work_orders_operator_unit ON work_orders(operator
 CREATE INDEX IF NOT EXISTS idx_work_orders_assigned_vendor ON work_orders(operator_id, assigned_vendor_id) WHERE deleted_at IS NULL;
 ```
 
-### 7.2 Work Order Subtasks (`work_order_tasks`) *(Post-MVP Horizon)*
+### 7.2 Work Order Subtasks (`work_order_tasks`) *(Sprint 6: Field Operations)*
 ```sql
 CREATE TABLE IF NOT EXISTS work_order_tasks (
     id TEXT PRIMARY KEY,
@@ -651,12 +870,13 @@ CREATE TABLE IF NOT EXISTS work_order_tasks (
     is_completed INTEGER NOT NULL DEFAULT 0 CHECK (is_completed IN (0, 1)),
     completed_at INTEGER,
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_wo_tasks_parent ON work_order_tasks(operator_id, work_order_id) WHERE deleted_at IS NULL;
 ```
 
-### 7.3 Technician Timecards (`technician_timecards`) *(Post-MVP Horizon)*
+### 7.3 Technician Timecards (`technician_timecards`) *(Sprint 6: Field Operations)*
 ```sql
 CREATE TABLE IF NOT EXISTS technician_timecards (
     id TEXT PRIMARY KEY,
@@ -668,6 +888,7 @@ CREATE TABLE IF NOT EXISTS technician_timecards (
     hourly_rate_cents INTEGER NOT NULL,
     bill_id TEXT REFERENCES bills(id),
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_timecards_wo ON technician_timecards(operator_id, work_order_id) WHERE deleted_at IS NULL;
@@ -683,11 +904,13 @@ Polymorphic collaboration stream attached to operational entities.
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('lease', 'property', 'unit', 'contact', 'work_order', 'bill', 'portfolio')),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('lease', 'property', 'building', 'unit', 'contact', 'work_order', 'bill', 'portfolio')),
     entity_id TEXT NOT NULL,
-    title TEXT,
+    subject TEXT NOT NULL,
+    is_private INTEGER NOT NULL DEFAULT 0 CHECK (is_private IN (0, 1)),
     created_by TEXT REFERENCES users(id),
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_entity ON conversations(operator_id, entity_type, entity_id) WHERE deleted_at IS NULL;
@@ -711,7 +934,7 @@ Schema-agnostic field definitions validating parent `custom_fields` JSON objects
 CREATE TABLE IF NOT EXISTS custom_field_definitions (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('portfolio', 'property', 'unit', 'lease', 'contact', 'work_order', 'bill')),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('portfolio', 'property', 'building', 'unit', 'lease', 'contact', 'work_order', 'bill')),
     field_name TEXT NOT NULL,
     field_label TEXT NOT NULL,
     data_type TEXT NOT NULL CHECK (data_type IN ('string', 'number', 'boolean', 'date', 'currency', 'select')),
@@ -799,6 +1022,36 @@ CREATE TABLE IF NOT EXISTS prospects (
     status TEXT NOT NULL DEFAULT 'inquiry' CHECK (status IN ('inquiry', 'showing_scheduled', 'showing_completed', 'application_submitted', 'approved', 'converted_to_lease', 'archived')),
     converted_lease_id TEXT REFERENCES leases(id),
     created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_prospects_operator_status ON prospects(operator_id, status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_prospects_campaign ON prospects(operator_id, campaign_id) WHERE deleted_at IS NULL;
+```
+
+### 9.3 Scheduled Tenant Auto-Payments (`scheduled_tenant_payments`)
+Scheduled recurring tenant ACH/card payments executed against recurring charges and ledger balances.
+```sql
+CREATE TABLE IF NOT EXISTS scheduled_tenant_payments (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    lease_id TEXT NOT NULL REFERENCES leases(id),
+    contact_id TEXT NOT NULL REFERENCES contacts(id),
+    payment_channel TEXT NOT NULL DEFAULT 'ach' CHECK (payment_channel IN ('ach', 'credit_card', 'debit_card')),
+    payment_method_token TEXT NOT NULL,
+    day_of_month INTEGER NOT NULL CHECK (day_of_month BETWEEN 1 AND 31),
+    payment_rule TEXT NOT NULL DEFAULT 'full_balance' CHECK (payment_rule IN ('full_balance', 'fixed_amount', 'max_cap')),
+    fixed_amount_cents INTEGER CHECK (fixed_amount_cents IS NULL OR fixed_amount_cents > 0),
+    max_cap_cents INTEGER CHECK (max_cap_cents IS NULL OR max_cap_cents > 0),
+    is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+    last_executed_at INTEGER,
+    next_run_date INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER,
+    CHECK (payment_rule <> 'fixed_amount' OR fixed_amount_cents IS NOT NULL),
+    CHECK (payment_rule <> 'max_cap' OR max_cap_cents IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_payments_lease ON scheduled_tenant_payments(operator_id, lease_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_scheduled_payments_next ON scheduled_tenant_payments(operator_id, next_run_date) WHERE deleted_at IS NULL;
 ```

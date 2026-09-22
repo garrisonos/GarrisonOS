@@ -107,8 +107,9 @@ export function registerRoutes(router: Router): void {
     successResponse(res, { lease });
   });
 
-  router.delete('/api/v1/leases/:id/contacts/:contactId', (req, res) => {
-    const removed = LeasesRepository.removeLeaseContact(req.params.id!, req.params.contactId!);
+  router.delete('/api/v1/leases/:id/contacts/:contact_id', (req, res) => {
+    const contactId = req.params.contact_id || req.params.contactId;
+    const removed = LeasesRepository.removeLeaseContact(req.params.id!, contactId!);
     if (!removed) {
       return errorResponse(res, 'NOT_FOUND', 'Signatory not found on lease', 404);
     }

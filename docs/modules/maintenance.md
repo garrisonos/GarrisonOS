@@ -61,10 +61,34 @@ The **Accounting** module listens for this event and can automatically record a 
 
 ---
 
-## 4. API Endpoints
+## 5. API Endpoints
 
 * `GET /api/v1/maintenance`: List work orders with filter by status, priority, property, and vendor
 * `POST /api/v1/maintenance`: Submit a new work order
 * `GET /api/v1/maintenance/:id`: Fetch work order details and vendor contact card
 * `PUT /api/v1/maintenance/:id`: Update status, priority, entry instructions, and actual cost
+* `PUT /api/v1/maintenance/:id/close`: Complete work order workflow with resolution summary and vendor invoice link
+* `GET /api/v1/maintenance/:id/tasks`: List subtask checklist items
+* `POST /api/v1/maintenance/:id/tasks`: Create subtask checklist item
+* `PUT /api/v1/maintenance/:id/tasks/:task_id`: Mark subtask complete or update assignment
 * `DELETE /api/v1/maintenance/:id`: Soft delete work order
+
+---
+
+## 6. Work Order Task Checklists, Closure & Technician Timecards
+
+### 6.1. Subtask Checklists
+
+Work orders support multi-step task checklists (`work_order_tasks`). Maintenance supervisors assign subtasks to specific staff members or contractors with individual due dates. A work order cannot be closed if mandatory subtasks remain incomplete.
+
+### 6.2. Formal Closure Workflow
+
+Closing a work order (`PUT /api/v1/maintenance/:id/close`) requires capturing:
+- `completed_at`: Verification timestamp (epoch ms).
+- `completion_notes`: Documented repair outcome and tenant sign-off.
+- `actual_cost_cents`: Total labor and material expense.
+- Optional link to an Accounts Payable bill (`bills.id`) for vendor invoicing.
+
+### 6.3. Technician Timecard Integration (Sprint 6: Field Operations)
+
+Technicians log billable hours against work orders (`technician_timecards`). Logged hours aggregate with hourly labor rates (`hourly_rate_cents`) to compute total labor expenses, which can be automatically converted into AP bills for contractor disbursement.
