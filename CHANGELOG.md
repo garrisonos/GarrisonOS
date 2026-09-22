@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Sprint 4 (Tasks 20–22): Financial Modernization, Client Accounting & Leasing AR Engine**:
+  - **Task 20: Double-Entry General Ledger Elevation & Single-Entry Sunset**:
+    - Added migration `modules/accounting/backend/migrations/0004_sunset_legacy_transactions.sql` adding `lease_id TEXT REFERENCES leases(id)` to `journal_lines` and backfilling existing legacy `transactions` into double-entry journal entries and lines.
+    - Updated `journal.ts` with optional `lease_id` on `CreateJournalLineInput`, with foreign key validation during `postEntry()`.
+    - Refactored `getLeaseBalance()` in accounting repository to query `journal_lines` directly for true double-entry balance calculations (AR debits vs credits), removing dependence on single-entry `transactions`.
+    - Enhanced `getScheduleEReport()` to compute IRS Schedule E lines from double-entry GL accounts, with backward-compatible cash-basis income resolution.
+    - Deprecated legacy `transactions` table and completed elevation of immutable append-only journal entries as the primary financial source of truth.
+  - **Task 21: Client Accounting & Management Fee Engine**:
+    - Added migration `modules/accounting/backend/migrations/0005_client_accounting_and_management_fees.sql` introducing `client_capital_contributions`, `client_distributions`, and `management_fee_agreements` tables with strict operator isolation, integer-cents math, check constraints, and compound indexes.
+    - Added default Chart of Accounts entries: `3010 Owner Capital Contributions`, `3020 Owner Draws/Distributions`, `4050 Management Fee Income`, `4060 Late Fee Income`.
+    - Implemented `ClientAccountingRepository` in `modules/accounting/backend/client_accounting.ts` providing full fiduciary accounting: capital contribution recording with automatic GL posting (debit `1010 Operating Checking`, credit `3010 Owner Capital`), net operating cash calculation and portfolio financial summaries, client distribution/draw engine with validation against available cash and automatic GL posting (debit `3020 Owner Draws`, credit `1010 Operating Checking`), and management fee agreements with automated calculation (flat per-unit or percentage of collected rent) and double-entry fee posting (debit `5030 Management Fees Expense`, credit `4050 Management Fee Income`).
+    - Exposed REST endpoints under `/api/v1/accounting/client_contributions`, `/api/v1/accounting/client_distributions`, `/api/v1/accounting/portfolio_cash`, `/api/v1/accounting/management_fee_agreements`, and `/api/v1/accounting/management_fee_agreements/calculate_and_post`.
+  - **Task 22: Leasing AR & Fee Policy Engine**:
+    - Added migration `modules/leases/backend/migrations/0003_leasing_ar_and_fee_policies.sql` creating `recurring_lease_charges`, `late_fee_policies`, `lease_credits_and_concessions`, and `security_deposit_refunds` tables.
+    - Implemented recurring lease charges management (`addRecurringCharge`, `listRecurringCharges`, `deleteRecurringCharge`) supporting itemized recurring add-ons (pet rent, parking, storage, utility fees, trash) with billing frequencies and optional end dates.
+    - Updated monthly rent billing engine (`generateMonthlyRentCharges`) to generate itemized charges for active recurring charges idempotently alongside base rent with appropriate GL account mapping.
+    - Implemented late fee policy engine (`createLateFeePolicy`, `listLateFeePolicies`, `calculateLateFee`, `applyLateFee`) supporting flat fees, percentage of balance, or percentage of monthly rent, with configurable due days, grace periods, and maximum fee caps. Delinquency calculations automatically evaluate double-entry lease balances and post late fee entries to `1200 Accounts Receivable` and `4060 Late Fee Income`.
+    - Implemented lease credits and concessions (`addCreditConcession`, `listCreditConcessions`) with GL posting (debit `4000 Rent Income`, credit `1200 Accounts Receivable`).
+    - Implemented security deposit refund tracking (`issueDepositRefund`, `listDepositRefunds`) supporting full and partial refunds with check number and payment reference tracking.
+    - Exposed REST endpoints in `modules/leases/backend/routes.ts` for recurring charges, late fee policies, credits/concessions, and deposit refunds.
+
 - **Industry Parity Audit & Roadmap Realignment (`v0.1.1-alpha`, `v0.1.5-alpha`)**:
   - **Release Milestone Re-indexing**: Established Sprint 4 completion targeting `v0.1.1-alpha` (resolving collision with completed Sprint 3 `v0.1.0-alpha`) and Sprint 5 targeting `v0.1.5-alpha`.
   - **Full Operational Parity Mapping**: Conducted an exhaustive clean-room parity audit against property management industry operations, standardizing all terminology to clean-room GAAP and real estate domain standards without proprietary external references.

@@ -10,6 +10,7 @@ export interface CreateJournalLineInput {
   property_id?: string | null;
   unit_id?: string | null;
   contact_id?: string | null;
+  lease_id?: string | null;
   description?: string | null;
 }
 
@@ -32,6 +33,7 @@ export interface JournalLineRecord {
   property_id: string | null;
   unit_id: string | null;
   contact_id: string | null;
+  lease_id?: string | null;
   description: string | null;
   created_at: number;
   account_number?: string | null;
@@ -155,6 +157,10 @@ export class JournalService {
         SELECT 1 FROM contacts
         WHERE id = ? AND operator_id = ?${deletedFilter}
       `);
+      const checkLease = conn.prepare(`
+        SELECT 1 FROM leases
+        WHERE id = ? AND operator_id = ?${deletedFilter}
+      `);
 
       const lineAccounts: Array<{ line: CreateJournalLineInput; account: any }> = [];
       for (const line of input.lines) {
@@ -172,6 +178,9 @@ export class JournalService {
         }
         if (line.contact_id && !checkContact.get(line.contact_id, operatorId)) {
           throw new Error(`Contact '${line.contact_id}' does not exist or does not belong to the current operator.`);
+        }
+        if (line.lease_id && !checkLease.get(line.lease_id, operatorId)) {
+          throw new Error(`Lease '${line.lease_id}' does not exist or does not belong to the current operator.`);
         }
       }
 
@@ -244,8 +253,8 @@ export class JournalService {
       const lineStmt = conn.prepare(`
         INSERT INTO journal_lines (
           id, operator_id, journal_entry_id, account_id, debit_cents, credit_cents,
-          property_id, unit_id, contact_id, description, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          property_id, unit_id, contact_id, lease_id, description, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const line of input.lines) {
@@ -259,6 +268,7 @@ export class JournalService {
           line.property_id || null,
           line.unit_id || null,
           line.contact_id || null,
+          line.lease_id || null,
           line.description || null,
           now
         );
@@ -614,6 +624,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -623,6 +634,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -638,6 +650,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -647,6 +660,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -663,6 +677,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -672,6 +687,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -687,6 +703,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -696,6 +713,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -711,6 +729,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -720,6 +739,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -735,6 +755,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -744,6 +765,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payee_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );
@@ -759,6 +781,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               },
               {
@@ -768,6 +791,7 @@ export class JournalService {
                 property_id: t.property_id,
                 unit_id: t.unit_id,
                 contact_id: t.payer_contact_id,
+                lease_id: t.lease_id || null,
                 description: t.description
               }
             );

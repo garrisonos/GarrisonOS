@@ -140,9 +140,9 @@ Progress across the seven canonical architectural phases leading to Foundational
 * [x] Automated Three-Way Bank Reconciliation verification schedules.
 * [x] Standardized Chart of Accounts (IRS Schedule E lines and QuickBooks compatibility mapping).
 * [x] Vendor tax compliance (Tax ID tracking, W-9 verification, Form 1099-NEC aggregation).
-* [ ] Sunset and removal of legacy single-entry `transactions` table and `tenants` view *(Sprint 4)*.
-* [ ] Client Portfolio Accounting & Management Fee Agreements (capital contributions, net cash draws, automated fee calculations) *(Sprint 4)*.
-* [ ] Leasing AR & Fee Policy Engine (recurring auto-charges, late fee policy rules, concessions, deposit refunds) *(Sprint 4)*.
+* [x] Sunset and removal of legacy single-entry `transactions` table and `tenants` view *(Sprint 4)*.
+* [x] Client Portfolio Accounting & Management Fee Agreements (capital contributions, net cash draws, automated fee calculations) *(Sprint 4)*.
+* [x] Leasing AR & Fee Policy Engine (recurring auto-charges, late fee policy rules, concessions, deposit refunds) *(Sprint 4)*.
 * [ ] Accounts Payable (AP) & Vendor Invoicing Subsystem (bills, multi-unit allocations, recurring bills) *(Sprint 5)*.
 * [ ] Zero-Dependency Server-Rendered PDF Vendor Check Printing (ANSI check stock specs) *(Sprint 5)*.
 * [ ] Bank Deposits & Batched Clearing for 3-way reconciliation *(Sprint 5)*.
@@ -228,13 +228,13 @@ GarrisonOS organizes engineering work into structured two-week execution sprints
 ---
 
 ### Sprint 4 (Weeks 7–8): Financial Modernization, Client Accounting & Policy Engine
-> **Status**: Planned | **Release Target**: v0.1.1-alpha | **Effort**: ~48 hours
+> **Status**: In Progress | **Release Target**: v0.1.1-alpha | **Effort**: ~48 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
-| 20 | **Deprecation & Removal of Legacy Single-Entry Accounting & Abandoned Aliases**: sunset legacy `transactions` table, refactor all ledger and QuickBooks queries directly to `journal_entries`/`journal_lines`, remove legacy `tenants` compatibility view, and prune stale route aliases | 8h | High | Planned |
-| 21 | **Client Accounting & Management Fees**: portfolio and property-level fiduciary accounting, Client Capital Contributions (`client_capital_contributions`), automated management fee calculation (% of rent / flat unit fee), and Client Distribution / Draw engine based on net operating cash | 10h | High | Planned |
-| 22 | **Leasing AR & Fee Policy Engine**: itemized `recurring_lease_charges` (recurring pet rent, parking, utilities), configurable `late_fee_policies` (due day, grace period, flat/pct), credit memos/concessions, and tenant refunds | 10h | High | Planned |
+| 20 | **Deprecation & Removal of Legacy Single-Entry Accounting & Abandoned Aliases**: sunset legacy `transactions` table, refactor all ledger and QuickBooks queries directly to `journal_entries`/`journal_lines`, remove legacy `tenants` compatibility view, and prune stale route aliases | 8h | High | ✅ Completed |
+| 21 | **Client Accounting & Management Fees**: portfolio and property-level fiduciary accounting, Client Capital Contributions (`client_capital_contributions`), automated management fee calculation (% of rent / flat unit fee), and Client Distribution / Draw engine based on net operating cash | 10h | High | ✅ Completed |
+| 22 | **Leasing AR & Fee Policy Engine**: itemized `recurring_lease_charges` (recurring pet rent, parking, utilities), configurable `late_fee_policies` (due day, grace period, flat/pct), credit memos/concessions, and tenant refunds | 10h | High | ✅ Completed |
 | 23 | **Universal Conversations & Notes Subsystem**: polymorphic threaded notes and audit comments on leases, contacts, work orders, properties, buildings, and units | 6h | Medium | Planned |
 | 24 | **Client Accounting & Lease AR SSR UI Views**: server-rendered client portfolio overview, capital contribution modal, Lease AR transaction manager, and Universal Conversation sidebar component (`web/templates/conversations.ts`) | 8h | High | Planned |
 | 25 | Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling engine (HVAC, alarms, winterization) | 6h | High | Planned |

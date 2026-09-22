@@ -76,6 +76,13 @@ Residential tenancies frequently involve multiple roommates, co-signers, and non
 * `DELETE /api/v1/leases/:id/recurring_charges/:charge_id`: Soft delete recurring fee schedule
 * `GET /api/v1/leases/:id/credits`: List tenant credits, concessions, and discounts
 * `POST /api/v1/leases/:id/credits`: Post promotional concession or ledger adjustment
+* `GET /api/v1/leases/late_fee_policies`: List configurable late fee policies across properties
+* `POST /api/v1/leases/late_fee_policies`: Create configurable late fee policy (flat, percent balance, or percent rent)
+* `GET /api/v1/leases/:id/late_fee_policy`: Retrieve active late fee policy assigned to a lease or its property
+* `POST /api/v1/leases/:id/calculate_late_fee`: Calculate potential late fee against current double-entry AR balance
+* `POST /api/v1/leases/:id/apply_late_fee`: Apply assessed late fee to tenant ledger and double-entry GL
+* `GET /api/v1/leases/:id/deposit_refunds`: List security deposit refunds issued for a lease
+* `POST /api/v1/leases/:id/deposit_refunds`: Issue security deposit refund with check/payment reference
 * `GET /api/v1/leases/:id/clauses`: List custom lease clauses and legal covenants
 * `POST /api/v1/leases/:id/clauses`: Attach custom lease clause
 * `PUT /api/v1/leases/:id/clauses/:clause_id`: Update clause title, text, or display order

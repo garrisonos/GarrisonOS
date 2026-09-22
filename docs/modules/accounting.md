@@ -153,8 +153,11 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 * `POST /api/v1/accounting/client_contributions`: Record investor/owner capital infusion
 * `GET /api/v1/accounting/client_distributions`: List client owner draw disbursements
 * `POST /api/v1/accounting/client_distributions`: Execute client draw disbursement
-* `POST /api/v1/accounting/management_fees/calculate`: Preview management fees across portfolios
-* `POST /api/v1/accounting/management_fees/post`: Post management fee journal entries
+* `GET /api/v1/accounting/portfolio_cash`: Retrieve real-time net operating cash summary and client cash balance
+* `GET /api/v1/accounting/management_fee_agreements`: List active and draft management fee agreements
+* `POST /api/v1/accounting/management_fee_agreements`: Create or update property/portfolio management fee agreement
+* `DELETE /api/v1/accounting/management_fee_agreements/:id`: Terminate management fee agreement
+* `POST /api/v1/accounting/management_fee_agreements/calculate_and_post`: Calculate accrued management fees and post double-entry GL revenue/expense entries
 
 ---
 

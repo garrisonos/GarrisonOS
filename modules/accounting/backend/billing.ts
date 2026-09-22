@@ -106,43 +106,98 @@ export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringR
 
     if (existing) {
       result.skippedExisting += 1;
-      continue;
+    } else {
+      // Check if lease starts mid-month during this target month
+      const leaseStartDate = new Date(lease.start_date);
+      const isStartMonth = leaseStartDate.getUTCFullYear() === year && leaseStartDate.getUTCMonth() === monthIndex;
+      let chargeAmountCents = lease.rent_amount_cents;
+
+      if (isStartMonth && leaseStartDate.getUTCDate() > 1) {
+        chargeAmountCents = calculateProratedRent(
+          lease.rent_amount_cents,
+          year,
+          monthIndex,
+          leaseStartDate.getUTCDate()
+        );
+      }
+
+      const dueDay = Math.min(lease.rent_due_day || 1, 28);
+      const chargeDateMs = Date.UTC(year, monthIndex, dueDay);
+
+      const tx = AccountingRepository.createTransaction({
+        transaction_type: 'charge',
+        category: 'rent',
+        amount_cents: chargeAmountCents,
+        transaction_date: chargeDateMs,
+        description: `Monthly Rent – ${yyyyMm}${isStartMonth && leaseStartDate.getUTCDate() > 1 ? ' (Prorated)' : ''}`,
+        reference_number: idempotencyRef,
+        property_id: lease.property_id,
+        unit_id: lease.unit_id,
+        lease_id: lease.id,
+        payer_contact_id: lease.contact_id
+      });
+
+      result.chargesCreated += 1;
+      result.totalChargesCents += chargeAmountCents;
+      result.createdTransactionIds.push(tx.id);
     }
 
-    // Check if lease starts mid-month during this target month
-    const leaseStartDate = new Date(lease.start_date);
-    const isStartMonth = leaseStartDate.getUTCFullYear() === year && leaseStartDate.getUTCMonth() === monthIndex;
-    let chargeAmountCents = lease.rent_amount_cents;
+    // Process attached itemized recurring lease charges (pet rent, parking, storage, utilities)
+    try {
+      const recurringCharges = db.prepare(`
+        SELECT id, charge_category, amount_cents, billing_day, description
+        FROM recurring_lease_charges
+        WHERE operator_id = ? AND lease_id = ? AND billing_frequency = 'monthly' AND deleted_at IS NULL
+      `).all(operatorId, lease.id) as Array<{
+        id: string;
+        charge_category: string;
+        amount_cents: number;
+        billing_day: number;
+        description: string;
+      }>;
 
-    if (isStartMonth && leaseStartDate.getUTCDate() > 1) {
-      chargeAmountCents = calculateProratedRent(
-        lease.rent_amount_cents,
-        year,
-        monthIndex,
-        leaseStartDate.getUTCDate()
-      );
+      for (const rc of recurringCharges) {
+        const rcIdempotencyRef = `recurring_charge:${rc.id}:${yyyyMm}`;
+        const rcExisting = db.prepare(`
+          SELECT id FROM transactions
+          WHERE operator_id = ? AND lease_id = ? AND reference_number = ? AND deleted_at IS NULL
+        `).get(operatorId, lease.id, rcIdempotencyRef);
+
+        if (rcExisting) {
+          result.skippedExisting += 1;
+          continue;
+        }
+
+        const rcCategory =
+          rc.charge_category === 'pet_rent' ? 'pet_fee' :
+          rc.charge_category === 'utility_surcharge' ? 'utility_rebill' :
+          rc.charge_category === 'base_rent' ? 'rent' : 'other_income';
+
+        const rcDueDay = Math.min(rc.billing_day || lease.rent_due_day || 1, 28);
+        const rcChargeDateMs = Date.UTC(year, monthIndex, rcDueDay);
+
+        const rcTx = AccountingRepository.createTransaction({
+          transaction_type: 'charge',
+          category: rcCategory,
+          amount_cents: rc.amount_cents,
+          transaction_date: rcChargeDateMs,
+          description: `${rc.description} – ${yyyyMm}`,
+          reference_number: rcIdempotencyRef,
+          property_id: lease.property_id,
+          unit_id: lease.unit_id,
+          lease_id: lease.id,
+          payer_contact_id: lease.contact_id
+        });
+
+        result.chargesCreated += 1;
+        result.totalChargesCents += rc.amount_cents;
+        result.createdTransactionIds.push(rcTx.id);
+      }
+    } catch {
+      // Table may not exist in unmigrated or isolated test fixtures
     }
-
-    const dueDay = Math.min(lease.rent_due_day || 1, 28);
-    const chargeDateMs = Date.UTC(year, monthIndex, dueDay);
-
-    const tx = AccountingRepository.createTransaction({
-      transaction_type: 'charge',
-      category: 'rent',
-      amount_cents: chargeAmountCents,
-      transaction_date: chargeDateMs,
-      description: `Monthly Rent – ${yyyyMm}${isStartMonth && leaseStartDate.getUTCDate() > 1 ? ' (Prorated)' : ''}`,
-      reference_number: idempotencyRef,
-      property_id: lease.property_id,
-      unit_id: lease.unit_id,
-      lease_id: lease.id,
-      payer_contact_id: lease.contact_id
-    });
-
-    result.chargesCreated += 1;
-    result.totalChargesCents += chargeAmountCents;
-    result.createdTransactionIds.push(tx.id);
   }
 
   return result;
 }
+

@@ -253,6 +253,42 @@ export const DEFAULT_PROPERTY_MANAGEMENT_COA: DefaultAccountDefinition[] = [
     qb_account_type: 'FixedAsset',
     category_mapping: 'capital_improvement',
     description: 'Depreciable capital expenditures (roof, HVAC replacement)'
+  },
+
+  // --- Equity Accounts ---
+  {
+    account_number: '3010',
+    account_name: 'Owner Capital Contributions',
+    account_type: 'Equity',
+    qb_account_type: 'Equity',
+    category_mapping: 'owner_capital',
+    description: 'Capital funds invested by property owners/clients into property operations'
+  },
+  {
+    account_number: '3020',
+    account_name: 'Owner Draws & Distributions',
+    account_type: 'Equity',
+    qb_account_type: 'Equity',
+    category_mapping: 'owner_draw',
+    description: 'Net cash distributions and capital withdrawals disbursed to property owners'
+  },
+
+  // --- Additional Income & Contra Accounts ---
+  {
+    account_number: '4050',
+    account_name: 'Lease Concessions & Discounts',
+    account_type: 'Income',
+    qb_account_type: 'Income',
+    category_mapping: 'concessions',
+    description: 'Promotional rent discounts, move-in credits, and courtesy concessions'
+  },
+  {
+    account_number: '4060',
+    account_name: 'Parking & Storage Fee Income',
+    account_type: 'Income',
+    qb_account_type: 'Income',
+    category_mapping: 'parking_fee',
+    description: 'Recurring parking stall and storage unit rental revenues'
   }
 ];
 
@@ -343,6 +379,20 @@ export class ChartOfAccountsRepository {
       WHERE operator_id = ? AND category_mapping = ? AND is_active = 1 AND deleted_at IS NULL
       LIMIT 1
     `).get(operatorId, categoryMapping) as ChartOfAccountRecord | undefined;
+
+    return row || null;
+  }
+
+  public static getAccountByAccountNumber(accountNumber: string, dbInstance?: any): ChartOfAccountRecord | null {
+    this.ensureDefaultAccounts(dbInstance);
+    const operatorId = RequestContext.getOperatorId();
+    const db = dbInstance || getDatabase();
+
+    const row = db.prepare(`
+      SELECT * FROM chart_of_accounts
+      WHERE operator_id = ? AND account_number = ? AND is_active = 1 AND deleted_at IS NULL
+      LIMIT 1
+    `).get(operatorId, accountNumber) as ChartOfAccountRecord | undefined;
 
     return row || null;
   }
