@@ -8,6 +8,7 @@
 
 import * as http from 'node:http';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { handleStaticFile } from './static.js';
 import { getSession, commitSession, Session } from './lib/session.js';
@@ -18,7 +19,16 @@ import { HookRegistry } from './lib/hooks.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+
+function findRepoRoot(): string {
+  let cur = path.resolve(__dirname);
+  while (cur !== path.dirname(cur)) {
+    if (fs.existsSync(path.join(cur, 'package.json'))) return cur;
+    cur = path.dirname(cur);
+  }
+  return process.cwd();
+}
+const rootDir = findRepoRoot();
 
 /**
  * Parse incoming HTTP request body. Supports JSON, URL-encoded forms, and basic multipart files.

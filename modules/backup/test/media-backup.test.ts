@@ -18,6 +18,11 @@ describe('Media Backup Integration & Full System Restore', () => {
   const originalSqlitePath = process.env['SQLITE_PATH'];
 
   before(() => {
+    if (fs.existsSync(testSqlitePath)) {
+      try {
+        fs.unlinkSync(testSqlitePath);
+      } catch {}
+    }
     fs.mkdirSync(testStorageDir, { recursive: true });
     fs.mkdirSync(path.dirname(testSqlitePath), { recursive: true });
     process.env['STORAGE_PATH'] = testStorageDir;
@@ -27,6 +32,7 @@ describe('Media Backup Integration & Full System Restore', () => {
     const db = getDatabase({ path: testSqlitePath });
     runMigrations(db);
     ensureOperator(testTenant, db);
+    db.prepare('DELETE FROM users WHERE operator_id = ?').run(testTenant);
   });
 
   after(() => {
@@ -67,6 +73,7 @@ describe('Media Backup Integration & Full System Restore', () => {
       db.prepare(`
         INSERT INTO users (id, operator_id, email, password_hash, first_name, last_name, role, created_at, updated_at)
         VALUES ('user-media-1', ?, 'media@test.com', 'hash', 'Media', 'Tester', 'manager', ?, ?)
+        ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at
       `).run(testTenant, now, now);
 
       // 3. Create full database backup

@@ -5,9 +5,26 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Root directory of the repository
-const rootDir = path.resolve(__dirname, '..');
-const publicDir = path.resolve(rootDir, 'web', 'public');
+function findPublicDir(): string {
+  // 1. Check relative to current working directory
+  const cwdCandidate = path.resolve(process.cwd(), 'web', 'public');
+  if (fs.existsSync(cwdCandidate)) return cwdCandidate;
+
+  // 2. When compiled into dist/web, traverse up to repository root
+  const distCandidate = path.resolve(__dirname, '..', '..', 'web', 'public');
+  if (fs.existsSync(distCandidate)) return distCandidate;
+
+  // 3. Check directly under dirname (if bundled or sibling)
+  const siblingCandidate = path.resolve(__dirname, 'public');
+  if (fs.existsSync(siblingCandidate)) return siblingCandidate;
+
+  const parentCandidate = path.resolve(__dirname, '..', 'web', 'public');
+  if (fs.existsSync(parentCandidate)) return parentCandidate;
+
+  return cwdCandidate;
+}
+
+const publicDir = findPublicDir();
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',

@@ -75,7 +75,11 @@ export class HookRegistry {
   }
 
   public static async loadModuleHooks(baseDir: string = process.cwd()): Promise<void> {
-    const modulesDir = path.resolve(baseDir, 'modules');
+    let root = path.resolve(baseDir);
+    while (root !== path.dirname(root) && !fs.existsSync(path.join(root, 'package.json'))) {
+      root = path.dirname(root);
+    }
+    const modulesDir = path.resolve(root, 'modules');
     if (!fs.existsSync(modulesDir)) return;
 
     this.navigation = [];
@@ -87,8 +91,8 @@ export class HookRegistry {
       if (!fs.statSync(modDir).isDirectory()) continue;
 
       // Check for compiled hook in dist, or source hook in modules
-      const distHook = path.resolve(baseDir, 'dist/modules', mod, 'frontend/hooks.js');
-      const srcHook = path.resolve(baseDir, 'modules', mod, 'frontend/hooks.ts');
+      const distHook = path.resolve(root, 'dist', 'modules', mod, 'frontend', 'hooks.js');
+      const srcHook = path.resolve(root, 'modules', mod, 'frontend', 'hooks.ts');
 
       const targetHook = fs.existsSync(distHook) ? distHook : fs.existsSync(srcHook) ? srcHook : null;
       if (targetHook) {
