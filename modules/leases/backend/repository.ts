@@ -566,7 +566,16 @@ export class LeasesRepository {
     }
 
     let glAccountId = input.gl_account_id;
-    if (!glAccountId) {
+    if (glAccountId) {
+      const explicitAccount = db.prepare(`
+        SELECT id FROM chart_of_accounts
+        WHERE id = ? AND operator_id = ? AND is_active = 1 AND deleted_at IS NULL
+      `).get(glAccountId, operatorId) as { id: string } | undefined;
+
+      if (!explicitAccount) {
+        throw new Error(`GL account '${glAccountId}' does not exist, is inactive, or does not belong to the current operator.`);
+      }
+    } else {
       // Map category to standard chart of accounts
       const mappingKey =
         input.charge_category === 'base_rent' ? 'rent' :
@@ -577,7 +586,7 @@ export class LeasesRepository {
 
       const accRow = db.prepare(`
         SELECT id FROM chart_of_accounts
-        WHERE operator_id = ? AND category_mapping = ? AND deleted_at IS NULL
+        WHERE operator_id = ? AND category_mapping = ? AND is_active = 1 AND deleted_at IS NULL
         LIMIT 1
       `).get(operatorId, mappingKey) as { id: string } | undefined;
 
@@ -587,7 +596,7 @@ export class LeasesRepository {
         // Fallback to any active income account
         const fallback = db.prepare(`
           SELECT id FROM chart_of_accounts
-          WHERE operator_id = ? AND account_type = 'Income' AND deleted_at IS NULL
+          WHERE operator_id = ? AND account_type = 'Income' AND is_active = 1 AND deleted_at IS NULL
           LIMIT 1
         `).get(operatorId) as { id: string } | undefined;
         if (!fallback) {
@@ -1314,7 +1323,7 @@ export class LeasesRepository {
       throw new Error('Refund amount_cents must be a positive integer in cents.');
     }
 
-    if (lease.deposit_held_cents < input.refund_amount_cents) {
+    if (input.refund_type === 'deposit_disposition' && lease.deposit_held_cents < input.refund_amount_cents) {
       throw new Error(
         `Refund amount (${input.refund_amount_cents} cents) exceeds currently held deposit balance (${lease.deposit_held_cents} cents).`
       );
@@ -1337,8 +1346,41 @@ export class LeasesRepository {
 
       if (isOverpayment) {
         // Overpayment return: Debit Accounts Receivable (1100), Credit Operating Bank (1010)
+        const arAcc = conn.prepare(`
+          SELECT id FROM chart_of_accounts
+          WHERE operator_id = ? AND category_mapping = 'accounts_receivable' AND deleted_at IS NULL
+          LIMIT 1
+        `).get(operatorId) as { id: string } | undefined;
+
+        if (!arAcc) {
+          throw new Error('Accounts Receivable account (1100) not found in chart of accounts.');
+        }
+
+        const arCredit = conn.prepare(`
+          SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) AS credit_balance_cents
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND jl.lease_id = ?
+            AND coa.category_mapping = 'accounts_receivable'
+        `).get(operatorId, input.lease_id) as { credit_balance_cents: number } | undefined;
+        const arCreditBalanceCents = arCredit ? Number(arCredit.credit_balance_cents) : 0;
+        if (arCreditBalanceCents < input.refund_amount_cents) {
+          throw new Error(
+            `Overpayment return amount (${input.refund_amount_cents} cents) exceeds available lease AR credit (${Math.max(0, arCreditBalanceCents)} cents).`
+          );
+        }
+
         let fundingAccountId = input.funding_account_id;
-        if (!fundingAccountId) {
+        if (fundingAccountId) {
+          const operatingBank = conn.prepare(`
+            SELECT id FROM chart_of_accounts
+            WHERE id = ? AND operator_id = ? AND category_mapping = 'operating_bank' AND deleted_at IS NULL
+          `).get(fundingAccountId, operatorId) as { id: string } | undefined;
+          if (!operatingBank) {
+            throw new Error(`Funding account '${fundingAccountId}' must be an operator-owned operating bank account.`);
+          }
+        } else {
           const operatingBank = conn.prepare(`
             SELECT id FROM chart_of_accounts
             WHERE operator_id = ? AND category_mapping = 'operating_bank' AND deleted_at IS NULL
@@ -1351,22 +1393,20 @@ export class LeasesRepository {
           fundingAccountId = operatingBank.id;
         }
 
-        const arAcc = conn.prepare(`
-          SELECT id FROM chart_of_accounts
-          WHERE operator_id = ? AND category_mapping = 'accounts_receivable' AND deleted_at IS NULL
-          LIMIT 1
-        `).get(operatorId) as { id: string } | undefined;
-
-        if (!arAcc) {
-          throw new Error('Accounts Receivable account (1100) not found in chart of accounts.');
-        }
-
         debitAccountId = arAcc.id;
         creditAccountId = fundingAccountId;
       } else {
         // Security deposit refund: Debit Security Deposit Liability (2100), Credit Trust Bank (1020)
         let fundingAccountId = input.funding_account_id;
-        if (!fundingAccountId) {
+        if (fundingAccountId) {
+          const trustBank = conn.prepare(`
+            SELECT id FROM chart_of_accounts
+            WHERE id = ? AND operator_id = ? AND category_mapping = 'trust_bank' AND deleted_at IS NULL
+          `).get(fundingAccountId, operatorId) as { id: string } | undefined;
+          if (!trustBank) {
+            throw new Error(`Funding account '${fundingAccountId}' must be an operator-owned trust bank account.`);
+          }
+        } else {
           const trustBank = conn.prepare(`
             SELECT id FROM chart_of_accounts
             WHERE operator_id = ? AND category_mapping = 'trust_bank' AND deleted_at IS NULL
@@ -1525,4 +1565,3 @@ export class LeasesRepository {
     `).all(operatorId, leaseId) as unknown as SecurityDepositRefund[];
   }
 }
-

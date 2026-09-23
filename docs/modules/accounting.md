@@ -149,7 +149,7 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 
 ### 4.9. Client Accounting & Management Fee Automation
 
-* `GET /api/v1/accounting/portfolios/:portfolio_id/cash_summary`: Retrieve real-time net operating cash summary and client cash balance (`?as_of=<ms>&basis=cash|accrual`, default `cash`)
+* `GET /api/v1/accounting/portfolios/:portfolio_id/cash_summary`: Retrieve gross operating receipts and disbursements, net operating cash, and client cash balance (`?as_of=<ms>&basis=cash|accrual`, default `cash`)
 * `POST /api/v1/accounting/capital_contributions`: Record investor/owner capital infusion (debit `1010 Operating Checking`, credit `3010 Owner Capital Contributions`)
 * `GET /api/v1/accounting/capital_contributions`: List client owner capital contributions
 * `GET /api/v1/accounting/capital_contributions/:id`: Get single capital contribution details

@@ -349,6 +349,7 @@ describe('Accounting Module - Client Accounting & Management Fees', () => {
       const rentAcc = ChartOfAccountsRepository.getAccountByMapping('rent')!;
       const arAcc = ChartOfAccountsRepository.getAccountByMapping('accounts_receivable')!;
       const opBankAcc = ChartOfAccountsRepository.getAccountByMapping('operating_bank')!;
+      const repairsAcc = ChartOfAccountsRepository.getAccountByMapping('repairs')!;
 
       // 1. Post rent charge: Dr AR, Cr Rent (Accrual income, but $0 cash in bank)
       JournalService.postEntry({
@@ -386,6 +387,23 @@ describe('Accounting Module - Client Accounting & Management Fees', () => {
       const cashSummaryAfterPayment = ClientAccountingRepository.getPortfolioCashSummary(portfolioId, now, 'cash');
       assert.equal(cashSummaryAfterPayment.total_operating_receipts_cents, 300000);
       assert.equal(cashSummaryAfterPayment.available_for_distribution_cents, 300000);
+
+      // 3. Post a cash expense: Dr Repairs, Cr Operating Bank
+      JournalService.postEntry({
+        date_ms: now,
+        memo: 'Cash Repair Expense',
+        source_type: 'expense',
+        lines: [
+          { account_id: repairsAcc.id, debit_cents: 100000, credit_cents: 0, property_id: propertyId },
+          { account_id: opBankAcc.id, debit_cents: 0, credit_cents: 100000, property_id: propertyId }
+        ]
+      });
+
+      // Gross cash flows are reported independently rather than netting bank activity.
+      const cashSummaryAfterExpense = ClientAccountingRepository.getPortfolioCashSummary(portfolioId, now, 'cash');
+      assert.equal(cashSummaryAfterExpense.total_operating_receipts_cents, 300000);
+      assert.equal(cashSummaryAfterExpense.total_operating_disbursements_cents, 100000);
+      assert.equal(cashSummaryAfterExpense.available_for_distribution_cents, 200000);
     });
   });
 });

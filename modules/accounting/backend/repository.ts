@@ -133,7 +133,13 @@ export class AccountingRepository {
     switch (data.transaction_type) {
       case 'charge': {
         const accountsReceivable = requireAccount('accounts_receivable');
-        const revAccount = (data.gl_account_id ? ChartOfAccountsRepository.getAccountById(data.gl_account_id, dbInstance) : null)
+        const explicitRevAccount = data.gl_account_id
+          ? ChartOfAccountsRepository.getAccountById(data.gl_account_id, dbInstance)
+          : null;
+        if (explicitRevAccount && explicitRevAccount.is_active !== 1) {
+          throw new Error(`GL account '${data.gl_account_id}' is inactive.`);
+        }
+        const revAccount = explicitRevAccount
           || mappedAccount
           || requireAccount('rent');
         lines.push(
@@ -1076,4 +1082,3 @@ export interface StatutoryDispositionTimelineResult {
 }
 
 export * from './client_accounting.js';
-

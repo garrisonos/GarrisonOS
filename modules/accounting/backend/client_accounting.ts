@@ -565,7 +565,7 @@ export class ClientAccountingRepository {
       if (basis === 'cash') {
         // Cash basis: receipts from operating bank debits (excluding capital contributions)
         const recRow = db.prepare(`
-          SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as total_receipts
+          SELECT COALESCE(SUM(jl.debit_cents), 0) as total_receipts
           FROM journal_lines jl
           JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
           JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
@@ -578,7 +578,7 @@ export class ClientAccountingRepository {
 
         // Cash basis: disbursements from operating bank credits (excluding owner draws)
         const disbRow = db.prepare(`
-          SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) as total_disbursements
+          SELECT COALESCE(SUM(jl.credit_cents), 0) as total_disbursements
           FROM journal_lines jl
           JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
           JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL

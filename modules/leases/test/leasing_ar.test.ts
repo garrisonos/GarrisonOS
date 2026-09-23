@@ -66,6 +66,22 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
   it('configures itemized recurring charges and generates monthly billing with base rent', () => {
     runInOperatorContext('leasing-ar-test', () => {
       const fixture = setupLeaseFixture('leasing-ar-test');
+      const db = getDatabase();
+      const inactivePetFeeAccount = ChartOfAccountsRepository.getAccountByMapping('pet_fee')!;
+      db.prepare(`
+        UPDATE chart_of_accounts SET is_active = 0
+        WHERE id = ? AND operator_id = ?
+      `).run(inactivePetFeeAccount.id, 'leasing-ar-test');
+
+      assert.throws(() => {
+        LeasesRepository.addRecurringCharge({
+          lease_id: fixture.leaseId,
+          charge_category: 'pet_rent',
+          amount_cents: 5000,
+          gl_account_id: inactivePetFeeAccount.id,
+          description: 'Inactive GL account should be rejected'
+        });
+      }, /does not exist, is inactive, or does not belong/);
 
       // Add pet rent and parking fee recurring charges
       const petCharge = LeasesRepository.addRecurringCharge({
@@ -76,6 +92,7 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
       });
       assert.ok(petCharge.id);
       assert.equal(petCharge.amount_cents, 5000);
+      assert.notEqual(petCharge.gl_account_id, inactivePetFeeAccount.id);
 
       const parkingCharge = LeasesRepository.addRecurringCharge({
         lease_id: fixture.leaseId,
@@ -239,6 +256,18 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
         });
       }, /exceeds currently held deposit balance/);
 
+      const operatingBank = ChartOfAccountsRepository.getAccountByMapping('operating_bank')!;
+      assert.throws(() => {
+        LeasesRepository.issueDepositRefund({
+          lease_id: fixture.leaseId,
+          recipient_contact_id: fixture.contactId,
+          refund_type: 'deposit_disposition',
+          refund_amount_cents: 1000,
+          funding_account_id: operatingBank.id,
+          disbursement_method: 'ach'
+        });
+      }, /must be an operator-owned trust bank account/);
+
       // Refund $1,800.00 (e.g. after $200 repairs deduction)
       const refund = LeasesRepository.issueDepositRefund({
         lease_id: fixture.leaseId,
@@ -272,6 +301,52 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
       assert.equal(liabilityLine.debit_cents, 180000);
       assert.ok(trustBankLine);
       assert.equal(trustBankLine.credit_cents, 180000);
+
+      assert.throws(() => {
+        LeasesRepository.issueDepositRefund({
+          lease_id: fixture.leaseId,
+          recipient_contact_id: fixture.contactId,
+          refund_type: 'overpayment_return',
+          refund_amount_cents: 15000,
+          disbursement_method: 'ach'
+        });
+      }, /exceeds available lease AR credit/);
+
+      // Create a $150.00 AR credit by receiving a $1,150.00 payment against a $1,000.00 charge.
+      AccountingRepository.createTransaction({
+        transaction_type: 'charge',
+        category: 'rent',
+        amount_cents: 100000,
+        transaction_date: Date.UTC(2026, 11, 1),
+        description: 'December Rent',
+        lease_id: fixture.leaseId,
+        property_id: fixture.propertyId,
+        unit_id: fixture.unitId,
+        payer_contact_id: fixture.contactId
+      });
+      AccountingRepository.createTransaction({
+        transaction_type: 'payment',
+        category: 'rent',
+        amount_cents: 115000,
+        transaction_date: Date.UTC(2026, 11, 2),
+        description: 'December Rent Overpayment',
+        lease_id: fixture.leaseId,
+        property_id: fixture.propertyId,
+        unit_id: fixture.unitId,
+        payer_contact_id: fixture.contactId
+      });
+
+      const trustBank = ChartOfAccountsRepository.getAccountByMapping('trust_bank')!;
+      assert.throws(() => {
+        LeasesRepository.issueDepositRefund({
+          lease_id: fixture.leaseId,
+          recipient_contact_id: fixture.contactId,
+          refund_type: 'overpayment_return',
+          refund_amount_cents: 15000,
+          funding_account_id: trustBank.id,
+          disbursement_method: 'ach'
+        });
+      }, /must be an operator-owned operating bank account/);
 
       // Overpayment Return: leaves deposit_held_cents unchanged and Dr 1100 AR / Cr 1010 Operating Bank
       const overpaymentRefund = LeasesRepository.issueDepositRefund({
@@ -333,6 +408,27 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
           { account_id: arAcc.id, debit_cents: 0, credit_cents: 200000, lease_id: fixture.leaseId, property_id: fixture.propertyId }
         ]
       });
+
+      // An unmatched legacy charge must not be used when journal lines exist with a zero AR balance.
+      const db = getDatabase();
+      const now = Date.now();
+      db.prepare(`
+        INSERT INTO transactions (
+          id, operator_id, transaction_type, category, amount_cents,
+          transaction_date, description, property_id, unit_id, lease_id,
+          created_at, updated_at
+        ) VALUES (?, 'leasing-ar-test', 'charge', 'rent', ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        generateUUIDv7(),
+        200000,
+        rentDate,
+        'Unmatched Legacy January Rent',
+        fixture.propertyId,
+        fixture.unitId,
+        fixture.leaseId,
+        now,
+        now
+      );
 
       // Create late fee policy: 5% delinquency, 5 days grace, due day 1
       LeasesRepository.createLateFeePolicy({
