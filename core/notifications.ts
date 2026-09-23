@@ -8,69 +8,135 @@ import { getDatabase } from '../database/client.js';
 import { RequestContext } from './context.js';
 import { generateUUIDv7 } from './crypto.js';
 
+/**
+ * SMTP connection and authentication configuration for an operator.
+ */
 export interface SmtpConfig {
+  /** Target SMTP hostname or IP address. */
   host: string;
+  /** Target SMTP port (typically 25, 465, or 587). */
   port: number;
+  /** Whether to initiate TLS immediately on connection (implicit TLS on port 465). */
   secure: boolean;
+  /** Optional SMTP authentication username. */
   user?: string;
+  /** Optional SMTP authentication password. */
   pass?: string;
+  /** Verified sender email address. */
   fromEmail: string;
+  /** Optional sender display name. */
   fromName?: string;
 }
 
+/**
+ * Webhook delivery configuration for event notifications.
+ */
 export interface WebhookConfig {
+  /** Target HTTP/HTTPS endpoint URL. */
   url: string;
+  /** Optional HMAC-SHA256 signature secret. */
   secret?: string;
 }
 
+/**
+ * Persistent operator notification and outbound transport settings.
+ */
 export interface OperatorNotificationSettings {
+  /** Operator isolation UUID. */
   operator_id: string;
+  /** Outbound SMTP hostname. */
   smtp_host?: string | null;
+  /** Outbound SMTP port. */
   smtp_port: number;
+  /** Whether SMTP connection uses implicit TLS (1) or STARTTLS/clear (0). */
   smtp_secure: number;
+  /** Optional SMTP username. */
   smtp_user?: string | null;
+  /** Optional SMTP password. */
   smtp_pass?: string | null;
+  /** Outbound From email address. */
   from_email?: string | null;
+  /** Outbound From display name. */
   from_name: string;
+  /** Target webhook notification URL. */
   webhook_url?: string | null;
+  /** Shared secret for HMAC-SHA256 webhook signatures. */
   webhook_secret?: string | null;
+  /** Creation epoch millisecond timestamp. */
   created_at: number;
+  /** Last update epoch millisecond timestamp. */
   updated_at: number;
 }
 
+/**
+ * Audit log entry recording an outbound notification attempt.
+ */
 export interface NotificationLog {
+  /** Unique notification log UUID. */
   id: string;
+  /** Operator isolation UUID. */
   operator_id: string;
+  /** Dispatch channel used. */
   channel: 'smtp' | 'webhook' | 'in_app';
+  /** Target recipient (email address, webhook URL, or user ID). */
   recipient: string;
+  /** Notification subject line or event name. */
   subject: string;
+  /** Notification body text or serialized JSON. */
   body: string;
+  /** Delivery status. */
   status: 'pending' | 'sent' | 'failed' | 'logged';
+  /** Optional error message if delivery failed. */
   error_message?: string | null;
+  /** Optional structured metadata JSON string. */
   metadata_json?: string | null;
+  /** Creation epoch millisecond timestamp. */
   created_at: number;
+  /** Delivery completion epoch millisecond timestamp. */
   sent_at?: number | null;
 }
 
+/**
+ * Options for sending an outbound email notification.
+ */
 export interface SendEmailOptions {
+  /** Optional operator ID override (defaults to active RequestContext). */
   operatorId?: string;
+  /** Target recipient email address. */
   to: string;
+  /** Message subject line. */
   subject: string;
+  /** Plain text email body. */
   body: string;
+  /** Optional HTML email body. */
   htmlBody?: string;
 }
 
+/**
+ * Options for dispatching an outbound webhook notification.
+ */
 export interface SendWebhookOptions {
+  /** Optional operator ID override (defaults to active RequestContext). */
   operatorId?: string;
+  /** Event name identifier (e.g. 'lease.created'). */
   event: string;
+  /** Event payload dictionary. */
   payload: Record<string, unknown>;
 }
 
+/**
+ * Options for logging an in-app operator notification.
+ */
 export interface SendInAppOptions {
+  /** Optional operator ID override (defaults to active RequestContext). */
   operatorId?: string;
+  /** Recipient user UUID. */
   recipientUserId: string;
+  /** In-app notification title. */
   title: string;
+  /** In-app notification body text. */
   body: string;
+  /** Optional metadata dictionary. */
   metadata?: Record<string, unknown>;
 }
 
@@ -154,15 +220,7 @@ export class NativeSmtpClient {
 
               case 2: // STARTTLS response (220)
                 if (code !== 220) {
-                  // Fallback without TLS if rejected
-                  if (config.user && config.pass) {
-                    step = 4;
-                    sendLine('AUTH LOGIN', activeSock);
-                  } else {
-                    step = 7;
-                    sendLine(`MAIL FROM:<${config.fromEmail}>`, activeSock);
-                  }
-                  break;
+                  throw new Error(`STARTTLS rejected; refusing cleartext authentication: ${line}`);
                 }
                 // Upgrade to TLS
                 socket.removeAllListeners('data');
@@ -281,15 +339,19 @@ export class NativeSmtpClient {
  * Universal Zero-Dependency Notification Dispatcher managing email, webhooks, and audit logs.
  */
 export class NotificationDispatcher {
-  private db: DatabaseSync;
+  private _dbInstance?: DatabaseSync;
+
+  private get db(): DatabaseSync {
+    return this._dbInstance || getDatabase();
+  }
 
   /**
    * Initialize notification dispatcher with database handle.
    *
-   * @param db - Optional SQLite database connection.
+   * @param db - Optional SQLite database connection; dynamically resolves active connection if omitted.
    */
   constructor(db?: DatabaseSync) {
-    this.db = db || getDatabase();
+    this._dbInstance = db;
   }
 
   /**
@@ -334,6 +396,20 @@ export class NotificationDispatcher {
     settings: Partial<OperatorNotificationSettings>
   ): void {
     const now = Date.now();
+    const existing = this.getSettings(operatorId);
+
+    const merged = {
+      smtp_host: settings.smtp_host !== undefined ? (settings.smtp_host || null) : (existing?.smtp_host || null),
+      smtp_port: settings.smtp_port !== undefined ? settings.smtp_port : (existing?.smtp_port || 587),
+      smtp_secure: settings.smtp_secure !== undefined ? (settings.smtp_secure ? 1 : 0) : (existing?.smtp_secure || 0),
+      smtp_user: settings.smtp_user !== undefined ? (settings.smtp_user || null) : (existing?.smtp_user || null),
+      smtp_pass: settings.smtp_pass !== undefined ? (settings.smtp_pass || null) : (existing?.smtp_pass || null),
+      from_email: settings.from_email !== undefined ? (settings.from_email || null) : (existing?.from_email || null),
+      from_name: settings.from_name !== undefined ? (settings.from_name || 'GarrisonOS Notifications') : (existing?.from_name || 'GarrisonOS Notifications'),
+      webhook_url: settings.webhook_url !== undefined ? (settings.webhook_url || null) : (existing?.webhook_url || null),
+      webhook_secret: settings.webhook_secret !== undefined ? (settings.webhook_secret || null) : (existing?.webhook_secret || null)
+    };
+
     this.db.prepare(`
       INSERT INTO operator_notification_settings (
         operator_id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass,
@@ -352,15 +428,15 @@ export class NotificationDispatcher {
         updated_at = excluded.updated_at
     `).run(
       operatorId,
-      settings.smtp_host || null,
-      settings.smtp_port || 587,
-      settings.smtp_secure ? 1 : 0,
-      settings.smtp_user || null,
-      settings.smtp_pass || null,
-      settings.from_email || null,
-      settings.from_name || 'GarrisonOS Notifications',
-      settings.webhook_url || null,
-      settings.webhook_secret || null,
+      merged.smtp_host,
+      merged.smtp_port,
+      merged.smtp_secure,
+      merged.smtp_user,
+      merged.smtp_pass,
+      merged.from_email,
+      merged.from_name,
+      merged.webhook_url,
+      merged.webhook_secret,
       now,
       now
     );
@@ -568,6 +644,7 @@ export class NotificationDispatcher {
           timeout: 5000
         },
         (res) => {
+          res.resume();
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {

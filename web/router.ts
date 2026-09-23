@@ -49,15 +49,34 @@ import * as AccountingTrialBalance from '../modules/accounting/frontend/pages/tr
 
 import * as BackupIndex from '../modules/backup/frontend/pages/index.js';
 
+/**
+ * Validate and sanitize return URL to prevent open redirect vulnerabilities.
+ * Only relative path URLs starting with '/' (and not protocol-relative '//' or Windows path separators) are permitted.
+ *
+ * @param url - Candidate return URL.
+ * @param defaultUrl - Fallback URL if candidate is invalid or unsafe.
+ * @returns Safe relative URL path.
+ */
+export function safeReturnUrl(url: unknown, defaultUrl: string = '/dashboard'): string {
+  if (typeof url !== 'string') return defaultUrl;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\') && !trimmed.includes('\\')) {
+    return trimmed;
+  }
+  return defaultUrl;
+}
+
 const handleConversationCreate: PageHandler = async (ctx) => {
-  const returnUrl = ctx.body['return_url'] || '/dashboard';
+  const returnUrl = safeReturnUrl(ctx.body['return_url']);
   try {
     const isPrivate = ctx.body['is_private'] === '1' || ctx.body['is_private'] === true;
+    const bodyText = typeof ctx.body['body'] === 'string' ? ctx.body['body'] : '';
     await ctx.api.post('/api/v1/conversations', {
       entity_type: ctx.body['entity_type'],
       entity_id: ctx.body['entity_id'],
       subject: ctx.body['subject'],
-      body: ctx.body['body'],
+      body: bodyText,
+      initial_message: bodyText,
       is_private: isPrivate
     });
     ctx.session.addFlash('success', 'Conversation thread created successfully');
@@ -69,7 +88,7 @@ const handleConversationCreate: PageHandler = async (ctx) => {
 
 const handleConversationReply: PageHandler = async (ctx) => {
   const convId = ctx.body['conversation_id'];
-  const returnUrl = ctx.body['return_url'] || '/dashboard';
+  const returnUrl = safeReturnUrl(ctx.body['return_url']);
   try {
     await ctx.api.post(`/api/v1/conversations/${encodeURIComponent(convId)}/messages`, {
       body: ctx.body['body']

@@ -5,8 +5,9 @@ import { runMigrations } from '../database/migrator.js';
 import { RequestContext } from '../core/context.js';
 import { generateUUIDv7 } from '../core/crypto.js';
 import { NotificationDispatcher } from '../core/notifications.js';
-import { registerNotificationListeners } from '../core/notification-listener.js';
+import * as http from 'node:http';
 import { EventBus } from '../core/events.js';
+import { registerNotificationListeners } from '../core/notification-listener.js';
 
 describe('Zero-Dependency Notification Dispatcher Suite', () => {
   let db: any;
@@ -14,8 +15,10 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
   const operatorB = generateUUIDv7();
   let dispatcher: NotificationDispatcher;
   let testEventBus: EventBus;
+  let webhookServer: http.Server | undefined;
+  let webhookUrl = '';
 
-  before(() => {
+  before(async () => {
     db = getDatabase({ inMemory: true });
     runMigrations(db);
 
@@ -28,9 +31,25 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
     dispatcher = new NotificationDispatcher(db);
     testEventBus = new EventBus();
     registerNotificationListeners(testEventBus);
+
+    webhookServer = http.createServer((_req, res) => {
+      res.writeHead(200);
+      res.end('OK');
+    });
+
+    await new Promise<void>((resolve) => {
+      webhookServer!.listen(0, '127.0.0.1', () => {
+        const addr = webhookServer!.address() as any;
+        webhookUrl = `http://127.0.0.1:${addr.port}/webhook`;
+        resolve();
+      });
+    });
   });
 
   after(() => {
+    if (webhookServer) {
+      webhookServer.close();
+    }
     closeDatabase();
   });
 
@@ -64,7 +83,7 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
         smtp_pass: 'SG.fakekey',
         from_email: 'noreply@garrisonos.local',
         from_name: 'Garrison Support',
-        webhook_url: 'https://webhook.site/test-uuid',
+        webhook_url: webhookUrl,
         webhook_secret: 'whsec_sample123'
       });
 
@@ -74,6 +93,7 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
       assert.equal(settings.smtp_port, 587);
       assert.equal(settings.from_email, 'noreply@garrisonos.local');
       assert.equal(settings.webhook_secret, 'whsec_sample123');
+      assert.equal(settings.webhook_url, webhookUrl);
     });
   });
 

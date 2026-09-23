@@ -39,15 +39,14 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
         await ctx.api.post('/api/v1/maintenance/preventative_schedules', {
           title: ctx.body['title'] || '',
+          description: ctx.body['description'] || checklist.join('\n') || ctx.body['title'] || '',
           property_id: ctx.body['property_id'] || '',
           unit_id: ctx.body['unit_id'] || null,
           category: ctx.body['category'] || 'general',
-          cadence_unit: ctx.body['cadence_unit'] || 'months',
-          cadence_interval: parseInt(ctx.body['cadence_interval'] || '3', 10),
+          frequency: ctx.body['frequency'] || 'quarterly',
           next_due_date: nextDue,
           priority: ctx.body['priority'] || 'medium',
-          checklist,
-          vendor_contact_id: ctx.body['vendor_contact_id'] || null
+          assigned_vendor_contact_id: ctx.body['vendor_contact_id'] || null
         });
         ctx.session.addFlash('success', 'Preventative maintenance schedule created');
         return { redirect: '/maintenance/preventative', content: '' };
@@ -57,8 +56,8 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         ctx.session.addFlash('success', 'Preventative schedule triggered. Work order generated.');
         return { redirect: '/maintenance/preventative', content: '' };
       } else if (action === 'run_due_check') {
-        const res = await ctx.api.post('/api/v1/maintenance/preventative_schedules/run_due_check', {});
-        const count = res?.data?.generatedCount ?? 0;
+        const res = await ctx.api.post('/api/v1/maintenance/preventative_schedules/run', {});
+        const count = res?.data?.count ?? 0;
         ctx.session.addFlash('success', `Evaluated preventative maintenance schedules. Generated ${count} work order(s).`);
         return { redirect: '/maintenance/preventative', content: '' };
       }
@@ -78,7 +77,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       ctx.api.get('/api/v1/contacts?type=vendor').catch(() => ({ data: { contacts: [] } }))
     ]);
 
-    schedules = sRes?.data?.schedules || [];
+    schedules = Array.isArray(sRes?.data) ? sRes.data : sRes?.data?.schedules || [];
     properties = pRes?.data?.properties || [];
     vendors = vRes?.data?.contacts || [];
   } catch (err: any) {
@@ -95,7 +94,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     : schedules.map((s) => {
         const isOverdue = s.next_due_date && s.next_due_date <= now;
         const dueClass = isOverdue ? 'text-danger font-bold' : '';
-        const cadenceDesc = `Every ${s.cadence_interval} ${s.cadence_unit}`;
+        const cadenceDesc = String(s.frequency || '').replace(/_/g, ' ');
 
         return html`
           <tr>
@@ -106,7 +105,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
             <td>${s.property_name || s.property_id}</td>
             <td><span class="badge badge-info">${cadenceDesc}</span></td>
             <td class="${dueClass}">${formatDate(s.next_due_date)} ${isOverdue ? html`<span class="badge badge-danger">DUE</span>` : raw('')}</td>
-            <td>${formatDate(s.last_triggered_at)}</td>
+            <td>${formatDate(s.last_generated_at)}</td>
             <td>
               ${s.is_active ? html`<span class="badge badge-success">Active</span>` : html`<span class="badge">Paused</span>`}
             </td>
@@ -226,25 +225,26 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
               <option value="plumbing">Plumbing & Water Heaters</option>
               <option value="electrical">Electrical & Lighting</option>
               <option value="roofing">Roofing & Gutters</option>
-              <option value="safety">Life Safety & Smoke Alarms</option>
+              <option value="fire_safety">Life Safety & Fire Alarms</option>
               <option value="landscaping">Landscaping & Exterior</option>
-              <option value="appliance">Appliances</option>
+              <option value="winterization">Winterization & Freeze Defense</option>
               <option value="general">General Building Audit</option>
             </select>
           </div>
-          <div class="form-row">
-            <div class="col-6">
-              <label class="form-label">Cadence Interval *</label>
-              <input type="number" name="cadence_interval" class="form-input" min="1" value="3" required>
-            </div>
-            <div class="col-6">
-              <label class="form-label">Cadence Unit *</label>
-              <select name="cadence_unit" class="form-select" required>
-                <option value="months">Months</option>
-                <option value="days">Days</option>
-                <option value="years">Years</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label class="form-label">Recurrence Frequency *</label>
+            <select name="frequency" class="form-select" required>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly" selected>Quarterly</option>
+              <option value="semi_annually">Semi-Annually</option>
+              <option value="annually">Annually</option>
+              <option value="seasonal">Seasonal</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description / Scope of Work *</label>
+            <textarea name="description" class="form-input" rows="2" placeholder="Describe routine preventative maintenance tasks" required></textarea>
           </div>
           <div class="form-group">
             <label class="form-label">First Due Date *</label>

@@ -107,4 +107,5 @@ The preventative maintenance subsystem (`modules/maintenance/backend/migrations/
   * `GET /api/v1/maintenance/preventative_schedules/:id`: Fetch schedule details
   * `PUT /api/v1/maintenance/preventative_schedules/:id`: Update cadence, vendor assignment, or next due date
   * `DELETE /api/v1/maintenance/preventative_schedules/:id`: Soft delete schedule
-  * `POST /api/v1/maintenance/preventative_schedules/generate`: Manually trigger due work order generation pass
+  * `POST /api/v1/maintenance/preventative_schedules/run`: Manually trigger due work order generation pass across all due schedules
+  * `POST /api/v1/maintenance/preventative_schedules/:id/trigger`: Manually trigger immediate work order creation from a specific schedule

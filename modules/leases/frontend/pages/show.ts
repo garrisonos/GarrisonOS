@@ -122,11 +122,12 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
       } else if (action === 'refund_deposit') {
         const amountCents = Math.round(parseFloat(ctx.body['amount'] || '0') * 100);
+        const disbursementMethod = ctx.body['disbursement_method'] === 'ach' ? 'ach' : 'check';
         await ctx.api.post(`/api/v1/leases/${encodeURIComponent(id)}/refunds`, {
           recipient_contact_id: ctx.body['recipient_contact_id'],
-          refund_type: 'deposit_return',
+          refund_type: 'deposit_disposition',
           refund_amount_cents: amountCents,
-          disbursement_method: ctx.body['disbursement_method'] || 'check',
+          disbursement_method: disbursementMethod,
           check_number: ctx.body['check_number'] || undefined
         });
         ctx.session.addFlash('success', 'Deposit refund recorded successfully');
@@ -161,13 +162,23 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/credits`).catch(() => ({ data: { credits: [] } })),
       ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/refunds`).catch(() => ({ data: { refunds: [] } })),
       ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/calculate_late_fee`).catch(() => ({ data: {} })),
-      ctx.api.get(`/api/v1/conversations?entity_type=lease&entity_id=${encodeURIComponent(id)}`).catch(() => ({ data: { conversations: [] } }))
+      ctx.api.get(`/api/v1/conversations?entity_type=lease&entity_id=${encodeURIComponent(id)}`).catch(() => ({ data: [] }))
     ]);
 
     recurringCharges = rcRes?.data?.charges || [];
     credits = crRes?.data?.credits || [];
     refunds = rfRes?.data?.refunds || [];
-    conversations = convRes?.data?.conversations || [];
+    const rawConvList = Array.isArray(convRes?.data) ? convRes.data : (convRes?.data?.conversations || []);
+    conversations = await Promise.all(
+      rawConvList.map(async (c: any) => {
+        try {
+          const threadRes = await ctx.api.get(`/api/v1/conversations/${encodeURIComponent(c.id)}`);
+          return threadRes?.data || c;
+        } catch {
+          return c;
+        }
+      })
+    );
 
     if (lfRes?.data?.delinquency) {
       const d = lfRes.data.delinquency;

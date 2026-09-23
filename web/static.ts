@@ -6,22 +6,23 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 function findPublicDir(): string {
-  // 1. Check relative to current working directory
-  const cwdCandidate = path.resolve(process.cwd(), 'web', 'public');
-  if (fs.existsSync(cwdCandidate)) return cwdCandidate;
-
-  // 2. When compiled into dist/web, traverse up to repository root
+  // 1. When compiled into dist/web, traverse up to repository root
   const distCandidate = path.resolve(__dirname, '..', '..', 'web', 'public');
   if (fs.existsSync(distCandidate)) return distCandidate;
 
-  // 3. Check directly under dirname (if bundled or sibling)
+  // 2. Check directly under dirname (if bundled or sibling)
   const siblingCandidate = path.resolve(__dirname, 'public');
   if (fs.existsSync(siblingCandidate)) return siblingCandidate;
 
+  // 3. Check parent web/public (e.g. source web/lib/ or web/)
   const parentCandidate = path.resolve(__dirname, '..', 'web', 'public');
   if (fs.existsSync(parentCandidate)) return parentCandidate;
 
-  return cwdCandidate;
+  // 4. Fallback to current working directory
+  const cwdCandidate = path.resolve(process.cwd(), 'web', 'public');
+  if (fs.existsSync(cwdCandidate)) return cwdCandidate;
+
+  return distCandidate;
 }
 
 const publicDir = findPublicDir();

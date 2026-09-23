@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { hasPermission } from '../../../../core/rbac.js';
 
 function formatDate(epochMs: number): string {
   if (!epochMs) return '—';
@@ -18,6 +19,25 @@ function formatCurrency(cents: number): string {
 }
 
 export async function handle(ctx: PageContext): Promise<PageResult> {
+  if (!ctx.session.user || !hasPermission(ctx.session.user.role, 'accounting:view')) {
+    return {
+      title: '403 Forbidden',
+      status: 403,
+      content: html`
+        <div class="card" style="text-align: center; padding: 4rem 2rem; max-width: 600px; margin: 2rem auto;">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">🛡️</div>
+          <h2 style="margin-bottom: 0.5rem; color: #dc2626;">403 Forbidden</h2>
+          <p class="text-muted" style="margin-bottom: 1.5rem; line-height: 1.6;">
+            Access to Client Accounting requires the <code>accounting:view</code> permission.
+          </p>
+          <div>
+            <a href="/dashboard" class="btn btn-primary">Return to Dashboard</a>
+          </div>
+        </div>
+      `
+    };
+  }
+
   const basis = ctx.query['basis'] === 'accrual' ? 'accrual' : 'cash';
   const portfolioId = ctx.query['portfolio_id'] || '';
   const csrfToken = ctx.session.getCsrfToken();
@@ -53,7 +73,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           portfolio_id: ctx.body['portfolio_id'],
           property_id: ctx.body['property_id'] || null,
           amount_cents: amountCents,
-          disbursement_method: ctx.body['disbursement_method'] || 'ach_transfer',
+          disbursement_method: ctx.body['disbursement_method'] || 'ach',
           check_number: ctx.body['check_number'] || null,
           reference_number: ctx.body['reference_number'] || null,
           memo: ctx.body['memo'] || null
@@ -66,7 +86,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         await ctx.api.post('/api/v1/accounting/management_fee_agreements', {
           portfolio_id: ctx.body['portfolio_id'] || null,
           property_id: ctx.body['property_id'] || null,
-          calculation_method: ctx.body['calculation_method'] || 'percentage_of_collected_rent',
+          calculation_method: ctx.body['calculation_method'] || 'percentage_collected_revenue',
           percentage_bps: bps,
           flat_fee_cents: flatFeeCents,
           pass_through_expenses: ctx.body['pass_through_expenses'] === '1' ? 1 : 0
@@ -85,14 +105,16 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   let cashSummary: any = null;
   let contacts: any[] = [];
   let properties: any[] = [];
+  let portfolios: any[] = [];
 
   try {
-    const [cRes, dRes, aRes, contRes, propRes] = await Promise.all([
-      ctx.api.get('/api/v1/accounting/client_contributions').catch(() => ({ data: { contributions: [] } })),
-      ctx.api.get('/api/v1/accounting/client_distributions').catch(() => ({ data: { distributions: [] } })),
-      ctx.api.get('/api/v1/accounting/management_fee_agreements').catch(() => ({ data: { agreements: [] } })),
+    const [cRes, dRes, aRes, contRes, propRes, portRes] = await Promise.all([
+      ctx.api.get(`/api/v1/accounting/client_contributions${portfolioId ? `?portfolio_id=${encodeURIComponent(portfolioId)}` : ''}`).catch(() => ({ data: { contributions: [] } })),
+      ctx.api.get(`/api/v1/accounting/client_distributions${portfolioId ? `?portfolio_id=${encodeURIComponent(portfolioId)}` : ''}`).catch(() => ({ data: { distributions: [] } })),
+      ctx.api.get(`/api/v1/accounting/management_fee_agreements${portfolioId ? `?portfolio_id=${encodeURIComponent(portfolioId)}` : ''}`).catch(() => ({ data: { agreements: [] } })),
       ctx.api.get('/api/v1/contacts').catch(() => ({ data: { contacts: [] } })),
-      ctx.api.get('/api/v1/properties').catch(() => ({ data: { properties: [] } }))
+      ctx.api.get('/api/v1/properties').catch(() => ({ data: { properties: [] } })),
+      ctx.api.get('/api/v1/portfolios').catch(() => ({ data: { portfolios: [] } }))
     ]);
 
     contributions = cRes?.data?.contributions || [];
@@ -100,9 +122,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     agreements = aRes?.data?.agreements || [];
     contacts = contRes?.data?.contacts || [];
     properties = propRes?.data?.properties || [];
+    portfolios = portRes?.data?.portfolios || (Array.isArray(portRes?.data) ? portRes.data : []);
 
     // If portfolio specified or first available, fetch portfolio cash summary
-    const targetPortfolio = portfolioId || (contributions[0]?.portfolio_id || distributions[0]?.portfolio_id || 'portfolio-demo');
+    const targetPortfolio = portfolioId || (portfolios[0]?.id || contributions[0]?.portfolio_id || distributions[0]?.portfolio_id || '');
     if (targetPortfolio) {
       const sRes = await ctx.api.get(`/api/v1/accounting/portfolios/${encodeURIComponent(targetPortfolio)}/cash_summary?basis=${basis}`).catch(() => ({ data: {} }));
       cashSummary = sRes?.data?.summary || null;
@@ -113,8 +136,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
   const totalContributionsCents = contributions.reduce((sum, c) => sum + (c.amount_cents || 0), 0);
   const totalDistributionsCents = distributions.reduce((sum, d) => sum + (d.amount_cents || 0), 0);
-  const operatingCashCents = cashSummary?.operating_cash_cents ?? (totalContributionsCents - totalDistributionsCents);
-  const reserveTargetCents = cashSummary?.reserve_requirement_cents ?? 500000;
+  const operatingCashCents = cashSummary ? cashSummary.net_operating_cash_cents : (totalContributionsCents - totalDistributionsCents);
+  const availableForDistributionCents = cashSummary ? cashSummary.available_for_distribution_cents : Math.max(0, totalContributionsCents - totalDistributionsCents);
+  const reserveTargetCents = cashSummary?.reserve_requirement_cents ?? 0;
 
   const errorAlert = error
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
@@ -164,9 +188,11 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     .filter((c) => c.contact_type === 'owner' || c.contact_type === 'investor' || c.contact_type === 'client')
     .map((c) => html`<option value="${c.id}">${c.last_name}, ${c.first_name} (${c.contact_type})</option>`);
 
-  const allContactOptions = contacts.map((c) => html`<option value="${c.id}">${c.last_name}, ${c.first_name}</option>`);
-
   const propertyOptions = properties.map((p) => html`<option value="${p.id}">${p.name}</option>`);
+
+  const portfolioOptions = portfolios.map((p) => html`
+    <option value="${p.id}" ${p.id === portfolioId ? 'selected' : ''}>${p.name}</option>
+  `);
 
   const content = html`
     <div class="page-header">
@@ -228,8 +254,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           <span class="kpi-icon">🏦</span>
         </div>
         <div class="kpi-value font-mono ${operatingCashCents >= 0 ? 'text-main' : 'text-danger'}">$${formatCurrency(operatingCashCents)}</div>
-        <div class="kpi-trend ${operatingCashCents >= reserveTargetCents ? 'positive' : 'negative'}">
-          ${operatingCashCents >= reserveTargetCents ? '✓ Reserve requirement met' : '⚠️ Below reserve minimum'}
+        <div class="kpi-trend ${reserveTargetCents > 0 ? (operatingCashCents >= reserveTargetCents ? 'positive' : 'negative') : 'neutral'}">
+          ${reserveTargetCents > 0
+            ? (operatingCashCents >= reserveTargetCents ? '✓ Reserve requirement met' : '⚠️ Below reserve minimum')
+            : 'Operating cash reserve'}
         </div>
       </div>
 
@@ -239,7 +267,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           <span class="kpi-icon">🛡️</span>
         </div>
         <div class="kpi-value font-mono">$${formatCurrency(reserveTargetCents)}</div>
-        <div class="kpi-trend neutral">Fiduciary threshold</div>
+        <div class="kpi-trend ${reserveTargetCents === 0 ? 'text-muted' : 'neutral'}">
+          ${reserveTargetCents === 0 ? '(No reserve policy set)' : 'Fiduciary threshold'}
+        </div>
       </div>
     </div>
 
@@ -334,12 +364,14 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
             <label class="form-label">Client / Owner *</label>
             <select name="client_contact_id" class="form-select" required>
               <option value="">-- Choose Owner --</option>
-              ${clientOptions.length > 0 ? clientOptions : allContactOptions}
+              ${clientOptions.length > 0 ? clientOptions : html`<option value="" disabled>No eligible owner/investor contacts found</option>`}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Portfolio Scope *</label>
-            <input type="text" name="portfolio_id" class="form-input" value="portfolio-main" required>
+            <select name="portfolio_id" class="form-select" required>
+              ${portfolioOptions.length > 0 ? portfolioOptions : html`<option value="" disabled>No portfolios available</option>`}
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Optional Property Earmark</label>
@@ -382,12 +414,14 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
             <label class="form-label">Recipient Owner *</label>
             <select name="client_contact_id" class="form-select" required>
               <option value="">-- Choose Owner --</option>
-              ${clientOptions.length > 0 ? clientOptions : allContactOptions}
+              ${clientOptions.length > 0 ? clientOptions : html`<option value="" disabled>No eligible owner/investor contacts found</option>`}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Portfolio Scope *</label>
-            <input type="text" name="portfolio_id" class="form-input" value="portfolio-main" required>
+            <select name="portfolio_id" class="form-select" required>
+              ${portfolioOptions.length > 0 ? portfolioOptions : html`<option value="" disabled>No portfolios available</option>`}
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">Distribution Amount ($) *</label>
@@ -396,9 +430,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           <div class="form-group">
             <label class="form-label">Disbursement Method *</label>
             <select name="disbursement_method" class="form-select" required>
-              <option value="ach_transfer">Direct ACH Transfer</option>
+              <option value="ach">Direct ACH Transfer</option>
               <option value="check">Check</option>
-              <option value="wire_transfer">Wire Transfer</option>
+              <option value="wire">Wire Transfer</option>
             </select>
           </div>
           <div class="form-group">
@@ -428,11 +462,18 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         </div>
         <div class="modal-body">
           <div class="form-group">
+            <label class="form-label">Portfolio Scope</label>
+            <select name="portfolio_id" class="form-select">
+              <option value="">-- Portfolio Wide --</option>
+              ${portfolioOptions}
+            </select>
+          </div>
+          <div class="form-group">
             <label class="form-label">Calculation Method *</label>
             <select name="calculation_method" class="form-select" required>
-              <option value="percentage_of_collected_rent">Percentage of Collected Rent</option>
+              <option value="percentage_collected_revenue">Percentage of Collected Revenue</option>
               <option value="flat_fee_per_unit">Flat Monthly Fee Per Unit</option>
-              <option value="hybrid_greater">Hybrid (Greater of Percentage or Flat)</option>
+              <option value="flat_monthly_fee">Flat Monthly Fee</option>
             </select>
           </div>
           <div class="form-group">

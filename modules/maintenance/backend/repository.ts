@@ -163,13 +163,15 @@ export class MaintenanceRepository {
    * @param unitId - Optional unit identifier to validate against property and operator.
    * @param requestedByContactId - Optional requesting contact identifier.
    * @param vendorContactId - Optional vendor contact identifier.
+   * @param buildingId - Optional building identifier.
    */
   private static validateOwnership(
     operatorId: string,
     propertyId?: string,
     unitId?: string | null,
     requestedByContactId?: string | null,
-    vendorContactId?: string | null
+    vendorContactId?: string | null,
+    buildingId?: string | null
   ): void {
     const db = getDatabase();
 
@@ -180,10 +182,25 @@ export class MaintenanceRepository {
       }
     }
 
+    if (unitId && !propertyId) {
+      throw new Error('unit_id requires property_id');
+    }
+
     if (unitId && propertyId) {
       const unit = db.prepare('SELECT id FROM units WHERE id = ? AND operator_id = ? AND property_id = ? AND deleted_at IS NULL').get(unitId, operatorId, propertyId);
       if (!unit) {
         throw new Error(`Unit ${unitId} not found or does not belong to property ${propertyId} for the active operator`);
+      }
+    }
+
+    if (buildingId && !propertyId) {
+      throw new Error('building_id requires property_id');
+    }
+
+    if (buildingId && propertyId) {
+      const bld = db.prepare('SELECT id FROM buildings WHERE id = ? AND operator_id = ? AND property_id = ? AND deleted_at IS NULL').get(buildingId, operatorId, propertyId);
+      if (!bld) {
+        throw new Error(`Building ${buildingId} not found or does not belong to property ${propertyId} for the active operator`);
       }
     }
 
@@ -529,32 +546,53 @@ export class MaintenanceRepository {
 
   /**
    * Helper to advance next due date based on schedule recurrence frequency.
+   * Clamps day-of-month rollover to prevent unintended month drift.
    *
    * @param currentDueDate - Current scheduled millisecond timestamp.
    * @param frequency - Recurrence cadence string.
+   * @param seasonalMonth - Optional target month (1-12) for seasonal recurring tasks.
    * @returns Next scheduled millisecond timestamp.
    */
   public static computeNextDueDate(
     currentDueDate: number,
-    frequency: PreventativeScheduleFrequency
+    frequency: PreventativeScheduleFrequency,
+    seasonalMonth?: number | null
   ): number {
     const d = new Date(currentDueDate);
     switch (frequency) {
       case 'weekly':
         return currentDueDate + 7 * 86400000;
       case 'monthly':
-        d.setMonth(d.getMonth() + 1);
-        return d.getTime();
       case 'quarterly':
-        d.setMonth(d.getMonth() + 3);
+      case 'semi_annually': {
+        const add = frequency === 'monthly' ? 1 : frequency === 'quarterly' ? 3 : 6;
+        const day = d.getDate();
+        d.setDate(1);
+        d.setMonth(d.getMonth() + add);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(day, lastDay));
         return d.getTime();
-      case 'semi_annually':
-        d.setMonth(d.getMonth() + 6);
-        return d.getTime();
-      case 'annually':
-      case 'seasonal':
+      }
+      case 'annually': {
+        const day = d.getDate();
+        d.setDate(1);
         d.setFullYear(d.getFullYear() + 1);
+        const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        d.setDate(Math.min(day, lastDay));
         return d.getTime();
+      }
+      case 'seasonal': {
+        const targetMonth = (seasonalMonth && seasonalMonth >= 1 && seasonalMonth <= 12) ? seasonalMonth - 1 : d.getMonth();
+        let targetYear = d.getFullYear();
+        if (targetMonth <= d.getMonth()) {
+          targetYear += 1;
+        }
+        const day = d.getDate();
+        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const nextDate = new Date(d.getTime());
+        nextDate.setFullYear(targetYear, targetMonth, Math.min(day, lastDay));
+        return nextDate.getTime();
+      }
       default:
         return currentDueDate + 30 * 86400000;
     }
@@ -574,15 +612,14 @@ export class MaintenanceRepository {
     const now = Date.now();
     const id = generateUUIDv7();
 
-    if (input.property_id) {
-      MaintenanceRepository.validateOwnership(
-        operatorId,
-        input.property_id,
-        input.unit_id,
-        null,
-        input.assigned_vendor_contact_id
-      );
-    }
+    MaintenanceRepository.validateOwnership(
+      operatorId,
+      input.property_id || undefined,
+      input.unit_id,
+      null,
+      input.assigned_vendor_contact_id,
+      input.building_id
+    );
 
     db.prepare(`
       INSERT INTO preventative_maintenance_schedules (
@@ -633,8 +670,8 @@ export class MaintenanceRepository {
              p.name as property_name,
              COALESCE(c.first_name || ' ' || c.last_name, c.company_name) as vendor_name
       FROM preventative_maintenance_schedules s
-      LEFT JOIN properties p ON p.id = s.property_id AND p.deleted_at IS NULL
-      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.deleted_at IS NULL
+      LEFT JOIN properties p ON p.id = s.property_id AND p.operator_id = s.operator_id AND p.deleted_at IS NULL
+      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.operator_id = s.operator_id AND c.deleted_at IS NULL
       WHERE s.operator_id = ? AND s.id = ? AND s.deleted_at IS NULL
     `).get(operatorId, id) as any;
 
@@ -709,8 +746,8 @@ export class MaintenanceRepository {
              p.name as property_name,
              COALESCE(c.first_name || ' ' || c.last_name, c.company_name) as vendor_name
       FROM preventative_maintenance_schedules s
-      LEFT JOIN properties p ON p.id = s.property_id AND p.deleted_at IS NULL
-      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.deleted_at IS NULL
+      LEFT JOIN properties p ON p.id = s.property_id AND p.operator_id = s.operator_id AND p.deleted_at IS NULL
+      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.operator_id = s.operator_id AND c.deleted_at IS NULL
       WHERE ${whereClause}
       ORDER BY s.next_due_date ASC
     `).all(...params) as any[];
@@ -759,8 +796,28 @@ export class MaintenanceRepository {
       throw new Error(`Preventative schedule #${id} not found`);
     }
 
+    const effPropId = input.property_id !== undefined ? (input.property_id || undefined) : (existing.property_id || undefined);
+    const effUnitId = input.unit_id !== undefined ? input.unit_id : existing.unit_id;
+    const effBldId = input.building_id !== undefined ? input.building_id : existing.building_id;
+    const effVendorId = input.assigned_vendor_contact_id !== undefined ? input.assigned_vendor_contact_id : existing.assigned_vendor_contact_id;
+
+    MaintenanceRepository.validateOwnership(operatorId, effPropId, effUnitId, null, effVendorId, effBldId);
+
     const updates: string[] = [];
     const params: any[] = [];
+
+    if (input.property_id !== undefined) {
+      updates.push('property_id = ?');
+      params.push(input.property_id || null);
+    }
+    if (input.building_id !== undefined) {
+      updates.push('building_id = ?');
+      params.push(input.building_id || null);
+    }
+    if (input.unit_id !== undefined) {
+      updates.push('unit_id = ?');
+      params.push(input.unit_id || null);
+    }
 
     if (input.title !== undefined) {
       updates.push('title = ?');
@@ -857,7 +914,7 @@ export class MaintenanceRepository {
     }
 
     const now = Date.now();
-    const nextDue = MaintenanceRepository.computeNextDueDate(schedule.next_due_date, schedule.frequency);
+    const nextDue = MaintenanceRepository.computeNextDueDate(schedule.next_due_date, schedule.frequency, schedule.seasonal_month);
 
     // Map schedule category to valid work_orders category
     let workOrderCategory: any = schedule.category;
@@ -866,16 +923,9 @@ export class MaintenanceRepository {
       workOrderCategory = 'other';
     }
 
-    // Resolve property_id if null (fallback to first active property for operator)
-    let propertyId = schedule.property_id;
+    const propertyId = schedule.property_id;
     if (!propertyId) {
-      const propRow = db.prepare(`
-        SELECT id FROM properties WHERE operator_id = ? AND deleted_at IS NULL LIMIT 1
-      `).get(operatorId) as any;
-      if (!propRow) {
-        throw new Error('Cannot generate work order: no active property exists in operator');
-      }
-      propertyId = propRow.id;
+      throw new Error('Cannot generate work order: schedule has no property_id');
     }
 
     let workOrder: WorkOrder;

@@ -19,6 +19,7 @@ export type PermissionString =
   | 'accounting:transact'
   | 'accounting:disburse'
   | 'accounting:reconcile'
+  | 'accounting:manage'
   | 'maintenance:view'
   | 'maintenance:create'
   | 'maintenance:dispatch'

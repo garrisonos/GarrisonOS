@@ -7,6 +7,7 @@
  */
 
 import * as http from 'node:http';
+import * as https from 'node:https';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -134,7 +135,67 @@ function parseRequestBody(req: http.IncomingMessage): Promise<Record<string, any
 }
 
 /**
+ * Transparently reverse-proxies API requests from the web presentation server to the backend REST API.
+ * Automatically injects authentication tokens and operator context from the active browser session.
+ *
+ * @param req - Incoming HTTP request from the browser.
+ * @param res - Server response stream to forward the backend response into.
+ * @param targetUrl - Resolved destination URL on the backend API server.
+ * @param session - Active user session containing cryptographic auth token and operator context.
+ */
+function proxyApiRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetUrl: URL,
+  session: Session
+): void {
+  const headers = { ...req.headers };
+  headers.host = targetUrl.host;
+
+  if (session.authToken && !headers['authorization']) {
+    headers['authorization'] = `Bearer ${session.authToken}`;
+  }
+  if (session.operatorId && !headers['x-operator-id']) {
+    headers['x-operator-id'] = session.operatorId;
+  }
+
+  const transport = targetUrl.protocol === 'https:' ? https : http;
+  const proxyReq = transport.request(
+    targetUrl,
+    {
+      method: req.method,
+      headers
+    },
+    (apiRes) => {
+      res.writeHead(apiRes.statusCode || 200, apiRes.headers);
+      apiRes.pipe(res);
+    }
+  );
+
+  proxyReq.on('error', (err) => {
+    if (!res.writableEnded) {
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'BAD_GATEWAY',
+            message: `Failed to proxy request to backend API: ${String(err)}`
+          }
+        })
+      );
+    }
+  });
+
+  req.pipe(proxyReq);
+}
+
+/**
  * Request handler for web presentation requests.
+ *
+ * @param req - Incoming Node.js HTTP request message.
+ * @param res - Node.js ServerResponse to write page or proxy output to.
+ * @param apiUrl - Loopback or remote URL of the backend REST API engine.
  */
 export async function handleWebRequest(
   req: http.IncomingMessage,
@@ -160,6 +221,14 @@ export async function handleWebRequest(
   // Parse session and cookies
   const isSecure = req.headers['x-forwarded-proto'] === 'https';
   const session: Session = getSession(req);
+
+  // Transparently reverse-proxy API requests (e.g. browser file downloads/exports)
+  if (url.pathname.startsWith('/api/')) {
+    const parsedApiUrl = new URL(apiUrl);
+    const targetUrl = new URL(url.pathname + url.search, parsedApiUrl);
+    proxyApiRequest(req, res, targetUrl, session);
+    return;
+  }
 
   // Parse body
   const body = await parseRequestBody(req);
@@ -206,7 +275,12 @@ export async function handleWebRequest(
 }
 
 /**
- * Create and start the web server.
+ * Create, initialize module hooks, and start the standalone web presentation HTTP server.
+ *
+ * @param port - TCP port to bind (default 8080 or WEB_PORT).
+ * @param host - Network address to bind (default localhost or WEB_HOST).
+ * @param apiUrl - Loopback destination URL of the backend REST API engine.
+ * @returns Resolving promise with active HTTP server instance once listening.
  */
 export async function createWebServer(
   port: number = parseInt(process.env['WEB_PORT'] || '8080', 10),

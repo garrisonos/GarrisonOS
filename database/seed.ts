@@ -5,7 +5,9 @@ import process from 'node:process';
 import { getDatabase, withTransaction } from './client.js';
 import { runMigrations } from './migrator.js';
 import { generateUUIDv7, hashPassword } from '../core/crypto.js';
+import { RequestContext } from '../core/context.js';
 import { DEFAULT_PROPERTY_MANAGEMENT_COA } from '../modules/accounting/backend/chart_of_accounts.js';
+import { JournalService } from '../modules/accounting/backend/journal.js';
 
 /**
  * Seeds a comprehensive, realistic demo dataset for GarrisonOS including
@@ -29,7 +31,8 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
   const OPERATOR_ID = 'operator-demo';
   const passwordHash = await hashPassword('Password123!');
 
-  withTransaction((tx) => {
+  RequestContext.run({ operatorId: OPERATOR_ID, correlationId: `seed-${now}` }, () => {
+    withTransaction((tx) => {
     // 1. Clean existing demo data in safe reverse dependency order
     try { tx.prepare('DELETE FROM operator_branding WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM conversation_messages WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
@@ -46,6 +49,7 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     try { tx.prepare('DELETE FROM recurring_lease_charges WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM late_fee_policies WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM quickbooks_export_logs WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('UPDATE journal_entries SET reversed_by_entry_id = NULL WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM journal_lines WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM journal_entries WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM chart_of_accounts WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
@@ -572,9 +576,12 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
 
     // 8. Recurring Lease Charges (Itemized amenities, pet rent, parking)
     if (createdLeaseIds.length >= 5) {
-      const parkingGl = glAccountMap.get('parking_fee') || glAccountMap.get('4060') || generateUUIDv7();
-      const petGl = glAccountMap.get('pet_fee') || glAccountMap.get('4030') || parkingGl;
-      const utilityGl = glAccountMap.get('utility_rebill') || glAccountMap.get('4040') || parkingGl;
+      const parkingGl = glAccountMap.get('parking_fee') || glAccountMap.get('4060');
+      if (!parkingGl) throw new Error('Parking & Storage Fee GL account (4060) not found in seed.');
+      const petGl = glAccountMap.get('pet_fee') || glAccountMap.get('4030');
+      if (!petGl) throw new Error('Pet Fee GL account (4030) not found in seed.');
+      const utilityGl = glAccountMap.get('utility_rebill') || glAccountMap.get('4040');
+      if (!utilityGl) throw new Error('Utility Rebill GL account (4040) not found in seed.');
 
       tx.prepare(`
         INSERT INTO recurring_lease_charges (
@@ -709,91 +716,148 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     );
 
     // 12. Preventative Maintenance Schedules
-    try {
-      tx.prepare(`
-        INSERT INTO preventative_maintenance_schedules (
-          id, operator_id, property_id, title, description, category,
-          priority, frequency, next_due_date, is_active, created_at, updated_at
-        ) VALUES
-          (?, ?, ?, 'Quarterly HVAC Filter & Coil Service', 'Replace 16x25x1 filter, clean condenser coils, and check refrigerant pressure', 'hvac', 'medium', 'quarterly', ?, 1, ?, ?),
-          (?, ?, ?, 'Semi-Annual Roof & Gutter Inspection', 'Inspect shingles and flashing, clear downspout debris, check attic crawlspace for moisture', 'roofing', 'high', 'semi_annually', ?, 1, ?, ?),
-          (?, ?, ?, 'Annual Fire Extinguisher & Alarm Recertification', 'Test all smoke and CO detectors, inspect fire extinguisher pressure gauges, check emergency exit lighting', 'fire_safety', 'high', 'annually', ?, 1, ?, ?)
-      `).run(
-        generateUUIDv7(), OPERATOR_ID, fourPlexPropId, now + (14 * 86400000), now, now,
-        generateUUIDv7(), OPERATOR_ID, loftsPropId, now + (30 * 86400000), now, now,
-        generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.propertyId, now + (60 * 86400000), now, now
-      );
-    } catch {}
+    tx.prepare(`
+      INSERT INTO preventative_maintenance_schedules (
+        id, operator_id, property_id, title, description, category,
+        priority, frequency, next_due_date, is_active, created_at, updated_at
+      ) VALUES
+        (?, ?, ?, 'Quarterly HVAC Filter & Coil Service', 'Replace 16x25x1 filter, clean condenser coils, and check refrigerant pressure', 'hvac', 'medium', 'quarterly', ?, 1, ?, ?),
+        (?, ?, ?, 'Semi-Annual Roof & Gutter Inspection', 'Inspect shingles and flashing, clear downspout debris, check attic crawlspace for moisture', 'roofing', 'high', 'semi_annually', ?, 1, ?, ?),
+        (?, ?, ?, 'Annual Fire Extinguisher & Alarm Recertification', 'Test all smoke and CO detectors, inspect fire extinguisher pressure gauges, check emergency exit lighting', 'fire_safety', 'high', 'annually', ?, 1, ?, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, fourPlexPropId, now + (14 * 86400000), now, now,
+      generateUUIDv7(), OPERATOR_ID, loftsPropId, now + (30 * 86400000), now, now,
+      generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.propertyId, now + (60 * 86400000), now, now
+    );
 
     // 13. Universal Conversations & Notes
-    try {
-      const conv1Id = generateUUIDv7();
-      tx.prepare(`
-        INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
-        VALUES (?, ?, 'property', ?, 'Annual Exterior Façade Maintenance Plan', 1, ?, ?)
-      `).run(conv1Id, OPERATOR_ID, loftsPropId, now - 86400000, now);
+    const conv1Id = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
+      VALUES (?, ?, 'property', ?, 'Annual Exterior Façade Maintenance Plan', 1, ?, ?)
+    `).run(conv1Id, OPERATOR_ID, loftsPropId, now - 86400000, now);
 
-      tx.prepare(`
-        INSERT INTO conversation_messages (id, operator_id, conversation_id, body, created_at)
-        VALUES (?, ?, ?, 'Staff inspection noted minor brick mortar settling near east staircase. Scheduled mason for estimate.', ?)
-      `).run(generateUUIDv7(), OPERATOR_ID, conv1Id, now - 86400000);
+    tx.prepare(`
+      INSERT INTO conversation_messages (id, operator_id, conversation_id, body, created_at)
+      VALUES (?, ?, ?, 'Staff inspection noted minor brick mortar settling near east staircase. Scheduled mason for estimate.', ?)
+    `).run(generateUUIDv7(), OPERATOR_ID, conv1Id, now - 86400000);
 
-      const conv2Id = generateUUIDv7();
-      tx.prepare(`
-        INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
-        VALUES (?, ?, 'lease', ?, 'Parking Space Reassignment Request', 0, ?, ?)
-      `).run(conv2Id, OPERATOR_ID, createdLeaseIds[0]!, now - 3600000, now);
+    const conv2Id = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
+      VALUES (?, ?, 'lease', ?, 'Parking Space Reassignment Request', 0, ?, ?)
+    `).run(conv2Id, OPERATOR_ID, createdLeaseIds[0]!, now - 3600000, now);
 
-      tx.prepare(`
-        INSERT INTO conversation_messages (id, operator_id, conversation_id, body, created_at)
-        VALUES (?, ?, ?, 'Resident requested moving from Stall 12 to Stall 14 closer to building entrance.', ?)
-      `).run(generateUUIDv7(), OPERATOR_ID, conv2Id, now - 3600000);
-    } catch {}
+    tx.prepare(`
+      INSERT INTO conversation_messages (id, operator_id, conversation_id, body, created_at)
+      VALUES (?, ?, ?, 'Resident requested moving from Stall 12 to Stall 14 closer to building entrance.', ?)
+    `).run(generateUUIDv7(), OPERATOR_ID, conv2Id, now - 3600000);
 
     // 14. Client Accounting Capital Contributions & Owner Distributions
-    try {
-      const clientOwnerContactId = generateUUIDv7();
-      tx.prepare(`
-        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, email, phone, created_at, updated_at)
-        VALUES (?, ?, 'owner', 'Alexander', 'Garrison', 'alexander@garrisonproperties.local', '(555) 201-9000', ?, ?)
-      `).run(clientOwnerContactId, OPERATOR_ID, now, now);
+    const clientOwnerContactId = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, email, phone, created_at, updated_at)
+      VALUES (?, ?, 'owner', 'Alexander', 'Garrison', 'alexander@garrisonproperties.local', '(555) 201-9000', ?, ?)
+    `).run(clientOwnerContactId, OPERATOR_ID, now, now);
 
-      const ownerCapitalGl = glAccountMap.get('owner_capital') || glAccountMap.get('3010') || generateUUIDv7();
-      const ownerDrawGl = glAccountMap.get('owner_draw') || glAccountMap.get('3020') || generateUUIDv7();
-      const mgmtFeeGl = glAccountMap.get('management_fees') || glAccountMap.get('5070') || generateUUIDv7();
+    const operatingBankGl = glAccountMap.get('operating_bank') || glAccountMap.get('1010');
+    if (!operatingBankGl) throw new Error('Operating Bank GL account (1010) not found in seed.');
 
-      tx.prepare(`
-        INSERT INTO client_capital_contributions (
-          id, operator_id, client_contact_id, portfolio_id, amount_cents,
-          contribution_date, destination_account_id, reference_number, memo, created_at, updated_at
-        ) VALUES
-          (?, ?, ?, ?, 5000000, ?, ?, 'WIRE-559201', 'Initial Portfolio Capital Reserve Injection', ?, ?),
-          (?, ?, ?, ?, 2500000, ?, ?, 'ACH-110294', 'Q3 Capital Expenditure & Roof Reserve', ?, ?)
-      `).run(
-        generateUUIDv7(), OPERATOR_ID, clientOwnerContactId, portfolio1Id, now - (90 * 86400000), ownerCapitalGl, now, now,
-        generateUUIDv7(), OPERATOR_ID, clientOwnerContactId, portfolio2Id, now - (30 * 86400000), ownerCapitalGl, now, now
-      );
+    const ownerCapitalGl = glAccountMap.get('owner_capital') || glAccountMap.get('3010');
+    if (!ownerCapitalGl) throw new Error('Owner Capital GL account (3010) not found in seed.');
 
-      tx.prepare(`
-        INSERT INTO client_distributions (
-          id, operator_id, client_contact_id, portfolio_id, amount_cents,
-          distribution_date, source_account_id, disbursement_method, reference_number, memo, created_at, updated_at
-        ) VALUES
-          (?, ?, ?, ?, 1500000, ?, ?, 'ach', 'ACH-DIST-01', 'Q2 Net Cash Flow Owner Draw', ?, ?),
-          (?, ?, ?, ?, 1000000, ?, ?, 'ach', 'ACH-DIST-02', 'Q3 Owner Draw', ?, ?)
-      `).run(
-        generateUUIDv7(), OPERATOR_ID, clientOwnerContactId, portfolio1Id, now - (60 * 86400000), ownerDrawGl, now, now,
-        generateUUIDv7(), OPERATOR_ID, clientOwnerContactId, portfolio2Id, now - (15 * 86400000), ownerDrawGl, now, now
-      );
+    const ownerDrawGl = glAccountMap.get('owner_draw') || glAccountMap.get('3020');
+    if (!ownerDrawGl) throw new Error('Owner Draw GL account (3020) not found in seed.');
 
-      tx.prepare(`
-        INSERT INTO management_fee_agreements (
-          id, operator_id, portfolio_id, calculation_method,
-          percentage_bps, flat_fee_cents, fee_gl_account_id, pass_through_expenses, created_at
-        ) VALUES (?, ?, ?, 'percentage_collected_revenue', 800, 0, ?, 1, ?)
-      `).run(generateUUIDv7(), OPERATOR_ID, portfolio1Id, mgmtFeeGl, now);
-    } catch {}
+    const mgmtFeeGl = glAccountMap.get('management_fees') || glAccountMap.get('5070');
+    if (!mgmtFeeGl) throw new Error('Management Fees GL account (5070) not found in seed.');
+
+    const contrib1Id = generateUUIDv7();
+    const contrib1Date = now - (90 * 86400000);
+    const contrib2Id = generateUUIDv7();
+    const contrib2Date = now - (30 * 86400000);
+
+    tx.prepare(`
+      INSERT INTO client_capital_contributions (
+        id, operator_id, client_contact_id, portfolio_id, amount_cents,
+        contribution_date, destination_account_id, reference_number, memo, created_at, updated_at
+      ) VALUES
+        (?, ?, ?, ?, 5000000, ?, ?, 'WIRE-559201', 'Initial Portfolio Capital Reserve Injection', ?, ?),
+        (?, ?, ?, ?, 2500000, ?, ?, 'ACH-110294', 'Q3 Capital Expenditure & Roof Reserve', ?, ?)
+    `).run(
+      contrib1Id, OPERATOR_ID, clientOwnerContactId, portfolio1Id, contrib1Date, operatingBankGl, now, now,
+      contrib2Id, OPERATOR_ID, clientOwnerContactId, portfolio2Id, contrib2Date, operatingBankGl, now, now
+    );
+
+    JournalService.postEntry({
+      date_ms: contrib1Date,
+      memo: 'Initial Portfolio Capital Reserve Injection',
+      source_type: 'client_contribution',
+      source_id: contrib1Id,
+      lines: [
+        { account_id: operatingBankGl, debit_cents: 5000000, credit_cents: 0, contact_id: clientOwnerContactId, description: 'Initial Portfolio Capital Reserve Injection Inflow' },
+        { account_id: ownerCapitalGl, debit_cents: 0, credit_cents: 5000000, contact_id: clientOwnerContactId, description: 'Owner Capital Equity Credit' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: contrib2Date,
+      memo: 'Q3 Capital Expenditure & Roof Reserve',
+      source_type: 'client_contribution',
+      source_id: contrib2Id,
+      lines: [
+        { account_id: operatingBankGl, debit_cents: 2500000, credit_cents: 0, contact_id: clientOwnerContactId, description: 'Q3 Capital Expenditure & Roof Reserve Inflow' },
+        { account_id: ownerCapitalGl, debit_cents: 0, credit_cents: 2500000, contact_id: clientOwnerContactId, description: 'Owner Capital Equity Credit' }
+      ]
+    }, tx);
+
+    const dist1Id = generateUUIDv7();
+    const dist1Date = now - (60 * 86400000);
+    const dist2Id = generateUUIDv7();
+    const dist2Date = now - (15 * 86400000);
+
+    tx.prepare(`
+      INSERT INTO client_distributions (
+        id, operator_id, client_contact_id, portfolio_id, amount_cents,
+        distribution_date, source_account_id, disbursement_method, reference_number, memo, created_at, updated_at
+      ) VALUES
+        (?, ?, ?, ?, 1500000, ?, ?, 'ach', 'ACH-DIST-01', 'Q2 Net Cash Flow Owner Draw', ?, ?),
+        (?, ?, ?, ?, 1000000, ?, ?, 'ach', 'ACH-DIST-02', 'Q3 Owner Draw', ?, ?)
+    `).run(
+      dist1Id, OPERATOR_ID, clientOwnerContactId, portfolio1Id, dist1Date, operatingBankGl, now, now,
+      dist2Id, OPERATOR_ID, clientOwnerContactId, portfolio2Id, dist2Date, operatingBankGl, now, now
+    );
+
+    JournalService.postEntry({
+      date_ms: dist1Date,
+      memo: 'Q2 Net Cash Flow Owner Draw',
+      source_type: 'client_distribution',
+      source_id: dist1Id,
+      lines: [
+        { account_id: ownerDrawGl, debit_cents: 1500000, credit_cents: 0, contact_id: clientOwnerContactId, description: 'Owner Draw Equity Debit' },
+        { account_id: operatingBankGl, debit_cents: 0, credit_cents: 1500000, contact_id: clientOwnerContactId, description: 'Operating Account Distribution Outflow' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: dist2Date,
+      memo: 'Q3 Owner Draw',
+      source_type: 'client_distribution',
+      source_id: dist2Id,
+      lines: [
+        { account_id: ownerDrawGl, debit_cents: 1000000, credit_cents: 0, contact_id: clientOwnerContactId, description: 'Owner Draw Equity Debit' },
+        { account_id: operatingBankGl, debit_cents: 0, credit_cents: 1000000, contact_id: clientOwnerContactId, description: 'Operating Account Distribution Outflow' }
+      ]
+    }, tx);
+
+    tx.prepare(`
+      INSERT INTO management_fee_agreements (
+        id, operator_id, portfolio_id, calculation_method,
+        percentage_bps, flat_fee_cents, fee_gl_account_id, pass_through_expenses, created_at
+      ) VALUES (?, ?, ?, 'percentage_collected_revenue', 800, 0, ?, 1, ?)
+    `).run(generateUUIDv7(), OPERATOR_ID, portfolio1Id, mgmtFeeGl, now);
   }, db);
+  });
 }
 
 // CLI Execution

@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../database/client.js';
 
+/**
+ * Canonical theme preset identifiers supported by the platform.
+ */
 export type ThemePresetKey =
   | 'classic_blue'
   | 'metropolitan_slate'
@@ -9,15 +12,27 @@ export type ThemePresetKey =
   | 'executive_indigo'
   | 'custom';
 
+/**
+ * Definition of a visual branding preset theme palette.
+ */
 export interface ThemePreset {
+  /** Preset key identifier. */
   id: ThemePresetKey;
+  /** Human-readable display label. */
   name: string;
+  /** Contextual description of the aesthetic. */
   description: string;
+  /** Primary brand HEX color code. */
   primary: string;
+  /** Darkened hover state HEX color code. */
   primaryHover: string;
+  /** Vibrant accent highlight HEX color code. */
   accent: string;
 }
 
+/**
+ * Built-in curated brand presets offering turnkey palettes for property management operators.
+ */
 export const THEME_PRESETS: Readonly<Record<ThemePresetKey, ThemePreset>> = Object.freeze({
   classic_blue: {
     id: 'classic_blue',
@@ -69,29 +84,55 @@ export const THEME_PRESETS: Readonly<Record<ThemePresetKey, ThemePreset>> = Obje
   }
 });
 
+/**
+ * Persistent visual branding configuration for a property management operator.
+ */
 export interface OperatorBranding {
+  /** Operator isolation UUID. */
   operator_id: string;
+  /** Display company name shown in navbar and reports. */
   brand_name: string;
+  /** Optional absolute or relative URL to the company logo image. */
   logo_url?: string | null;
+  /** Optional URL to a custom favicon. */
   favicon_url?: string | null;
+  /** Optional corporate tagline or slogan. */
   tagline?: string | null;
+  /** Active theme preset key. */
   theme_preset: ThemePresetKey;
+  /** Primary brand HEX color code. */
   primary_color: string;
+  /** Darkened hover state HEX color code. */
   primary_hover: string;
+  /** Vibrant accent highlight HEX color code. */
   accent_color: string;
+  /** Default dark mode preference (1 for dark, 0 for light). */
   default_dark_mode: number;
+  /** Last update epoch millisecond timestamp. */
   updated_at: number;
 }
 
+/**
+ * Input payload for updating an operator's branding settings.
+ */
 export interface UpdateBrandingInput {
+  /** Optional updated company brand name. */
   brand_name?: string;
+  /** Optional updated logo URL. */
   logo_url?: string | null;
+  /** Optional updated favicon URL. */
   favicon_url?: string | null;
+  /** Optional updated corporate tagline. */
   tagline?: string | null;
+  /** Optional theme preset selection. */
   theme_preset?: ThemePresetKey;
+  /** Optional custom primary HEX color code. */
   primary_color?: string;
+  /** Optional custom hover HEX color code. */
   primary_hover?: string;
+  /** Optional custom accent HEX color code. */
   accent_color?: string;
+  /** Optional default dark mode preference. */
   default_dark_mode?: boolean | number;
 }
 
@@ -171,18 +212,30 @@ export class BrandingService {
     let hover = input.primary_hover || current.primary_hover;
     let accent = input.accent_color || current.accent_color;
 
-    // If preset changed to a standard preset, apply preset default colors unless custom was explicitly chosen
-    if (input.theme_preset && input.theme_preset !== 'custom' && THEME_PRESETS[input.theme_preset]) {
-      const p = THEME_PRESETS[input.theme_preset];
-      primary = p.primary;
-      hover = p.primaryHover;
-      accent = p.accent;
-    } else if (input.primary_color && input.primary_color !== current.primary_color) {
+    const selected = input.theme_preset && input.theme_preset !== 'custom'
+      ? THEME_PRESETS[input.theme_preset]
+      : undefined;
+    const differs = (v: string | undefined, base: string) => !!v && v.toLowerCase() !== base.toLowerCase();
+    const customized = !!selected && (
+      differs(input.primary_color, selected.primary) ||
+      differs(input.primary_hover, selected.primaryHover) ||
+      differs(input.accent_color, selected.accent)
+    );
+
+    if (selected && !customized) {
+      primary = selected.primary;
+      hover = selected.primaryHover;
+      accent = selected.accent;
+    } else if (customized || (input.primary_color && input.primary_color !== current.primary_color)) {
       preset = 'custom';
-      // Automatically calculate a slightly darker hover shade if not provided
       if (!input.primary_hover) {
-        hover = input.primary_color;
+        hover = primary;
       }
+    }
+
+    const hexColorPattern = /^#[0-9a-fA-F]{6}$/;
+    if (![primary, hover, accent].every((color) => hexColorPattern.test(color))) {
+      throw new Error('Branding colors must be valid six-digit hex values (e.g. #1d4ed8)');
     }
 
     const brandName = input.brand_name !== undefined ? input.brand_name.trim() || 'GarrisonOS' : current.brand_name;
@@ -238,7 +291,12 @@ export class BrandingService {
         --primary-hover: ${branding.primary_hover};
         --primary-light: ${branding.primary_color}1a;
         --primary-glow: ${branding.primary_color}33;
+        --primary-text-on-dark: #93c5fd;
         --accent: ${branding.accent_color};
+      }
+      :root[data-theme="dark"] {
+        --primary-light: ${branding.primary_color}25;
+        --primary-glow: ${branding.primary_color}4d;
       }
     </style>`;
   }

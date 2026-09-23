@@ -17,7 +17,7 @@
 >
 > ## Pre-Production Disclaimer
 >
-> GarrisonOS is currently in **pre-production prototyping** and active development (targeting Foundational MVP General Availability at Sprint 5). This software is **not ready for production property operations and should not be deployed by end users** until an official stable release is made available. Core APIs, internal schemas, and functionality remain subject to evolution. Developers and contributors are welcome to explore, evaluate, and test the codebase in isolated development environments.
+> GarrisonOS is currently in **pre-production prototyping** and active development (targeting Foundational MVP Feature-Complete Alpha `v0.1.0-alpha` at Sprint 5). This software is **not ready for production property operations and should not be deployed by end users** until an official stable release is made available. Core APIs, internal schemas, and functionality remain subject to evolution. Developers and contributors are welcome to explore, evaluate, and test the codebase in isolated development environments.
 
 ---
 
@@ -242,45 +242,11 @@ GarrisonOS is architected with **zero external runtime package dependencies**.
 
 ---
 
-## Project Milestones
+## Project Milestones & Roadmap
 
-For a comprehensive phase-by-phase implementation plan, milestone deliverables, sprint schedules, and technical task breakdowns, see the [GarrisonOS Canonical Roadmap](docs/ROADMAP.md). Progress is tracked against the canonical MVP architectural phases:
+Implementation planning, sprint tracking, deliverable scorecards, and future roadmap phases are maintained canonically in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-**Progress key:** ✅ Implemented and covered | 🟡 Partial or in progress | ⬜ Scheduled for upcoming sprint
-
-| Phase | Topic | Progress | Current Position |
-| :---| :---| :---: | :---|
-| **1. Core Engine & Multi-Operator Foundation** | Node.js HTTP/SQLite engine and native dependency boundary | ✅ | Standard-library runtime, WAL mode, synchronous DB API, 0 external runtime dependencies. |
-| | AsyncLocalStorage context propagation and `X-Operator-ID` isolation | ✅ | Implemented across HTTP middleware and EventBus async boundaries; verified by isolation tests. |
-| | Operator provisioning & lifecycle management | ✅ | Administrative onboarding API (`POST /api/v1/system/operators`), storage quotas, and setup wizard. |
-| | 3-Tier governance model & subuser RBAC permissions | ✅ | Master Owner, System Managers, Operator Admins, Subusers; `user_portfolio_access` & `user_module_access`. |
-| | Global sliding-window rate limiting | ✅ | Sliding-window limiter across all routes with metrics tracking and unref'd timer eviction. |
-| | Admin Management GUI (`/admin`) & telemetry | ✅ | Real-time CPU/memory load, quota consumption gauges, rate limit stats, and dead-letter queue. |
-| **2. Base Entity & Inventory Management** | 4-Tier asset hierarchy (Portfolios, Properties, Buildings, Units) | ✅ | Full CRUD across portfolios, properties, multi-story buildings, and unit inventories. |
-| | Unit turnover state machine & make-ready automation | ✅ | Transitions between `vacant` $\leftrightarrow$ `turnover` $\leftrightarrow$ `maintenance_hold` with auto-generated work orders. |
-| | Multi-role contacts directory & vendor compliance | ✅ | Directory management, vendor trade specializations, W-9 verification flags, and tax classifications. |
-| | Universal document attachments & media sanitization | ✅ | Polymorphic file attachments, zero-dependency EXIF stripping, PDF sanitization, and quota enforcement. |
-| **3. Core Property Operations** | Leasing lifecycle, renewals & move-out dispositions | ✅ | Contract lifecycle, renewal modal, move-out termination notice workflow, statutory deposit timers. |
-| | Leasing AR, recurring charges & late fee policies | ✅ | Itemized recurring charges, configurable late fee policy engine, credits/concessions, and deposit refunds. |
-| | Maintenance & work order workflow | ✅ | Ticket lifecycle, priority triage, trade-filtered vendor dispatch modal, and expense conversion. |
-| | Cross-module operational events | ✅ | In-process `EventBus` with context propagation, dead-letter failure queue, and operational triggers. |
-| **4. Financial Ledger, Client Accounting & AP** | Immutable double-entry general ledger & integer cents | ✅ | Zero-sum debit/credit proofs, append-only journal entries/lines, and explicit reversal accounting. |
-| | GL elevation & progressive single-entry sunset | ✅ | `lease_id` on journal lines, GL-backed lease balance calculation, and progressive sunset of `transactions`. |
-| | Statutory trust accounting & operating fund segregation | ✅ | Chart of Accounts separates `1010 Operating` and `1020 Trust`; Three-Way Bank Reconciliation schedules. |
-| | Client accounting & management fee agreements | ✅ | Owner capital contributions, portfolio cash summaries (`cash` vs `accrual`), distributions, and fee GL accrual. |
-| | Accounts Payable (AP), check printing & deposit batching | ⬜ | Multi-property bill allocations, ANSI X9 check printing, and bank deposit slips (Sprint 5). |
-| **5. Native Presentation & User Experience** | Native TypeScript SSR shell, layouts, and CSS design system | ✅ | Server-rendered shell, design tokens, light/dark theme toggle, HTML `<dialog>` modals; 100% pure TypeScript. |
-| | Executive dashboard & operator workflows | ✅ | Portfolio summary KPI cards, vacancy turnover modals, lease renewal modals, and contractor dispatch. |
-| | Financial reporting views | ✅ | Ledger, Rent Roll, Chart of Accounts, Trial Balance, and Schedule E views. |
-| | Public-facing tenant self-service portal | ⬜ | Tenant self-service portal on isolated subdomain `portal.<domain>` (Sprint 5). |
-| **6. Data Portability, Resilience & Backup** | SQLite snapshots & safe WAL checkpointing | ✅ | Online `VACUUM INTO` snapshots with safe WAL checkpointing and gzip compression. |
-| | Unified database & media attachment backup | ✅ | Packages SQLite database and physical attachment files into unified, verified `.tar.gz` archives. |
-| | Automated backup daemon & retention pruning | ✅ | In-process `BackupScheduler` daemon executing automated snapshots, hot vacuuming, and retention pruning. |
-| | Standalone disaster recovery CLI tool | ✅ | Standalone `scripts/restore.js` tool with binary header validation, WAL cleanup, and migration execution. |
-| **7. MVP Verification, Packaging & Deployment** | Multi-step user journey E2E test suite | ✅ | Comprehensive lifecycle test (`test/e2e/lifecycle.test.ts`) validating full operator journey across 40 test suites. |
-| | Turnkey containerization & daemon supervision | ✅ | Multi-stage zero-dependency Alpine Dockerfile, Docker Compose, and hardened Systemd service unit. |
-| | Production reverse proxy configurations | ✅ | Ready-to-deploy Caddy (automatic Let's Encrypt TLS) and Nginx reverse proxy configurations. |
-| | Packaged click-through GUI installers | ⬜ | Turnkey click-through setup wizards for Windows, macOS, and Linux (Sprint 5). |
+Please refer to the [Canonical Roadmap](docs/ROADMAP.md) for current sprint deliverables, feature completion status, and release milestones.
 
 ---
 

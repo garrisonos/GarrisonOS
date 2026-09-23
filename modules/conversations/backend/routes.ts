@@ -173,7 +173,9 @@ export function registerRoutes(router: Router): void {
     }
 
     const isPrivate = !!body['is_private'];
-    const initialMessage = typeof body['initial_message'] === 'string' ? body['initial_message'] : undefined;
+    const initialMessage = typeof body['initial_message'] === 'string'
+      ? body['initial_message']
+      : (typeof body['body'] === 'string' ? body['body'] : undefined);
     const participantContactIds = Array.isArray(body['participant_contact_ids']) ? body['participant_contact_ids'] : undefined;
     const participantUserIds = Array.isArray(body['participant_user_ids']) ? body['participant_user_ids'] : undefined;
 

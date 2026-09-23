@@ -140,4 +140,47 @@ describe('Preventative Maintenance Scheduling Engine Suite', () => {
       assert.ok(match, 'Must generate work order for schedule within lead day threshold');
     });
   });
+
+  it('rejects cross-operator vendor contact or property IDOR', () => {
+    RequestContext.run({ operatorId: operatorB, correlationId: 'test-corr' }, () => {
+      // Operator B trying to reference Operator A's property or vendor
+      assert.throws(() => {
+        MaintenanceRepository.createPreventativeSchedule({
+          property_id: propertyA, // belongs to Operator A
+          title: 'Malicious Schedule',
+          description: 'Accessing Operator A property',
+          category: 'general',
+          priority: 'low',
+          frequency: 'monthly',
+          next_due_date: Date.now() + 86400000
+        });
+      }, /not found or does not belong to the active operator/);
+
+      assert.throws(() => {
+        MaintenanceRepository.createPreventativeSchedule({
+          assigned_vendor_contact_id: vendorContactA, // belongs to Operator A
+          title: 'Malicious Vendor Schedule',
+          description: 'Accessing Operator A vendor',
+          category: 'general',
+          priority: 'low',
+          frequency: 'monthly',
+          next_due_date: Date.now() + 86400000
+        });
+      }, /not found or does not belong to the active operator/);
+    });
+  });
+
+  it('correctly clamps month-end date rollovers and computes seasonal frequency', () => {
+    // Jan 31 + 1 month should clamp to Feb 28 or 29
+    const jan31 = new Date(2025, 0, 31).getTime();
+    const nextMonth = MaintenanceRepository.computeNextDueDate(jan31, 'monthly');
+    const dMonth = new Date(nextMonth);
+    assert.equal(dMonth.getMonth(), 1, 'Should roll to February (month index 1)');
+    assert.equal(dMonth.getDate(), 28, 'Should clamp to Feb 28 in non-leap year');
+
+    // Seasonal month test
+    const nextSeasonal = MaintenanceRepository.computeNextDueDate(jan31, 'seasonal', 10); // target October
+    const dSeason = new Date(nextSeasonal);
+    assert.equal(dSeason.getMonth(), 9, 'Should target October (month index 9)');
+  });
 });

@@ -357,9 +357,8 @@ export function renderLeaseARSubsystem(props: LeaseARProps): SafeHtml {
           <div class="form-group">
             <label class="form-label">Disbursement Method *</label>
             <select name="disbursement_method" class="form-select" required>
-              <option value="ach_transfer">Direct ACH Transfer</option>
+              <option value="ach">Direct ACH Transfer</option>
               <option value="check">Physical Check</option>
-              <option value="wire_transfer">Wire Transfer</option>
             </select>
           </div>
           <div class="form-group">
