@@ -1,6 +1,8 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderLeaseARSubsystem } from '../../../../web/templates/lease-ar.js';
+import { renderConversationsWidget } from '../../../../web/templates/conversations.js';
 
 /**
  * Format timestamp into readable UTC date string.
@@ -93,6 +95,46 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         });
         ctx.session.addFlash('success', 'Signatory added');
         return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
+      } else if (action === 'add_recurring_charge') {
+        const amountCents = Math.round(parseFloat(ctx.body['amount'] || '0') * 100);
+        await ctx.api.post(`/api/v1/leases/${encodeURIComponent(id)}/recurring_charges`, {
+          charge_category: ctx.body['charge_category'],
+          amount_cents: amountCents,
+          billing_day: parseInt(ctx.body['billing_day'] || '1', 10),
+          billing_frequency: ctx.body['billing_frequency'] || 'monthly',
+          description: ctx.body['description']
+        });
+        ctx.session.addFlash('success', 'Recurring charge added successfully');
+        return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
+      } else if (action === 'delete_recurring_charge') {
+        const chargeId = ctx.body['charge_id'] || '';
+        await ctx.api.delete(`/api/v1/leases/${encodeURIComponent(id)}/recurring_charges/${encodeURIComponent(chargeId)}`);
+        ctx.session.addFlash('success', 'Recurring charge removed');
+        return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
+      } else if (action === 'add_credit') {
+        const amountCents = Math.round(parseFloat(ctx.body['amount'] || '0') * 100);
+        await ctx.api.post(`/api/v1/leases/${encodeURIComponent(id)}/credits`, {
+          credit_type: ctx.body['credit_type'],
+          amount_cents: amountCents,
+          reason: ctx.body['reason']
+        });
+        ctx.session.addFlash('success', 'Credit concession granted successfully');
+        return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
+      } else if (action === 'refund_deposit') {
+        const amountCents = Math.round(parseFloat(ctx.body['amount'] || '0') * 100);
+        await ctx.api.post(`/api/v1/leases/${encodeURIComponent(id)}/refunds`, {
+          recipient_contact_id: ctx.body['recipient_contact_id'],
+          refund_type: 'deposit_return',
+          refund_amount_cents: amountCents,
+          disbursement_method: ctx.body['disbursement_method'] || 'check',
+          check_number: ctx.body['check_number'] || undefined
+        });
+        ctx.session.addFlash('success', 'Deposit refund recorded successfully');
+        return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
+      } else if (action === 'apply_late_fee') {
+        await ctx.api.post(`/api/v1/leases/${encodeURIComponent(id)}/apply_late_fee`, {});
+        ctx.session.addFlash('success', 'Late fee successfully assessed to tenant ledger');
+        return { redirect: `/leases/show?id=${encodeURIComponent(id)}`, content: '' };
       }
     } catch (err: any) {
       error = err.message;
@@ -101,6 +143,11 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
   let lease: any = null;
   let contacts: any[] = [];
+  let recurringCharges: any[] = [];
+  let credits: any[] = [];
+  let refunds: any[] = [];
+  let lateFeeInfo: any = null;
+  let conversations: any[] = [];
 
   try {
     const res = await ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}`);
@@ -108,6 +155,30 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
     const contRes = await ctx.api.get('/api/v1/contacts');
     contacts = contRes?.data?.contacts || [];
+
+    const [rcRes, crRes, rfRes, lfRes, convRes] = await Promise.all([
+      ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/recurring_charges`).catch(() => ({ data: { charges: [] } })),
+      ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/credits`).catch(() => ({ data: { credits: [] } })),
+      ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/refunds`).catch(() => ({ data: { refunds: [] } })),
+      ctx.api.get(`/api/v1/leases/${encodeURIComponent(id)}/calculate_late_fee`).catch(() => ({ data: {} })),
+      ctx.api.get(`/api/v1/conversations?entity_type=lease&entity_id=${encodeURIComponent(id)}`).catch(() => ({ data: { conversations: [] } }))
+    ]);
+
+    recurringCharges = rcRes?.data?.charges || [];
+    credits = crRes?.data?.credits || [];
+    refunds = rfRes?.data?.refunds || [];
+    conversations = convRes?.data?.conversations || [];
+
+    if (lfRes?.data?.delinquency) {
+      const d = lfRes.data.delinquency;
+      lateFeeInfo = {
+        isDelinquent: d.is_delinquent || (d.calculated_fee_cents && d.calculated_fee_cents > 0),
+        unpaidBalanceCents: d.delinquent_balance_cents || 0,
+        proposedLateFeeCents: d.calculated_fee_cents || 0,
+        daysOverdue: d.days_overdue || 0,
+        policySummary: d.policy ? `Active Policy: ${d.policy.calculation_type.replace(/_/g, ' ')} (${d.policy.grace_period_days} grace days)` : undefined
+      };
+    }
   } catch (err: any) {
     error = error || err.message;
   }
@@ -147,6 +218,25 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       `];
 
   const contactOptions = contacts.map((c) => html`<option value="${c.id}">${c.last_name}, ${c.first_name} (${c.contact_type})</option>`);
+
+  const leaseARHtml = renderLeaseARSubsystem({
+    leaseId: id,
+    csrfToken,
+    depositHeldCents: lease.deposit_held_cents || 0,
+    recurringCharges,
+    credits,
+    refunds,
+    lateFeeInfo,
+    contacts
+  });
+
+  const conversationsHtml = renderConversationsWidget({
+    entityType: 'lease',
+    entityId: id,
+    conversations,
+    canCreate: true,
+    currentUserRole: ctx.session.user?.role || 'manager'
+  });
 
   const content = html`
     <div class="page-header">
@@ -231,6 +321,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         </div>
       </div>
     </div>
+
+    ${leaseARHtml}
+
+    ${conversationsHtml}
 
     <!-- Modal: Add Signatory -->
     <dialog id="addSignatoryModal" class="modal">

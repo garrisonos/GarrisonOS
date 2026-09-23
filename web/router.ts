@@ -35,8 +35,10 @@ import * as LeasesShow from '../modules/leases/frontend/pages/show.js';
 
 import * as MaintenanceIndex from '../modules/maintenance/frontend/pages/index.js';
 import * as MaintenanceShow from '../modules/maintenance/frontend/pages/show.js';
+import * as MaintenancePreventative from '../modules/maintenance/frontend/pages/preventative.js';
 
 import * as AccountingIndex from '../modules/accounting/frontend/pages/index.js';
+import * as AccountingClient from '../modules/accounting/frontend/pages/client-accounting.js';
 import * as AccountingCOA from '../modules/accounting/frontend/pages/chart-of-accounts.js';
 import * as AccountingGL from '../modules/accounting/frontend/pages/general-ledger.js';
 import * as AccountingDetail from '../modules/accounting/frontend/pages/ledger-detail.js';
@@ -46,6 +48,38 @@ import * as AccountingScheduleE from '../modules/accounting/frontend/pages/sched
 import * as AccountingTrialBalance from '../modules/accounting/frontend/pages/trial-balance.js';
 
 import * as BackupIndex from '../modules/backup/frontend/pages/index.js';
+
+const handleConversationCreate: PageHandler = async (ctx) => {
+  const returnUrl = ctx.body['return_url'] || '/dashboard';
+  try {
+    const isPrivate = ctx.body['is_private'] === '1' || ctx.body['is_private'] === true;
+    await ctx.api.post('/api/v1/conversations', {
+      entity_type: ctx.body['entity_type'],
+      entity_id: ctx.body['entity_id'],
+      subject: ctx.body['subject'],
+      body: ctx.body['body'],
+      is_private: isPrivate
+    });
+    ctx.session.addFlash('success', 'Conversation thread created successfully');
+  } catch (err: any) {
+    ctx.session.addFlash('error', `Failed to create conversation: ${err.message}`);
+  }
+  return { redirect: returnUrl, content: '' };
+};
+
+const handleConversationReply: PageHandler = async (ctx) => {
+  const convId = ctx.body['conversation_id'];
+  const returnUrl = ctx.body['return_url'] || '/dashboard';
+  try {
+    await ctx.api.post(`/api/v1/conversations/${encodeURIComponent(convId)}/messages`, {
+      body: ctx.body['body']
+    });
+    ctx.session.addFlash('success', 'Reply posted');
+  } catch (err: any) {
+    ctx.session.addFlash('error', `Failed to post reply: ${err.message}`);
+  }
+  return { redirect: returnUrl, content: '' };
+};
 
 const ROUTE_TABLE: Record<string, PageHandler> = {
   '/': DashboardPage.handle,
@@ -66,8 +100,10 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
 
   '/maintenance': MaintenanceIndex.handle,
   '/maintenance/show': MaintenanceShow.handle,
+  '/maintenance/preventative': MaintenancePreventative.handle,
 
   '/accounting': AccountingIndex.handle,
+  '/accounting/client-accounting': AccountingClient.handle,
   '/accounting/chart-of-accounts': AccountingCOA.handle,
   '/accounting/general-ledger': AccountingGL.handle,
   '/accounting/ledger-detail': AccountingDetail.handle,
@@ -75,6 +111,9 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
   '/accounting/rent-roll': AccountingRentRoll.handle,
   '/accounting/schedule-e': AccountingScheduleE.handle,
   '/accounting/trial-balance': AccountingTrialBalance.handle,
+
+  '/conversations/create': handleConversationCreate,
+  '/conversations/reply': handleConversationReply,
 
   '/backup': BackupIndex.handle,
   '/backups': BackupIndex.handle,
