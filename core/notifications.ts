@@ -169,7 +169,7 @@ export class NativeSmtpClient {
                 secureSocket = tls.connect({
                   socket,
                   servername: config.host,
-                  rejectUnauthorized: false
+                  rejectUnauthorized: true
                 });
                 secureSocket.on('data', (c) => handleData(c, secureSocket!));
                 step = 3;
@@ -259,7 +259,7 @@ export class NativeSmtpClient {
         socket = tls.connect({
           host: config.host,
           port: config.port,
-          rejectUnauthorized: false
+          rejectUnauthorized: true
         });
       } else {
         socket = net.connect({
