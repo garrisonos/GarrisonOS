@@ -208,6 +208,15 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
       const credits = LeasesRepository.listCreditConcessions(fixture.leaseId);
       assert.equal(credits.length, 1);
 
+      const je = JournalService.listEntries({ source_type: 'credit_concession' }).entries[0];
+      assert.ok(je);
+      const concessionLine = je.lines?.find((l) => l.account_number === '4050');
+      const arLine = je.lines?.find((l) => l.account_number === '1100');
+      assert.ok(concessionLine);
+      assert.equal(concessionLine.debit_cents, 30000);
+      assert.ok(arLine);
+      assert.equal(arLine.credit_cents, 30000);
+
       // Verify tenant balance reduced to $1,700.00
       const balance = AccountingRepository.getLeaseBalance(fixture.leaseId);
       assert.equal(balance.balanceCents, 170000);
@@ -263,6 +272,83 @@ describe('Leases Module - Leasing AR & Fee Policy Engine', () => {
       assert.equal(liabilityLine.debit_cents, 180000);
       assert.ok(trustBankLine);
       assert.equal(trustBankLine.credit_cents, 180000);
+
+      // Overpayment Return: leaves deposit_held_cents unchanged and Dr 1100 AR / Cr 1010 Operating Bank
+      const overpaymentRefund = LeasesRepository.issueDepositRefund({
+        lease_id: fixture.leaseId,
+        recipient_contact_id: fixture.contactId,
+        refund_type: 'overpayment_return',
+        refund_amount_cents: 15000,
+        disbursement_method: 'ach',
+        disbursement_date: Date.UTC(2026, 11, 31)
+      });
+
+      assert.ok(overpaymentRefund.id);
+      assert.equal(overpaymentRefund.refund_amount_cents, 15000);
+
+      // Verify deposit_held_cents is NOT decremented
+      const leaseAfterOverpayment = LeasesRepository.getLeaseById(fixture.leaseId);
+      assert.equal(leaseAfterOverpayment?.deposit_held_cents, 20000);
+
+      // Verify GL entries: Dr: 1100 AR, Cr: 1010 Operating Checking
+      const overpaymentJe = JournalService.listEntries({ source_type: 'refund' }).entries[0];
+      assert.ok(overpaymentJe);
+      const arDebitLine = overpaymentJe.lines?.find((l) => l.account_number === '1100');
+      const opBankCreditLine = overpaymentJe.lines?.find((l) => l.account_number === '1010');
+
+      assert.ok(arDebitLine);
+      assert.equal(arDebitLine.debit_cents, 15000);
+      assert.ok(opBankCreditLine);
+      assert.equal(opBankCreditLine.credit_cents, 15000);
+    });
+  });
+
+  it('correctly handles zero AR balance without falling back to legacy transactions', () => {
+    runInOperatorContext('leasing-ar-test', () => {
+      const fixture = setupLeaseFixture('leasing-ar-test');
+
+      // Post $2,000 rent charge via GL
+      const rentDate = Date.UTC(2026, 0, 1);
+      const arAcc = ChartOfAccountsRepository.getAccountByMapping('accounts_receivable')!;
+      const rentAcc = ChartOfAccountsRepository.getAccountByMapping('rent')!;
+      const opBankAcc = ChartOfAccountsRepository.getAccountByMapping('operating_bank')!;
+
+      JournalService.postEntry({
+        date_ms: rentDate,
+        memo: 'January Rent Billed',
+        source_type: 'rent',
+        lines: [
+          { account_id: arAcc.id, debit_cents: 200000, credit_cents: 0, lease_id: fixture.leaseId, property_id: fixture.propertyId },
+          { account_id: rentAcc.id, debit_cents: 0, credit_cents: 200000, lease_id: fixture.leaseId, property_id: fixture.propertyId }
+        ]
+      });
+
+      // Tenant pays $2,000 in full on Jan 2
+      JournalService.postEntry({
+        date_ms: Date.UTC(2026, 0, 2),
+        memo: 'January Rent Paid',
+        source_type: 'payment',
+        lines: [
+          { account_id: opBankAcc.id, debit_cents: 200000, credit_cents: 0, lease_id: fixture.leaseId, property_id: fixture.propertyId },
+          { account_id: arAcc.id, debit_cents: 0, credit_cents: 200000, lease_id: fixture.leaseId, property_id: fixture.propertyId }
+        ]
+      });
+
+      // Create late fee policy: 5% delinquency, 5 days grace, due day 1
+      LeasesRepository.createLateFeePolicy({
+        property_id: fixture.propertyId,
+        grace_period_days: 5,
+        due_day: 1,
+        calculation_type: 'percentage_of_delinquency',
+        percentage_bps: 500
+      });
+
+      // Check on Jan 10 (past grace period). AR balance is 0, so should NOT be delinquent and fee is 0
+      const jan10 = Date.UTC(2026, 0, 10);
+      const calc = LeasesRepository.calculateLateFee(fixture.leaseId, jan10);
+      assert.equal(calc.is_delinquent, false);
+      assert.equal(calc.fee_cents, 0);
+      assert.equal(calc.balance_cents, 0);
     });
   });
 });

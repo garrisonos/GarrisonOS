@@ -74,6 +74,7 @@ export interface PortfolioCashSummary {
   total_operating_disbursements_cents: number;
   net_operating_cash_cents: number;
   available_for_distribution_cents: number;
+  basis: 'cash' | 'accrual';
   property_summaries: Array<{
     property_id: string;
     property_name: string;
@@ -141,6 +142,10 @@ export class ClientAccountingRepository {
       : ChartOfAccountsRepository.getAccountByMapping('operating_bank');
     if (!destAccount) {
       throw new Error('Destination bank account (Operating Checking) not found in Chart of Accounts.');
+    }
+    if (destAccount.account_type !== 'Bank' ||
+        destAccount.category_mapping === 'trust_bank' || destAccount.account_number === '1020') {
+      throw new Error('Capital contributions must be deposited into an operating bank account, not trust or non-bank accounts.');
     }
 
     const equityAccount = ChartOfAccountsRepository.getAccountByMapping('owner_capital') ||
@@ -349,6 +354,10 @@ export class ClientAccountingRepository {
     if (!sourceAccount) {
       throw new Error('Source bank account (Operating Checking) not found in Chart of Accounts.');
     }
+    if (sourceAccount.account_type !== 'Bank' ||
+        sourceAccount.category_mapping === 'trust_bank' || sourceAccount.account_number === '1020') {
+      throw new Error('Distributions must be funded from an operating bank account, not trust or non-bank accounts.');
+    }
 
     const drawAccount = ChartOfAccountsRepository.getAccountByMapping('owner_draw') ||
       ChartOfAccountsRepository.getAccountByAccountNumber('3020');
@@ -359,6 +368,14 @@ export class ClientAccountingRepository {
     const id = generateUUIDv7();
     const now = Date.now();
     const distributionDate = data.distribution_date || now;
+
+    // Validate distribution does not exceed available cash
+    const cashSummary = ClientAccountingRepository.getPortfolioCashSummary(data.portfolio_id, distributionDate);
+    if (amount > cashSummary.available_for_distribution_cents) {
+      throw new Error(
+        `Insufficient available cash for distribution: requested ${amount} cents, but available cash is ${cashSummary.available_for_distribution_cents} cents.`
+      );
+    }
 
     withTransaction((tx) => {
       // 1. Post double-entry General Ledger entry
@@ -497,7 +514,11 @@ export class ClientAccountingRepository {
   /**
    * Calculate portfolio-level net operating cash summary and available distribution balance.
    */
-  public static getPortfolioCashSummary(portfolioId: string, asOfDateMs?: number): PortfolioCashSummary {
+  public static getPortfolioCashSummary(
+    portfolioId: string,
+    asOfDateMs?: number,
+    basis: 'cash' | 'accrual' = 'cash'
+  ): PortfolioCashSummary {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const asOf = asOfDateMs || Date.now();
@@ -515,7 +536,6 @@ export class ClientAccountingRepository {
       WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
       ORDER BY name ASC
     `).all(portfolioId, operatorId) as Array<{ id: string; name: string }>;
-    const propertyIds = properties.map((p) => p.id);
 
     // Sum capital contributions for this portfolio
     const contribRow = db.prepare(`
@@ -539,37 +559,68 @@ export class ClientAccountingRepository {
 
     // Query operating income and expenses from journal_lines for each property
     for (const prop of properties) {
-      // Income credits
-      const incRow = db.prepare(`
-        SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) as total_inc
-        FROM journal_lines jl
-        JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
-        JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
-        WHERE jl.operator_id = ? AND jl.property_id = ? AND coa.account_type = 'Income'
-          AND je.date_ms <= ? AND je.reversed_by_entry_id IS NULL
-      `).get(operatorId, prop.id, asOf) as { total_inc: number };
-      const propInc = Math.max(0, incRow ? Number(incRow.total_inc) : 0);
+      let propReceipts = 0;
+      let propDisbursements = 0;
 
-      // Operating expenses debits
-      const expRow = db.prepare(`
-        SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as total_exp
-        FROM journal_lines jl
-        JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
-        JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
-        WHERE jl.operator_id = ? AND jl.property_id = ? AND coa.account_type IN ('Expense', 'CostOfGoodsSold')
-          AND je.date_ms <= ? AND je.reversed_by_entry_id IS NULL
-      `).get(operatorId, prop.id, asOf) as { total_exp: number };
-      const propExp = Math.max(0, expRow ? Number(expRow.total_exp) : 0);
+      if (basis === 'cash') {
+        // Cash basis: receipts from operating bank debits (excluding capital contributions)
+        const recRow = db.prepare(`
+          SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as total_receipts
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND jl.property_id = ?
+            AND coa.category_mapping = 'operating_bank'
+            AND je.source_type NOT IN ('client_contribution')
+            AND je.date_ms <= ?
+        `).get(operatorId, prop.id, asOf) as { total_receipts: number };
+        propReceipts = Math.max(0, recRow ? Number(recRow.total_receipts) : 0);
 
-      totalReceipts += propInc;
-      totalDisbursements += propExp;
+        // Cash basis: disbursements from operating bank credits (excluding owner draws)
+        const disbRow = db.prepare(`
+          SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) as total_disbursements
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND jl.property_id = ?
+            AND coa.category_mapping = 'operating_bank'
+            AND je.source_type NOT IN ('client_draw')
+            AND je.date_ms <= ?
+        `).get(operatorId, prop.id, asOf) as { total_disbursements: number };
+        propDisbursements = Math.max(0, disbRow ? Number(disbRow.total_disbursements) : 0);
+      } else {
+        // Accrual basis: Income credits
+        const incRow = db.prepare(`
+          SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) as total_inc
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND jl.property_id = ? AND coa.account_type = 'Income'
+            AND je.date_ms <= ?
+        `).get(operatorId, prop.id, asOf) as { total_inc: number };
+        propReceipts = Math.max(0, incRow ? Number(incRow.total_inc) : 0);
+
+        // Accrual basis: Operating expenses debits
+        const expRow = db.prepare(`
+          SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as total_exp
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND jl.property_id = ? AND coa.account_type IN ('Expense', 'CostOfGoodsSold')
+            AND je.date_ms <= ?
+        `).get(operatorId, prop.id, asOf) as { total_exp: number };
+        propDisbursements = Math.max(0, expRow ? Number(expRow.total_exp) : 0);
+      }
+
+      totalReceipts += propReceipts;
+      totalDisbursements += propDisbursements;
 
       propertySummaries.push({
         property_id: prop.id,
         property_name: prop.name,
-        operating_receipts_cents: propInc,
-        operating_disbursements_cents: propExp,
-        net_cash_cents: propInc - propExp
+        operating_receipts_cents: propReceipts,
+        operating_disbursements_cents: propDisbursements,
+        net_cash_cents: propReceipts - propDisbursements
       });
     }
 
@@ -580,6 +631,7 @@ export class ClientAccountingRepository {
       portfolio_id: portfolio.id,
       portfolio_name: portfolio.name,
       as_of_date_ms: asOf,
+      basis,
       total_contributions_cents: totalContributions,
       total_distributions_cents: totalDistributions,
       total_operating_receipts_cents: totalReceipts,
@@ -766,7 +818,10 @@ export class ClientAccountingRepository {
 
     let year: number;
     let monthIndex: number;
-    if (targetYearMonth) {
+    if (targetYearMonth !== undefined && targetYearMonth !== null) {
+      if (typeof targetYearMonth !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(targetYearMonth)) {
+        throw new Error(`Invalid month '${targetYearMonth}'. Expected YYYY-MM.`);
+      }
       const [yStr, mStr] = targetYearMonth.split('-');
       year = parseInt(yStr || '', 10);
       monthIndex = parseInt(mStr || '', 10) - 1;
@@ -798,17 +853,17 @@ export class ClientAccountingRepository {
     let feeDetails = '';
 
     if (propertyIds.length > 0) {
-      // Sum rent revenues collected across covered properties
+      // Sum rent cash receipts collected across covered properties in operating bank
       const placeholders = propertyIds.map(() => '?').join(',');
       const revRow = db.prepare(`
-        SELECT COALESCE(SUM(jl.credit_cents - jl.debit_cents), 0) as total_rev
+        SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as total_rev
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
         JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
         WHERE jl.operator_id = ? AND jl.property_id IN (${placeholders})
-          AND coa.account_type = 'Income'
+          AND coa.category_mapping = 'operating_bank'
+          AND je.source_type IN ('payment', 'rent')
           AND je.date_ms >= ? AND je.date_ms <= ?
-          AND je.reversed_by_entry_id IS NULL
       `).get(operatorId, ...propertyIds, startMs, endMs) as { total_rev: number };
       collectedRevenueCents = Math.max(0, revRow ? Number(revRow.total_rev) : 0);
 

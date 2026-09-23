@@ -24,6 +24,7 @@ export interface CreateTransactionData {
   lease_id?: string | null;
   payer_contact_id?: string | null;
   payee_contact_id?: string | null;
+  gl_account_id?: string | null;
 }
 
 export interface RentRollItem {
@@ -132,7 +133,9 @@ export class AccountingRepository {
     switch (data.transaction_type) {
       case 'charge': {
         const accountsReceivable = requireAccount('accounts_receivable');
-        const revAccount = mappedAccount || requireAccount('rent');
+        const revAccount = (data.gl_account_id ? ChartOfAccountsRepository.getAccountById(data.gl_account_id, dbInstance) : null)
+          || mappedAccount
+          || requireAccount('rent');
         lines.push(
           {
             account_id: accountsReceivable.id,
@@ -436,8 +439,8 @@ export class AccountingRepository {
           COUNT(*) as line_count
         FROM journal_lines jl
         JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+        JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
         WHERE jl.operator_id = ? AND jl.lease_id = ? AND jl.account_id = ?
-          AND je.reversed_by_entry_id IS NULL
       `).get(operatorId, leaseId, arAccount.id) as { balance_cents: number; line_count: number } | undefined;
       arBalanceCents = row ? Number(row.balance_cents) : 0;
       lineCount = row ? Number(row.line_count) : 0;
@@ -517,7 +520,6 @@ export class AccountingRepository {
       JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
       WHERE jl.operator_id = ?
         AND coa.account_type IN ('Income', 'Expense', 'CostOfGoodsSold')
-        AND je.reversed_by_entry_id IS NULL
     `;
     const glParams: any[] = [operatorId];
 
@@ -844,18 +846,16 @@ export class AccountingRepository {
     // Collect payments by vendor contact
     const vendorMap = new Map<string, number>();
 
-    // 1. Check journal_lines where account is Expense/COGS and contact_id is set (excluding reversed entries)
+    // 1. Check journal_lines where account is Expense/COGS and contact_id is set (netting reversals)
     const journalVendorRows = db.prepare(`
-      SELECT jl.contact_id, SUM(jl.debit_cents) AS total_cents
+      SELECT jl.contact_id, SUM(jl.debit_cents - jl.credit_cents) AS total_cents
       FROM journal_lines jl
-      JOIN journal_entries je ON jl.journal_entry_id = je.id
-      JOIN chart_of_accounts coa ON jl.account_id = coa.id
+      JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+      JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
       WHERE jl.operator_id = ?
         AND jl.contact_id IS NOT NULL
         AND coa.account_type IN ('Expense', 'CostOfGoodsSold')
         AND je.date_ms >= ? AND je.date_ms <= ?
-        AND je.reversed_by_entry_id IS NULL
-        AND je.deleted_at IS NULL
       GROUP BY jl.contact_id
     `).all(operatorId, yearStart, yearEnd) as Array<{ contact_id: string; total_cents: number }>;
 

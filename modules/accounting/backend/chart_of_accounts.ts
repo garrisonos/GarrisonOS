@@ -300,43 +300,46 @@ export class ChartOfAccountsRepository {
     const operatorId = RequestContext.getOperatorId();
     const db = dbInstance || getDatabase();
 
-    const countRow = db.prepare(`
-      SELECT COUNT(*) as count FROM chart_of_accounts
-      WHERE operator_id = ? AND deleted_at IS NULL
-    `).get(operatorId) as { count: number };
+    const existing = new Set(
+      (db.prepare(`
+        SELECT account_number FROM chart_of_accounts
+        WHERE operator_id = ? AND deleted_at IS NULL AND account_number IS NOT NULL
+      `).all(operatorId) as Array<{ account_number: string }>).map((r) => r.account_number)
+    );
 
-    if (countRow.count === 0) {
-      const seedAccounts = (tx: any) => {
-        const stmt = tx.prepare(`
-          INSERT INTO chart_of_accounts (
-            id, operator_id, account_number, account_name, account_type,
-            qb_account_type, category_mapping, description, is_system_default,
-            is_active, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
-        `);
+    const missing = DEFAULT_PROPERTY_MANAGEMENT_COA.filter((d) => !existing.has(d.account_number));
+    if (missing.length === 0) return;
 
-        const now = Date.now();
-        for (const def of DEFAULT_PROPERTY_MANAGEMENT_COA) {
-          stmt.run(
-            generateUUIDv7(),
-            operatorId,
-            def.account_number,
-            def.account_name,
-            def.account_type,
-            def.qb_account_type,
-            def.category_mapping,
-            def.description,
-            now,
-            now
-          );
-        }
-      };
+    const seedAccounts = (tx: any) => {
+      const stmt = tx.prepare(`
+        INSERT INTO chart_of_accounts (
+          id, operator_id, account_number, account_name, account_type,
+          qb_account_type, category_mapping, description, is_system_default,
+          is_active, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+      `);
 
-      if (dbInstance) {
-        seedAccounts(dbInstance);
-      } else {
-        withTransaction(seedAccounts, db);
+      const now = Date.now();
+      for (const def of missing) {
+        stmt.run(
+          generateUUIDv7(),
+          operatorId,
+          def.account_number,
+          def.account_name,
+          def.account_type,
+          def.qb_account_type,
+          def.category_mapping,
+          def.description,
+          now,
+          now
+        );
       }
+    };
+
+    if (dbInstance) {
+      seedAccounts(dbInstance);
+    } else {
+      withTransaction(seedAccounts, db);
     }
   }
 
@@ -357,9 +360,9 @@ export class ChartOfAccountsRepository {
     return db.prepare(sql).all(operatorId) as unknown as ChartOfAccountRecord[];
   }
 
-  public static getAccountById(id: string): ChartOfAccountRecord | null {
+  public static getAccountById(id: string, dbInstance?: any): ChartOfAccountRecord | null {
     const operatorId = RequestContext.getOperatorId();
-    const db = getDatabase();
+    const db = dbInstance || getDatabase();
 
     const row = db.prepare(`
       SELECT * FROM chart_of_accounts

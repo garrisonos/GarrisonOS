@@ -323,6 +323,7 @@ export class JournalService {
         property_id: line.property_id,
         unit_id: line.unit_id,
         contact_id: line.contact_id,
+        lease_id: line.lease_id ?? null,
         description: `Reversal: ${line.description || original.memo}`
       }));
 
@@ -375,7 +376,7 @@ export class JournalService {
         coa.account_name,
         coa.account_type
       FROM journal_lines jl
-      JOIN chart_of_accounts coa ON jl.account_id = coa.id
+      JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.operator_id = jl.operator_id
       WHERE jl.journal_entry_id = ? AND jl.operator_id = ?
       ORDER BY jl.debit_cents DESC, jl.credit_cents DESC, jl.created_at ASC
     `).all(id, operatorId) as unknown as JournalLineRecord[];
@@ -451,7 +452,7 @@ export class JournalService {
           coa.account_name,
           coa.account_type
         FROM journal_lines jl
-        JOIN chart_of_accounts coa ON jl.account_id = coa.id
+        JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.operator_id = jl.operator_id
         WHERE jl.journal_entry_id = ? AND jl.operator_id = ?
         ORDER BY jl.debit_cents DESC, jl.credit_cents DESC, jl.created_at ASC
       `).all(entry.id, operatorId) as unknown as JournalLineRecord[];

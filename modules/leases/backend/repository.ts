@@ -2,6 +2,7 @@ import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
+import { JournalService } from '../../accounting/backend/journal.js';
 
 /**
  * Itemized recurring charge attached to a lease contract.
@@ -889,21 +890,22 @@ export class LeasesRepository {
 
     // Query outstanding AR balance for this lease
     const arRow = db.prepare(`
-      SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) AS balance_cents
+      SELECT
+        COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) AS balance_cents,
+        COUNT(jl.id) AS line_count
       FROM journal_lines jl
       JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
-      JOIN chart_of_accounts coa ON jl.account_id = coa.id
+      JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
       WHERE jl.operator_id = ?
         AND jl.lease_id = ?
         AND coa.category_mapping = 'accounts_receivable'
         AND je.date_ms <= ?
-        AND je.reversed_by_entry_id IS NULL
-    `).get(operatorId, leaseId, asOfDateMs) as { balance_cents: number };
+    `).get(operatorId, leaseId, asOfDateMs) as { balance_cents: number; line_count: number } | undefined;
 
     let balanceCents = arRow?.balance_cents || 0;
 
-    // Fallback to legacy single-entry transactions if no journal lines exist
-    if (balanceCents === 0) {
+    // Fallback to legacy single-entry transactions only if no journal lines exist
+    if (!arRow || Number(arRow.line_count) === 0) {
       const legacyRow = db.prepare(`
         SELECT
           COALESCE(SUM(CASE WHEN transaction_type = 'charge' THEN amount_cents ELSE 0 END), 0) -
@@ -1018,71 +1020,37 @@ export class LeasesRepository {
         throw new Error('Chart of accounts missing required Accounts Receivable (1100) or Late Fee Income (4020) account.');
       }
 
-      const entryId = generateUUIDv7();
       const now = Date.now();
-      const maxRow = conn.prepare(`
-        SELECT COALESCE(MAX(entry_number), 0) AS max_num
-        FROM journal_entries
-        WHERE operator_id = ?
-      `).get(operatorId) as { max_num: number };
-      const entryNumber = (maxRow?.max_num || 0) + 1;
 
-      conn.prepare(`
-        INSERT INTO journal_entries (
-          id, operator_id, entry_number, date_ms, memo, source_type, source_id,
-          posted_at, reversed_by_entry_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-      `).run(
-        entryId,
-        operatorId,
-        entryNumber,
-        asOfDateMs,
-        `Late Fee Assessment - ${yyyyMm}`,
-        'late_fee',
-        idempotencyRef,
-        now,
-        now,
-        now
-      );
-
-      const lineStmt = conn.prepare(`
-        INSERT INTO journal_lines (
-          id, operator_id, journal_entry_id, account_id, debit_cents, credit_cents,
-          property_id, unit_id, contact_id, lease_id, description, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      // Debit AR (increases amount tenant owes)
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        arAcc.id,
-        calc.fee_cents,
-        0,
-        meta.property_id,
-        meta.unit_id,
-        meta.contact_id || null,
-        leaseId,
-        `Late Fee Assessment - ${yyyyMm}`,
-        now
-      );
-
-      // Credit Late Fee Income (increases income)
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        lateFeeAcc.id,
-        0,
-        calc.fee_cents,
-        meta.property_id,
-        meta.unit_id,
-        meta.contact_id || null,
-        leaseId,
-        `Late Fee Assessment - ${yyyyMm}`,
-        now
-      );
+      // Post double-entry journal entry via JournalService
+      const je = JournalService.postEntry({
+        date_ms: asOfDateMs,
+        memo: `Late Fee Assessment - ${yyyyMm}`,
+        source_type: 'late_fee',
+        source_id: idempotencyRef,
+        lines: [
+          {
+            account_id: arAcc.id,
+            debit_cents: calc.fee_cents,
+            credit_cents: 0,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: meta.contact_id || null,
+            lease_id: leaseId,
+            description: `Late Fee Assessment - ${yyyyMm}`
+          },
+          {
+            account_id: lateFeeAcc.id,
+            debit_cents: 0,
+            credit_cents: calc.fee_cents,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: meta.contact_id || null,
+            lease_id: leaseId,
+            description: `Late Fee Assessment - ${yyyyMm}`
+          }
+        ]
+      }, conn);
 
       // Legacy transactions table entry for backward compatibility
       conn.prepare(`
@@ -1103,7 +1071,7 @@ export class LeasesRepository {
         meta.unit_id,
         leaseId,
         meta.contact_id || null,
-        entryId,
+        je.id,
         now,
         now
       );
@@ -1118,7 +1086,7 @@ export class LeasesRepository {
       return {
         applied: true,
         fee_cents: calc.fee_cents,
-        journal_entry_id: entryId
+        journal_entry_id: je.id
       };
     });
   }
@@ -1170,7 +1138,7 @@ export class LeasesRepository {
       if (!glAccountId) {
         const concessionAcc = conn.prepare(`
           SELECT id FROM chart_of_accounts
-          WHERE operator_id = ? AND category_mapping = 'lease_concession' AND deleted_at IS NULL
+          WHERE operator_id = ? AND category_mapping = 'concessions' AND deleted_at IS NULL
           LIMIT 1
         `).get(operatorId) as { id: string } | undefined;
 
@@ -1219,70 +1187,34 @@ export class LeasesRepository {
       );
 
       // Post double-entry: Debit Concessions (4050), Credit AR (1100 - reduces tenant balance)
-      const entryId = generateUUIDv7();
-      const maxRow = conn.prepare(`
-        SELECT COALESCE(MAX(entry_number), 0) AS max_num
-        FROM journal_entries
-        WHERE operator_id = ?
-      `).get(operatorId) as { max_num: number };
-      const entryNumber = (maxRow?.max_num || 0) + 1;
-
-      conn.prepare(`
-        INSERT INTO journal_entries (
-          id, operator_id, entry_number, date_ms, memo, source_type, source_id,
-          posted_at, reversed_by_entry_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-      `).run(
-        entryId,
-        operatorId,
-        entryNumber,
-        effectiveDate,
-        `Lease Credit: ${input.reason}`,
-        'credit_concession',
-        id,
-        now,
-        now,
-        now
-      );
-
-      const lineStmt = conn.prepare(`
-        INSERT INTO journal_lines (
-          id, operator_id, journal_entry_id, account_id, debit_cents, credit_cents,
-          property_id, unit_id, contact_id, lease_id, description, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      // Debit Concessions / Discount Account
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        glAccountId,
-        input.amount_cents,
-        0,
-        meta.property_id,
-        meta.unit_id,
-        meta.contact_id || null,
-        input.lease_id,
-        input.reason,
-        now
-      );
-
-      // Credit AR (reducing tenant debt)
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        arAcc.id,
-        0,
-        input.amount_cents,
-        meta.property_id,
-        meta.unit_id,
-        meta.contact_id || null,
-        input.lease_id,
-        input.reason,
-        now
-      );
+      const je = JournalService.postEntry({
+        date_ms: effectiveDate,
+        memo: `Lease Credit: ${input.reason}`,
+        source_type: 'credit_concession',
+        source_id: id,
+        lines: [
+          {
+            account_id: glAccountId,
+            debit_cents: input.amount_cents,
+            credit_cents: 0,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: meta.contact_id || null,
+            lease_id: input.lease_id,
+            description: input.reason
+          },
+          {
+            account_id: arAcc.id,
+            debit_cents: 0,
+            credit_cents: input.amount_cents,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: meta.contact_id || null,
+            lease_id: input.lease_id,
+            description: input.reason
+          }
+        ]
+      }, conn);
 
       // Insert legacy single-entry record for backward compatibility
       conn.prepare(`
@@ -1303,7 +1235,7 @@ export class LeasesRepository {
         meta.unit_id,
         input.lease_id,
         meta.contact_id || null,
-        entryId,
+        je.id,
         now,
         now
       );
@@ -1399,38 +1331,76 @@ export class LeasesRepository {
     `).get(input.lease_id, operatorId) as { unit_id: string; property_id: string };
 
     return withTransaction((conn) => {
-      let fundingAccountId = input.funding_account_id;
-      if (!fundingAccountId) {
-        const trustBank = conn.prepare(`
+      const isOverpayment = input.refund_type === 'overpayment_return';
+      let debitAccountId: string;
+      let creditAccountId: string;
+
+      if (isOverpayment) {
+        // Overpayment return: Debit Accounts Receivable (1100), Credit Operating Bank (1010)
+        let fundingAccountId = input.funding_account_id;
+        if (!fundingAccountId) {
+          const operatingBank = conn.prepare(`
+            SELECT id FROM chart_of_accounts
+            WHERE operator_id = ? AND category_mapping = 'operating_bank' AND deleted_at IS NULL
+            LIMIT 1
+          `).get(operatorId) as { id: string } | undefined;
+
+          if (!operatingBank) {
+            throw new Error('Operating Checking account (1010) not found in chart of accounts.');
+          }
+          fundingAccountId = operatingBank.id;
+        }
+
+        const arAcc = conn.prepare(`
           SELECT id FROM chart_of_accounts
-          WHERE operator_id = ? AND category_mapping = 'trust_bank' AND deleted_at IS NULL
+          WHERE operator_id = ? AND category_mapping = 'accounts_receivable' AND deleted_at IS NULL
           LIMIT 1
         `).get(operatorId) as { id: string } | undefined;
 
-        if (!trustBank) {
-          throw new Error('Security Deposit Trust Checking account (1020) not found in chart of accounts.');
+        if (!arAcc) {
+          throw new Error('Accounts Receivable account (1100) not found in chart of accounts.');
         }
-        fundingAccountId = trustBank.id;
-      }
 
-      const depositLiability = conn.prepare(`
-        SELECT id FROM chart_of_accounts
-        WHERE operator_id = ? AND category_mapping = 'security_deposit' AND deleted_at IS NULL
-        LIMIT 1
-      `).get(operatorId) as { id: string } | undefined;
+        debitAccountId = arAcc.id;
+        creditAccountId = fundingAccountId;
+      } else {
+        // Security deposit refund: Debit Security Deposit Liability (2100), Credit Trust Bank (1020)
+        let fundingAccountId = input.funding_account_id;
+        if (!fundingAccountId) {
+          const trustBank = conn.prepare(`
+            SELECT id FROM chart_of_accounts
+            WHERE operator_id = ? AND category_mapping = 'trust_bank' AND deleted_at IS NULL
+            LIMIT 1
+          `).get(operatorId) as { id: string } | undefined;
 
-      if (!depositLiability) {
-        throw new Error('Tenant Security Deposits Held liability account (2100) not found in chart of accounts.');
+          if (!trustBank) {
+            throw new Error('Security Deposit Trust Checking account (1020) not found in chart of accounts.');
+          }
+          fundingAccountId = trustBank.id;
+        }
+
+        const depositLiability = conn.prepare(`
+          SELECT id FROM chart_of_accounts
+          WHERE operator_id = ? AND category_mapping = 'security_deposit' AND deleted_at IS NULL
+          LIMIT 1
+        `).get(operatorId) as { id: string } | undefined;
+
+        if (!depositLiability) {
+          throw new Error('Tenant Security Deposits Held liability account (2100) not found in chart of accounts.');
+        }
+
+        debitAccountId = depositLiability.id;
+        creditAccountId = fundingAccountId;
+
+        // Decrement held deposit on the lease ONLY for security deposit refunds
+        conn.prepare(`
+          UPDATE leases
+          SET deposit_held_cents = deposit_held_cents - ?, updated_at = ?
+          WHERE id = ? AND operator_id = ?
+        `).run(input.refund_amount_cents, now, input.lease_id, operatorId);
       }
 
       const id = generateUUIDv7();
-
-      // Decrement held deposit on the lease
-      conn.prepare(`
-        UPDATE leases
-        SET deposit_held_cents = deposit_held_cents - ?, updated_at = ?
-        WHERE id = ? AND operator_id = ?
-      `).run(input.refund_amount_cents, now, input.lease_id, operatorId);
 
       // Insert refund record
       conn.prepare(`
@@ -1446,78 +1416,48 @@ export class LeasesRepository {
         input.recipient_contact_id,
         input.refund_type,
         input.refund_amount_cents,
-        fundingAccountId,
+        creditAccountId,
         input.disbursement_method,
         input.check_number || null,
         disbursementDate,
         now
       );
 
-      // Post double-entry: Debit 2100 (Liability), Credit 1020 (Trust Bank Asset)
-      const entryId = generateUUIDv7();
-      const maxRow = conn.prepare(`
-        SELECT COALESCE(MAX(entry_number), 0) AS max_num
-        FROM journal_entries
-        WHERE operator_id = ?
-      `).get(operatorId) as { max_num: number };
-      const entryNumber = (maxRow?.max_num || 0) + 1;
-
-      conn.prepare(`
-        INSERT INTO journal_entries (
-          id, operator_id, entry_number, date_ms, memo, source_type, source_id,
-          posted_at, reversed_by_entry_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-      `).run(
-        entryId,
-        operatorId,
-        entryNumber,
-        disbursementDate,
-        `Security Deposit Refund - ${input.refund_type}`,
-        'deposit_refund',
-        id,
-        now,
-        now,
-        now
-      );
-
-      const lineStmt = conn.prepare(`
-        INSERT INTO journal_lines (
-          id, operator_id, journal_entry_id, account_id, debit_cents, credit_cents,
-          property_id, unit_id, contact_id, lease_id, description, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      // Debit Liability (reduces what operator owes to tenant)
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        depositLiability.id,
-        input.refund_amount_cents,
-        0,
-        meta.property_id,
-        meta.unit_id,
-        input.recipient_contact_id,
-        input.lease_id,
-        `Security Deposit Disposition: ${input.refund_type}`,
-        now
-      );
-
-      // Credit Trust Bank (reduces cash held in trust checking)
-      lineStmt.run(
-        generateUUIDv7(),
-        operatorId,
-        entryId,
-        fundingAccountId,
-        0,
-        input.refund_amount_cents,
-        meta.property_id,
-        meta.unit_id,
-        input.recipient_contact_id,
-        input.lease_id,
-        `Security Deposit Disposition: ${input.refund_type}`,
-        now
-      );
+      // Post double-entry journal entry via JournalService
+      const je = JournalService.postEntry({
+        date_ms: disbursementDate,
+        memo: isOverpayment
+          ? 'Rent Overpayment Return'
+          : `Security Deposit Refund - ${input.refund_type}`,
+        source_type: isOverpayment ? 'refund' : 'deposit_refund',
+        source_id: id,
+        lines: [
+          {
+            account_id: debitAccountId,
+            debit_cents: input.refund_amount_cents,
+            credit_cents: 0,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: input.recipient_contact_id,
+            lease_id: input.lease_id,
+            description: isOverpayment
+              ? 'Rent Overpayment Return'
+              : `Security Deposit Disposition: ${input.refund_type}`
+          },
+          {
+            account_id: creditAccountId,
+            debit_cents: 0,
+            credit_cents: input.refund_amount_cents,
+            property_id: meta.property_id,
+            unit_id: meta.unit_id,
+            contact_id: input.recipient_contact_id,
+            lease_id: input.lease_id,
+            description: isOverpayment
+              ? 'Rent Overpayment Return'
+              : `Security Deposit Disposition: ${input.refund_type}`
+          }
+        ]
+      }, conn);
 
       // Insert legacy single-entry record
       conn.prepare(`
@@ -1526,19 +1466,21 @@ export class LeasesRepository {
           transaction_date, description, reference_number,
           property_id, unit_id, lease_id, payer_contact_id, payee_contact_id,
           journal_entry_id, created_at, updated_at
-        ) VALUES (?, ?, 'deposit_return', 'security_deposit', ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
       `).run(
         generateUUIDv7(),
         operatorId,
+        isOverpayment ? 'refund' : 'deposit_return',
+        isOverpayment ? 'rent' : 'security_deposit',
         input.refund_amount_cents,
         disbursementDate,
-        `Deposit Refund: ${input.refund_type}`,
+        isOverpayment ? 'Rent Overpayment Return' : `Deposit Refund: ${input.refund_type}`,
         input.check_number || id,
         meta.property_id,
         meta.unit_id,
         input.lease_id,
         input.recipient_contact_id,
-        entryId,
+        je.id,
         now,
         now
       );
@@ -1557,7 +1499,7 @@ export class LeasesRepository {
         recipient_contact_id: input.recipient_contact_id,
         refund_type: input.refund_type,
         refund_amount_cents: input.refund_amount_cents,
-        funding_account_id: fundingAccountId,
+        funding_account_id: creditAccountId,
         disbursement_method: input.disbursement_method,
         check_number: input.check_number || null,
         disbursement_date: disbursementDate,

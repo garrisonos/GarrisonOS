@@ -677,11 +677,26 @@ export function registerRoutes(router: Router): void {
   router.get('/api/v1/accounting/portfolios/:portfolio_id/cash_summary', (req, res) => {
     const asOfRes = parseIntegerParam(req, res, 'as_of', { min: 1 });
     if (asOfRes.hasError) return;
+
+    const rawBasis = req.query['basis'];
+    let basis: 'cash' | 'accrual' = 'cash';
+    if (rawBasis !== undefined) {
+      if (rawBasis === 'accrual') {
+        basis = 'accrual';
+      } else if (rawBasis !== 'cash') {
+        return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "basis" must be "cash" or "accrual"', 400);
+      }
+    }
+
     try {
-      const summary = ClientAccountingRepository.getPortfolioCashSummary(req.params.portfolio_id!, asOfRes.value);
+      const summary = ClientAccountingRepository.getPortfolioCashSummary(req.params.portfolio_id!, asOfRes.value, basis);
       successResponse(res, { summary });
     } catch (err: any) {
-      errorResponse(res, 'NOT_FOUND', err.message, 404);
+      if (err.message && err.message.toLowerCase().includes('not found')) {
+        errorResponse(res, 'NOT_FOUND', err.message, 404);
+      } else {
+        errorResponse(res, 'INTERNAL_ERROR', err.message || 'Internal server error', 500);
+      }
     }
   });
 

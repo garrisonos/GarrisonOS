@@ -149,15 +149,18 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 
 ### 4.9. Client Accounting & Management Fee Automation
 
-* `GET /api/v1/accounting/client_contributions`: List client owner capital contributions
-* `POST /api/v1/accounting/client_contributions`: Record investor/owner capital infusion
-* `GET /api/v1/accounting/client_distributions`: List client owner draw disbursements
-* `POST /api/v1/accounting/client_distributions`: Execute client draw disbursement
-* `GET /api/v1/accounting/portfolio_cash`: Retrieve real-time net operating cash summary and client cash balance
+* `GET /api/v1/accounting/portfolios/:portfolio_id/cash_summary`: Retrieve real-time net operating cash summary and client cash balance (`?as_of=<ms>&basis=cash|accrual`, default `cash`)
+* `POST /api/v1/accounting/capital_contributions`: Record investor/owner capital infusion (debit `1010 Operating Checking`, credit `3010 Owner Capital Contributions`)
+* `GET /api/v1/accounting/capital_contributions`: List client owner capital contributions
+* `GET /api/v1/accounting/capital_contributions/:id`: Get single capital contribution details
+* `POST /api/v1/accounting/distributions`: Execute client draw disbursement (debit `3020 Owner Draws`, credit `1010 Operating Checking`)
+* `GET /api/v1/accounting/distributions`: List client owner draw disbursements
+* `GET /api/v1/accounting/distributions/:id`: Get single distribution details
+* `POST /api/v1/accounting/management_fee_agreements`: Create property management fee agreement
 * `GET /api/v1/accounting/management_fee_agreements`: List active and draft management fee agreements
-* `POST /api/v1/accounting/management_fee_agreements`: Create or update property/portfolio management fee agreement
-* `DELETE /api/v1/accounting/management_fee_agreements/:id`: Terminate management fee agreement
-* `POST /api/v1/accounting/management_fee_agreements/calculate_and_post`: Calculate accrued management fees and post double-entry GL revenue/expense entries
+* `GET /api/v1/accounting/management_fee_agreements/:id`: Get single management fee agreement details
+* `POST /api/v1/accounting/management_fee_agreements/:id/calculate`: Preview calculated fee for target month (`YYYY-MM`)
+* `POST /api/v1/accounting/management_fee_agreements/:id/post`: Post calculated monthly fee accrual (debit `5070 Management Fees Expense`, credit `2010 Accounts Payable`)
 
 ---
 
@@ -168,9 +171,12 @@ GarrisonOS exports directly from persistent General Ledger entries into standard
 1. **Chart of Accounts (COA) Standard Mapping**:
    * **Bank (1010 Operating Checking, 1020 Security Deposit Trust Checking)**: Operating vs escrow cash segregation.
    * **Accounts Receivable (1100 Tenant Receivables)**: Invoiced rent, utility, and fee charges.
+   * **Accounts Payable (2010 Accounts Payable)**: Outstanding vendor bills and accrued management fees payable.
    * **Current Liabilities (2100 Tenant Security Deposits Held)**: Escrow liabilities.
+   * **Equity (3010 Owner Capital Contributions, 3020 Owner Draws)**: Client capital contributions and distributions.
    * **Income (4010 Rental Income, 4020 Late Fee Income, etc.)**: Operating revenues.
-   * **Operating Expenses (5010–5140)**: Aligned with IRS Form 1040 Schedule E lines.
+   * **Concessions (4050 Lease Concessions)**: Contra-revenue reductions.
+   * **Operating Expenses (5010–5140, including 5070 Management Fees)**: Aligned with IRS Form 1040 Schedule E lines.
 
 2. **Class & Customer Tracking**:
    * Each journal line maps the GarrisonOS `property_id` to a QuickBooks **Class** for granular property-level P&L reporting.
@@ -223,4 +229,4 @@ Supplier rebates, overpayment adjustments, and vendor concessions are tracked as
 Customer and tenant payments initially accumulate in `1030 Undeposited Funds`. The Bank Deposit workflow bundles multiple receipts into a single bank statement batch, debiting `1010 Operating Checking` and crediting `1030 Undeposited Funds` to mirror physical bank deposits.
 
 ### 7.5. Client Accounting & Automated Management Fees
-For third-party property management operators, GarrisonOS segregates property revenues by client portfolio. Capital contributions record owner equity infusions, while owner draws track periodic profit distributions. Management fee agreements automatically calculate operator earned revenue based on collected rent percentages or unit counts, posting monthly inter-company entries debiting client operating funds and crediting management fee revenue.
+For third-party property management operators, GarrisonOS segregates property revenues by client portfolio. Capital contributions record owner equity infusions, while owner draws track periodic profit distributions. Management fee agreements automatically calculate operator earned revenue based on collected rent percentages or unit counts, posting monthly entries debiting client operating expenses (`#5070 Management Fees Expense`) and crediting Accounts Payable (`#2010 Accounts Payable`).

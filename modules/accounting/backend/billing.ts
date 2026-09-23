@@ -95,6 +95,10 @@ export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringR
     createdTransactionIds: []
   };
 
+  const hasRecurringChargesTable = db.prepare(`
+    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'recurring_lease_charges'
+  `).get();
+
   for (const lease of activeLeases) {
     const idempotencyRef = `rent_charge:${lease.id}:${yyyyMm}`;
 
@@ -143,9 +147,9 @@ export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringR
     }
 
     // Process attached itemized recurring lease charges (pet rent, parking, storage, utilities)
-    try {
+    if (hasRecurringChargesTable) {
       const recurringCharges = db.prepare(`
-        SELECT id, charge_category, amount_cents, billing_day, description
+        SELECT id, charge_category, amount_cents, billing_day, description, gl_account_id
         FROM recurring_lease_charges
         WHERE operator_id = ? AND lease_id = ? AND billing_frequency = 'monthly' AND deleted_at IS NULL
       `).all(operatorId, lease.id) as Array<{
@@ -154,6 +158,7 @@ export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringR
         amount_cents: number;
         billing_day: number;
         description: string;
+        gl_account_id?: string | null;
       }>;
 
       for (const rc of recurringCharges) {
@@ -186,15 +191,14 @@ export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringR
           property_id: lease.property_id,
           unit_id: lease.unit_id,
           lease_id: lease.id,
-          payer_contact_id: lease.contact_id
+          payer_contact_id: lease.contact_id,
+          gl_account_id: rc.gl_account_id || null
         });
 
         result.chargesCreated += 1;
         result.totalChargesCents += rc.amount_cents;
         result.createdTransactionIds.push(rcTx.id);
       }
-    } catch {
-      // Table may not exist in unmigrated or isolated test fixtures
     }
   }
 
