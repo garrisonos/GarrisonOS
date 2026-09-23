@@ -30,6 +30,9 @@ export type PermissionString =
   | 'attachments:view'
   | 'attachments:upload'
   | 'attachments:delete'
+  | 'conversations:view'
+  | 'conversations:create'
+  | 'conversations:delete'
   | 'system:admin'
   | 'system:backup'
   | 'system:operators'
@@ -60,6 +63,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     'maintenance:*',
     'accounting:*',
     'attachments:*',
+    'conversations:*',
     'system:backup'
   ]),
   leasing_agent: Object.freeze([
@@ -69,14 +73,18 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     'contacts:create',
     'contacts:update',
     'attachments:view',
-    'attachments:upload'
+    'attachments:upload',
+    'conversations:view',
+    'conversations:create'
   ]),
   maintenance: Object.freeze([
     'maintenance:*',
     'properties:view',
     'contacts:view',
     'attachments:view',
-    'attachments:upload'
+    'attachments:upload',
+    'conversations:view',
+    'conversations:create'
   ]),
   auditor: Object.freeze([
     '*:view',
@@ -87,6 +95,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly string[]
     'accounting:view',
     'accounting:reconcile',
     'attachments:view',
+    'conversations:view',
     'system:backup'
   ]),
   viewer: Object.freeze([
