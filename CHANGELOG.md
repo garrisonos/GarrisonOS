@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Sprint 4 (Tasks 23–25): Universal Conversations, Initial UI Baseline & Configurable Branding, Notifications & 50-Unit Portfolio**:
+  - **Task 23: Universal Conversations & Staff Notes Subsystem**:
+    - Added module `modules/conversations/` with manifest `module.json`, migration `0001_conversations.sql` creating `conversations`, `conversation_messages`, and `conversation_participants`.
+    - Implemented polymorphic thread binding across `property`, `unit`, `lease`, `work_order`, `contact`, and `portfolio` entities with privacy flags (`is_private = 1` for internal operator notes shielded from external tenants/vendors).
+    - Implemented in-process event emission (`conversation:created`, `conversation:message_created`) and registered canonical `/api/v1/conversations` routes along with entity aliases (`/api/v1/properties/:id/conversations`, etc.).
+  - **Task 24: Initial UI Styling Baseline, Configurable Operator Branding & Draft SSR Views**:
+    - Added migration `database/migrations/0008_operator_branding.sql` creating `operator_branding` for persistent multi-operator brand configuration.
+    - Implemented `BrandingService` in `core/branding.ts` supporting 6 basic real estate & financial presets (*Classic White & Blue* [Default], *Metropolitan Slate*, *Emerald Asset Management*, *Warm Estate Terracotta*, *Executive Indigo*, *Custom*), dynamic CSS generation, custom logo URL, favicon, and brand name.
+    - Introduced foundational styling scaffolding in `web/public/css/variables.css` and `web/public/css/style.css` establishing a basic whites and blues palette with initial dark mode tokens (`[data-theme="dark"]`), tabs, metric cards, financial ledger badges, conversation bubble streams, and preset swatches.
+    - Added global dark mode toggle in header with `Alt+D` keyboard shortcut, anti-FOUC synchronous script in `<head>`, and persistent `localStorage` preference.
+    - Added initial rough-draft TypeScript SSR screens: Client Accounting Dashboard (`/accounting/client-accounting`), Lease AR & Fee Policies Subsystem (`renderLeaseARSubsystem`), Preventative Maintenance Schedules (`/maintenance/preventative`), Universal Conversation/Notes SSR Widget (`renderConversationsWidget`), and Admin Branding & Telemetry settings (`/admin`).
+  - **Task 25: Zero-Dependency Notification Dispatcher & Preventative Maintenance Engine**:
+    - Added migration `database/migrations/0007_notifications.sql` introducing `operator_notification_settings` and `notification_logs`.
+    - Implemented zero-dependency `NotificationService` in `core/notifications.ts` utilizing native standard library primitives (`node:net`/`node:tls` RFC 5321 SMTP, `node:http`/`node:https` HMAC-SHA256 signed webhooks, and in-app feed).
+    - Wired `NotificationEventListener` in `core/notification-listener.ts` to `EventBus` in `api/server.ts` to automatically dispatch notifications on lease expiration, rent delinquency, work order assignment, and conversation messages.
+    - Added migration `modules/maintenance/backend/migrations/0002_preventative_maintenance.sql` and implemented recurring schedule management, automated work order generation (`generateDueWorkOrders`), and REST endpoints `/api/v1/maintenance/preventative_schedules`.
+  - **Realistic 50-Unit Demo Portfolio Seeder**:
+    - Expanded `database/seed.ts` to seed exactly 50 rentable units across 3 distinct portfolios (Blue Ridge, Piedmont, Downtown Lofts) capturing all 4 unit statuses (42 occupied, 4 vacant, 2 turnover, 2 maintenance hold).
+    - Seeded standard Chart of Accounts defaults, 42 active leases, 2 historical terminated leases with move-out history, 4 itemized recurring lease charges, 3 preventative maintenance schedules, universal conversation threads, client capital contributions ($75,000) and owner draws ($25,000), 7 vendors with W-9 statuses and IRS tax classifications, and 8 diverse work orders.
+
 - **Sprint 4 (Tasks 20–22): Financial Modernization, Client Accounting & Leasing AR Engine**:
   - **Task 20: Double-Entry General Ledger Elevation & Progressive Single-Entry Sunset**:
     - Added migration `modules/accounting/backend/migrations/0004_sunset_legacy_transactions.sql` adding `lease_id TEXT REFERENCES leases(id)` to `journal_lines` and backfilling existing legacy `transactions` into balanced double-entry journal entries and lines.

@@ -85,9 +85,9 @@ Progress across the seven canonical architectural phases leading to Foundational
   - [x] Progressive sunset and deprecation of legacy single-entry accounting (`transactions` table) with backward-compatible fallbacks and reads, elevating double-entry GL as the primary source of truth, alongside cleanup of abandoned aliases (`tenants` view).
   - [x] Client Accounting & Management Fees: Fiduciary portfolio accounting, Client Capital Contributions (`client_capital_contributions`), automated management fee calculation (cash collections % / flat unit fee), and Client Distribution / Draw engine based on net operating cash with cash and accrual summary support.
   - [x] Leasing AR & Fee Policy Engine: Granular sub-resources for recurring lease charges (`recurring_lease_charges`), configurable late fee policies (`late_fee_policies`), one-off adjustments, discounts, promotional concessions, and move-out deposit disposition / overpayment refunds.
-  - [ ] Universal Conversations & Notes Subsystem: Polymorphic threaded notes and audit comments across properties, buildings, units, leases, contacts, and work orders.
-  - [ ] TypeScript SSR Presentation Layer (UI): Client Accounting overview & contribution modal, Lease AR transaction manager & adjustment modal, and Universal Conversation sidebar component.
-  - [ ] Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling.
+  - [x] Universal Conversations & Notes Subsystem: Polymorphic threaded notes and audit comments across properties, buildings, units, leases, contacts, and work orders.
+  - [x] TypeScript SSR Presentation Layer (UI): Baseline whites & blues styling tokens, configurable branding presets & dark mode toggle, and initial draft SSR screens for Client Accounting, Lease AR, and Conversations.
+  - [x] Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling.
 - [ ] **Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable** (Planned, Target: v0.1.5-alpha)
   - [ ] **Accounts Payable (AP) Core Subsystem**: Bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property bill allocations (`bill_allocations`), and recurring scheduled bills (`recurring_bills`).
   - [ ] **Vendor Credit Memos & Bill Offsets**: Vendor credit issuance and allocation offsets against accounts payable liabilities.
@@ -125,12 +125,12 @@ Progress across the seven canonical architectural phases leading to Foundational
 
 ---
 
-### Phase 3: Core Property Operations & Communications `[95% - Mostly Complete]`
+### Phase 3: Core Property Operations & Communications `[100% - Complete]`
 * [x] Leasing lifecycle: draft, active, renewal, and move-out termination workflows.
 * [x] Maintenance & work orders: priority triage, trade-filtered vendor dispatch, make-ready automation.
 * [x] Cross-module operational event publishing (`lease.created`, `work_order.completed`).
-* [ ] Universal Conversations & Threaded Notes across all operational entities *(Sprint 4)*.
-* [ ] Preventative recurring maintenance scheduling engine *(Sprint 4)*.
+* [x] Universal Conversations & Threaded Notes across all operational entities *(Sprint 4)*.
+* [x] Preventative recurring maintenance scheduling engine *(Sprint 4)*.
 
 ---
 

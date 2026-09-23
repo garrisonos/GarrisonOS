@@ -92,3 +92,19 @@ Closing a work order (`PUT /api/v1/maintenance/:id/close`) requires capturing:
 ### 6.3. Technician Timecard Integration (Sprint 6: Field Operations)
 
 Technicians log billable hours against work orders (`technician_timecards`). Logged hours aggregate with hourly labor rates (`hourly_rate_cents`) to compute total labor expenses, which can be automatically converted into AP bills for contractor disbursement.
+
+---
+
+## 7. Preventative Maintenance Scheduling Subsystem
+
+The preventative maintenance subsystem (`modules/maintenance/backend/migrations/0002_preventative_maintenance.sql`) automates recurring property upkeep (HVAC servicing, roofing inspections, fire safety recertifications) on recurring cadences:
+
+* **Schedules Table (`preventative_maintenance_schedules`)**: Configurable recurrence frequencies (`weekly`, `monthly`, `quarterly`, `semi_annually`, `annually`, `seasonal`) with lead days, assigned vendor contact, and estimated costs.
+* **Automated Ticket Generation (`generateDueWorkOrders`)**: Periodically evaluates upcoming schedules and automatically generates work orders transitioning to `assigned` or `open` within defined lead-day thresholds.
+* **API Endpoints**:
+  * `GET /api/v1/maintenance/preventative_schedules`: List active recurring schedules
+  * `POST /api/v1/maintenance/preventative_schedules`: Create a recurring maintenance schedule
+  * `GET /api/v1/maintenance/preventative_schedules/:id`: Fetch schedule details
+  * `PUT /api/v1/maintenance/preventative_schedules/:id`: Update cadence, vendor assignment, or next due date
+  * `DELETE /api/v1/maintenance/preventative_schedules/:id`: Soft delete schedule
+  * `POST /api/v1/maintenance/preventative_schedules/generate`: Manually trigger due work order generation pass
