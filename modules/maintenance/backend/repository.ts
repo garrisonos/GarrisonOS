@@ -1,6 +1,7 @@
-import { getDatabase } from '../../../database/client.js';
+import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
+import { eventBus } from '../../../core/events.js';
 
 /**
  * Maintenance work order entity.
@@ -62,6 +63,91 @@ export interface WorkOrderWithDetails extends WorkOrder {
   vendor_name?: string;
   /** Full name of the requesting contact. */
   requested_by_name?: string;
+}
+
+export type PreventativeScheduleCategory =
+  | 'hvac'
+  | 'electrical'
+  | 'plumbing'
+  | 'fire_safety'
+  | 'roofing'
+  | 'landscaping'
+  | 'winterization'
+  | 'general';
+
+export type PreventativeSchedulePriority = 'low' | 'medium' | 'high' | 'emergency';
+
+export type PreventativeScheduleFrequency =
+  | 'weekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'semi_annually'
+  | 'annually'
+  | 'seasonal';
+
+export interface PreventativeSchedule {
+  id: string;
+  operator_id: string;
+  property_id?: string | null;
+  building_id?: string | null;
+  unit_id?: string | null;
+  title: string;
+  description: string;
+  category: PreventativeScheduleCategory;
+  priority: PreventativeSchedulePriority;
+  frequency: PreventativeScheduleFrequency;
+  seasonal_month?: number | null;
+  lead_days: number;
+  assigned_vendor_contact_id?: string | null;
+  estimated_cost_cents: number;
+  last_generated_at?: number | null;
+  next_due_date: number;
+  is_active: number;
+  created_at: number;
+  updated_at: number;
+  deleted_at?: number | null;
+  property_name?: string;
+  vendor_name?: string;
+}
+
+export interface CreatePreventativeScheduleInput {
+  property_id?: string | null;
+  building_id?: string | null;
+  unit_id?: string | null;
+  title: string;
+  description: string;
+  category: PreventativeScheduleCategory;
+  priority: PreventativeSchedulePriority;
+  frequency: PreventativeScheduleFrequency;
+  seasonal_month?: number | null;
+  lead_days?: number;
+  assigned_vendor_contact_id?: string | null;
+  estimated_cost_cents?: number;
+  next_due_date: number;
+}
+
+export interface UpdatePreventativeScheduleInput {
+  property_id?: string | null;
+  building_id?: string | null;
+  unit_id?: string | null;
+  title?: string;
+  description?: string;
+  category?: PreventativeScheduleCategory;
+  priority?: PreventativeSchedulePriority;
+  frequency?: PreventativeScheduleFrequency;
+  seasonal_month?: number | null;
+  lead_days?: number;
+  assigned_vendor_contact_id?: string | null;
+  estimated_cost_cents?: number;
+  next_due_date?: number;
+  is_active?: number | boolean;
+}
+
+export interface ListPreventativeSchedulesFilter {
+  property_id?: string;
+  category?: string;
+  is_active?: boolean | number;
+  due_before?: number;
 }
 
 /**
@@ -440,5 +526,452 @@ export class MaintenanceRepository {
       completedLast30Days: completedLast30Days.length
     };
   }
+
+  /**
+   * Helper to advance next due date based on schedule recurrence frequency.
+   *
+   * @param currentDueDate - Current scheduled millisecond timestamp.
+   * @param frequency - Recurrence cadence string.
+   * @returns Next scheduled millisecond timestamp.
+   */
+  public static computeNextDueDate(
+    currentDueDate: number,
+    frequency: PreventativeScheduleFrequency
+  ): number {
+    const d = new Date(currentDueDate);
+    switch (frequency) {
+      case 'weekly':
+        return currentDueDate + 7 * 86400000;
+      case 'monthly':
+        d.setMonth(d.getMonth() + 1);
+        return d.getTime();
+      case 'quarterly':
+        d.setMonth(d.getMonth() + 3);
+        return d.getTime();
+      case 'semi_annually':
+        d.setMonth(d.getMonth() + 6);
+        return d.getTime();
+      case 'annually':
+      case 'seasonal':
+        d.setFullYear(d.getFullYear() + 1);
+        return d.getTime();
+      default:
+        return currentDueDate + 30 * 86400000;
+    }
+  }
+
+  /**
+   * Create a new recurring preventative maintenance schedule.
+   *
+   * @param input - Preventative schedule configuration.
+   * @returns Created PreventativeSchedule entity.
+   */
+  public static createPreventativeSchedule(
+    input: CreatePreventativeScheduleInput
+  ): PreventativeSchedule {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+    const id = generateUUIDv7();
+
+    if (input.property_id) {
+      MaintenanceRepository.validateOwnership(
+        operatorId,
+        input.property_id,
+        input.unit_id,
+        null,
+        input.assigned_vendor_contact_id
+      );
+    }
+
+    db.prepare(`
+      INSERT INTO preventative_maintenance_schedules (
+        id, operator_id, property_id, building_id, unit_id, title, description,
+        category, priority, frequency, seasonal_month, lead_days,
+        assigned_vendor_contact_id, estimated_cost_cents, last_generated_at,
+        next_due_date, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1, ?, ?)
+    `).run(
+      id,
+      operatorId,
+      input.property_id || null,
+      input.building_id || null,
+      input.unit_id || null,
+      input.title.trim(),
+      input.description.trim(),
+      input.category,
+      input.priority,
+      input.frequency,
+      input.seasonal_month || null,
+      input.lead_days !== undefined ? input.lead_days : 7,
+      input.assigned_vendor_contact_id || null,
+      input.estimated_cost_cents || 0,
+      input.next_due_date,
+      now,
+      now
+    );
+
+    const schedule = MaintenanceRepository.getPreventativeSchedule(id);
+    if (!schedule) {
+      throw new Error('Failed to retrieve newly created preventative schedule');
+    }
+    return schedule;
+  }
+
+  /**
+   * Retrieve a preventative maintenance schedule by ID.
+   *
+   * @param id - Preventative schedule UUIDv7.
+   * @returns PreventativeSchedule entity or null.
+   */
+  public static getPreventativeSchedule(id: string): PreventativeSchedule | null {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const row = db.prepare(`
+      SELECT s.*,
+             p.name as property_name,
+             COALESCE(c.first_name || ' ' || c.last_name, c.company_name) as vendor_name
+      FROM preventative_maintenance_schedules s
+      LEFT JOIN properties p ON p.id = s.property_id AND p.deleted_at IS NULL
+      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.deleted_at IS NULL
+      WHERE s.operator_id = ? AND s.id = ? AND s.deleted_at IS NULL
+    `).get(operatorId, id) as any;
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      operator_id: row.operator_id,
+      property_id: row.property_id,
+      building_id: row.building_id,
+      unit_id: row.unit_id,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      frequency: row.frequency,
+      seasonal_month: row.seasonal_month,
+      lead_days: Number(row.lead_days),
+      assigned_vendor_contact_id: row.assigned_vendor_contact_id,
+      estimated_cost_cents: Number(row.estimated_cost_cents),
+      last_generated_at: row.last_generated_at ? Number(row.last_generated_at) : null,
+      next_due_date: Number(row.next_due_date),
+      is_active: Number(row.is_active),
+      created_at: Number(row.created_at),
+      updated_at: Number(row.updated_at),
+      deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+      property_name: row.property_name,
+      vendor_name: row.vendor_name
+    };
+  }
+
+  /**
+   * List preventative maintenance schedules matching optional filter criteria.
+   *
+   * @param filter - Search filter options.
+   * @returns Array of PreventativeSchedule entities.
+   */
+  public static listPreventativeSchedules(
+    filter: ListPreventativeSchedulesFilter = {}
+  ): PreventativeSchedule[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const conditions: string[] = ['s.operator_id = ?', 's.deleted_at IS NULL'];
+    const params: any[] = [operatorId];
+
+    if (filter.property_id) {
+      conditions.push('s.property_id = ?');
+      params.push(filter.property_id);
+    }
+
+    if (filter.category) {
+      conditions.push('s.category = ?');
+      params.push(filter.category);
+    }
+
+    if (filter.is_active !== undefined) {
+      conditions.push('s.is_active = ?');
+      params.push(filter.is_active ? 1 : 0);
+    }
+
+    if (filter.due_before !== undefined) {
+      conditions.push('s.next_due_date <= ?');
+      params.push(filter.due_before);
+    }
+
+    const whereClause = conditions.join(' AND ');
+    const rows = db.prepare(`
+      SELECT s.*,
+             p.name as property_name,
+             COALESCE(c.first_name || ' ' || c.last_name, c.company_name) as vendor_name
+      FROM preventative_maintenance_schedules s
+      LEFT JOIN properties p ON p.id = s.property_id AND p.deleted_at IS NULL
+      LEFT JOIN contacts c ON c.id = s.assigned_vendor_contact_id AND c.deleted_at IS NULL
+      WHERE ${whereClause}
+      ORDER BY s.next_due_date ASC
+    `).all(...params) as any[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      operator_id: row.operator_id,
+      property_id: row.property_id,
+      building_id: row.building_id,
+      unit_id: row.unit_id,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      frequency: row.frequency,
+      seasonal_month: row.seasonal_month,
+      lead_days: Number(row.lead_days),
+      assigned_vendor_contact_id: row.assigned_vendor_contact_id,
+      estimated_cost_cents: Number(row.estimated_cost_cents),
+      last_generated_at: row.last_generated_at ? Number(row.last_generated_at) : null,
+      next_due_date: Number(row.next_due_date),
+      is_active: Number(row.is_active),
+      created_at: Number(row.created_at),
+      updated_at: Number(row.updated_at),
+      deleted_at: row.deleted_at ? Number(row.deleted_at) : null,
+      property_name: row.property_name,
+      vendor_name: row.vendor_name
+    }));
+  }
+
+  /**
+   * Update an existing preventative maintenance schedule.
+   *
+   * @param id - Preventative schedule UUIDv7.
+   * @param input - Fields to update.
+   * @returns Updated PreventativeSchedule entity.
+   */
+  public static updatePreventativeSchedule(
+    id: string,
+    input: UpdatePreventativeScheduleInput
+  ): PreventativeSchedule {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const existing = MaintenanceRepository.getPreventativeSchedule(id);
+    if (!existing) {
+      throw new Error(`Preventative schedule #${id} not found`);
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (input.title !== undefined) {
+      updates.push('title = ?');
+      params.push(input.title.trim());
+    }
+    if (input.description !== undefined) {
+      updates.push('description = ?');
+      params.push(input.description.trim());
+    }
+    if (input.category !== undefined) {
+      updates.push('category = ?');
+      params.push(input.category);
+    }
+    if (input.priority !== undefined) {
+      updates.push('priority = ?');
+      params.push(input.priority);
+    }
+    if (input.frequency !== undefined) {
+      updates.push('frequency = ?');
+      params.push(input.frequency);
+    }
+    if (input.seasonal_month !== undefined) {
+      updates.push('seasonal_month = ?');
+      params.push(input.seasonal_month);
+    }
+    if (input.lead_days !== undefined) {
+      updates.push('lead_days = ?');
+      params.push(input.lead_days);
+    }
+    if (input.assigned_vendor_contact_id !== undefined) {
+      updates.push('assigned_vendor_contact_id = ?');
+      params.push(input.assigned_vendor_contact_id);
+    }
+    if (input.estimated_cost_cents !== undefined) {
+      updates.push('estimated_cost_cents = ?');
+      params.push(input.estimated_cost_cents);
+    }
+    if (input.next_due_date !== undefined) {
+      updates.push('next_due_date = ?');
+      params.push(input.next_due_date);
+    }
+    if (input.is_active !== undefined) {
+      updates.push('is_active = ?');
+      params.push(input.is_active ? 1 : 0);
+    }
+
+    updates.push('updated_at = ?');
+    params.push(Date.now());
+
+    params.push(id, operatorId);
+    db.prepare(`
+      UPDATE preventative_maintenance_schedules
+      SET ${updates.join(', ')}
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).run(...params);
+
+    const updated = MaintenanceRepository.getPreventativeSchedule(id);
+    if (!updated) {
+      throw new Error(`Failed to retrieve updated preventative schedule #${id}`);
+    }
+    return updated;
+  }
+
+  /**
+   * Soft-delete a preventative maintenance schedule.
+   *
+   * @param id - Preventative schedule UUIDv7.
+   * @returns True if deleted, false if not found.
+   */
+  public static deletePreventativeSchedule(id: string): boolean {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+    const info = db.prepare(`
+      UPDATE preventative_maintenance_schedules SET deleted_at = ?, updated_at = ?
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).run(now, now, id, operatorId);
+    return info.changes > 0;
+  }
+
+  /**
+   * Trigger immediate generation of a work order from a preventative maintenance schedule,
+   * advancing the next due date by the recurrence interval.
+   *
+   * @param id - Preventative schedule UUIDv7.
+   * @returns Generated WorkOrder entity.
+   */
+  public static triggerPreventativeSchedule(id: string): WorkOrder {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const schedule = MaintenanceRepository.getPreventativeSchedule(id);
+    if (!schedule) {
+      throw new Error(`Preventative schedule #${id} not found`);
+    }
+
+    const now = Date.now();
+    const nextDue = MaintenanceRepository.computeNextDueDate(schedule.next_due_date, schedule.frequency);
+
+    // Map schedule category to valid work_orders category
+    let workOrderCategory: any = schedule.category;
+    const allowedCategories = ['plumbing', 'electrical', 'hvac', 'appliance', 'structural', 'cosmetic', 'pest', 'other'];
+    if (!allowedCategories.includes(workOrderCategory)) {
+      workOrderCategory = 'other';
+    }
+
+    // Resolve property_id if null (fallback to first active property for operator)
+    let propertyId = schedule.property_id;
+    if (!propertyId) {
+      const propRow = db.prepare(`
+        SELECT id FROM properties WHERE operator_id = ? AND deleted_at IS NULL LIMIT 1
+      `).get(operatorId) as any;
+      if (!propRow) {
+        throw new Error('Cannot generate work order: no active property exists in operator');
+      }
+      propertyId = propRow.id;
+    }
+
+    let workOrder: WorkOrder;
+    withTransaction((tx) => {
+      // 1. Create work order
+      const workOrderId = generateUUIDv7();
+      tx.prepare(`
+        INSERT INTO work_orders (
+          id, operator_id, property_id, unit_id, title, description, status,
+          priority, category, permission_to_enter, vendor_contact_id,
+          scheduled_date, estimated_cost_cents, actual_cost_cents,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, 1, ?, ?, ?, 0, ?, ?)
+      `).run(
+        workOrderId,
+        operatorId,
+        propertyId ?? null,
+        schedule.unit_id ? schedule.unit_id : null,
+        `[PM] ${schedule.title}`,
+        `Preventative Maintenance (${schedule.frequency}): ${schedule.description}`,
+        schedule.priority,
+        workOrderCategory,
+        schedule.assigned_vendor_contact_id ? schedule.assigned_vendor_contact_id : null,
+        schedule.next_due_date,
+        schedule.estimated_cost_cents || 0,
+        now,
+        now
+      );
+
+      // 2. Advance schedule next_due_date and set last_generated_at
+      tx.prepare(`
+        UPDATE preventative_maintenance_schedules
+        SET next_due_date = ?, last_generated_at = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ?
+      `).run(nextDue, now, now, id, operatorId);
+
+      const created = MaintenanceRepository.getWorkOrderById(workOrderId);
+      if (!created) {
+        throw new Error('Failed to retrieve newly generated work order');
+      }
+      workOrder = created;
+    }, db);
+
+    try {
+      eventBus.publish('preventative_maintenance.due', {
+        operatorId,
+        scheduleId: schedule.id,
+        workOrderId: workOrder!.id,
+        title: schedule.title
+      });
+
+      eventBus.publish('work_order.created', {
+        operatorId,
+        workOrderId: workOrder!.id,
+        title: workOrder!.title,
+        priority: workOrder!.priority
+      });
+    } catch {
+      // Non-blocking event emission
+    }
+
+    return workOrder!;
+  }
+
+  /**
+   * Run batch check across active preventative schedules for due maintenance tasks.
+   *
+   * @returns Array of generated WorkOrder entities.
+   */
+  public static runPreventativeMaintenanceCheck(): WorkOrder[] {
+    const operatorId = RequestContext.getOperatorId();
+    const now = Date.now();
+    const db = getDatabase();
+
+    // Query active schedules where next_due_date - (lead_days * 86400000) <= now
+    const rows = db.prepare(`
+      SELECT id, lead_days, next_due_date
+      FROM preventative_maintenance_schedules
+      WHERE operator_id = ? AND is_active = 1 AND deleted_at IS NULL
+    `).all(operatorId) as any[];
+
+    const generatedOrders: WorkOrder[] = [];
+    for (const r of rows) {
+      const threshold = Number(r.next_due_date) - (Number(r.lead_days) * 86400000);
+      if (threshold <= now) {
+        try {
+          const wo = MaintenanceRepository.triggerPreventativeSchedule(r.id);
+          generatedOrders.push(wo);
+        } catch (err) {
+          process.stderr.write(`[PreventativeMaintenance] Error generating work order for schedule ${r.id}: ${String(err)}\n`);
+        }
+      }
+    }
+
+    return generatedOrders;
+  }
 }
+
 
