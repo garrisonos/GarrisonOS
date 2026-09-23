@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import { createTestDb, runInOperatorContext } from '../../../test/helpers.js';
 import { AccountingRepository } from '../backend/repository.js';
 import { closeDatabase, getDatabase } from '../../../database/client.js';
+import { ChartOfAccountsRepository } from '../backend/chart_of_accounts.js';
 
 describe('Accounting Module - Repository & Financial Workflows', () => {
   before(() => {
@@ -143,6 +144,44 @@ describe('Accounting Module - Repository & Financial Workflows', () => {
       assert.throws(() => {
         AccountingRepository.processDepositDisposition('non-existent-lease');
       }, /Lease not found/);
+    });
+  });
+
+  it('rejects inactive explicit charge accounts while preserving soft-delete fallback', () => {
+    runInOperatorContext('tenant-acct-gl-test', () => {
+      const db = getDatabase();
+      const rentAccount = ChartOfAccountsRepository.getAccountByMapping('rent')!;
+
+      db.prepare(`
+        UPDATE chart_of_accounts SET is_active = 0
+        WHERE id = ? AND operator_id = ?
+      `).run(rentAccount.id, 'tenant-acct-gl-test');
+
+      assert.throws(() => {
+        AccountingRepository.createTransaction({
+          transaction_type: 'charge',
+          category: 'rent',
+          amount_cents: 100000,
+          transaction_date: Date.now(),
+          description: 'Charge with inactive explicit account',
+          gl_account_id: rentAccount.id
+        });
+      }, /is inactive/);
+
+      db.prepare(`
+        UPDATE chart_of_accounts SET deleted_at = ?
+        WHERE id = ? AND operator_id = ?
+      `).run(Date.now(), rentAccount.id, 'tenant-acct-gl-test');
+
+      const transaction = AccountingRepository.createTransaction({
+        transaction_type: 'charge',
+        category: 'rent',
+        amount_cents: 100000,
+        transaction_date: Date.now(),
+        description: 'Charge falling back from soft-deleted account',
+        gl_account_id: rentAccount.id
+      });
+      assert.ok(transaction.journal_entry_id);
     });
   });
 });

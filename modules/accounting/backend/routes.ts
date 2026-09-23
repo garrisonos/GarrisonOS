@@ -6,6 +6,7 @@ import { generateMonthlyRentCharges } from './billing.js';
 import { ChartOfAccountsRepository } from './chart_of_accounts.js';
 import { QuickBooksService } from './quickbooks.js';
 import { JournalService } from './journal.js';
+import { ClientAccountingRepository } from './client_accounting.js';
 
 /**
  * Strict integer query parameter parser that validates bounds and rejects NaN.
@@ -562,5 +563,204 @@ export function registerRoutes(router: Router): void {
       'Content-Disposition': `attachment; filename="${exportResult.filename}"`
     });
     res.end(exportResult.content);
+  });
+
+  // ==========================================
+  // --- Client Accounting & Management Fees ---
+  // ==========================================
+
+  // --- Client Capital Contributions ---
+  router.get('/api/v1/accounting/client_contributions', (req, res) => {
+    const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
+    if (startRes.hasError) return;
+    const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
+    if (endRes.hasError) return;
+
+    const contributions = ClientAccountingRepository.listCapitalContributions({
+      portfolio_id: req.query.portfolio_id,
+      property_id: req.query.property_id,
+      client_contact_id: req.query.client_contact_id,
+      start_date: startRes.value,
+      end_date: endRes.value
+    });
+    successResponse(res, { contributions });
+  });
+
+  router.post('/api/v1/accounting/client_contributions', (req, res) => {
+    const { client_contact_id, portfolio_id, amount_cents } = req.body || {};
+    if (!client_contact_id || !portfolio_id || amount_cents === undefined) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, and amount_cents are required', 400);
+    }
+    const parsedAmount = Number(amount_cents);
+    if (!Number.isInteger(parsedAmount) || parsedAmount <= 0) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'amount_cents must be a positive integer in cents', 400);
+    }
+    try {
+      const contribution = ClientAccountingRepository.createCapitalContribution({
+        client_contact_id,
+        portfolio_id,
+        property_id: req.body.property_id || null,
+        amount_cents: parsedAmount,
+        contribution_date: req.body.contribution_date ? Number(req.body.contribution_date) : undefined,
+        destination_account_id: req.body.destination_account_id,
+        reference_number: req.body.reference_number || null,
+        memo: req.body.memo || null
+      });
+      successResponse(res, { contribution }, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CONTRIBUTION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/client_contributions/:id', (req, res) => {
+    const contribution = ClientAccountingRepository.getCapitalContributionById(req.params.id!);
+    if (!contribution) {
+      return errorResponse(res, 'NOT_FOUND', 'Client capital contribution not found', 404);
+    }
+    successResponse(res, { contribution });
+  });
+
+  // --- Client Distributions / Draws ---
+  router.get('/api/v1/accounting/client_distributions', (req, res) => {
+    const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
+    if (startRes.hasError) return;
+    const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
+    if (endRes.hasError) return;
+
+    const distributions = ClientAccountingRepository.listDistributions({
+      portfolio_id: req.query.portfolio_id,
+      property_id: req.query.property_id,
+      client_contact_id: req.query.client_contact_id,
+      start_date: startRes.value,
+      end_date: endRes.value
+    });
+    successResponse(res, { distributions });
+  });
+
+  router.post('/api/v1/accounting/client_distributions', (req, res) => {
+    const { client_contact_id, portfolio_id, amount_cents, disbursement_method } = req.body || {};
+    if (!client_contact_id || !portfolio_id || amount_cents === undefined || !disbursement_method) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, amount_cents, and disbursement_method are required', 400);
+    }
+    const parsedAmount = Number(amount_cents);
+    if (!Number.isInteger(parsedAmount) || parsedAmount <= 0) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'amount_cents must be a positive integer in cents', 400);
+    }
+    try {
+      const distribution = ClientAccountingRepository.createDistribution({
+        client_contact_id,
+        portfolio_id,
+        property_id: req.body.property_id || null,
+        amount_cents: parsedAmount,
+        distribution_date: req.body.distribution_date ? Number(req.body.distribution_date) : undefined,
+        source_account_id: req.body.source_account_id,
+        disbursement_method,
+        check_number: req.body.check_number || null,
+        reference_number: req.body.reference_number || null,
+        memo: req.body.memo || null
+      });
+      successResponse(res, { distribution }, 201);
+    } catch (err: any) {
+      errorResponse(res, 'DISTRIBUTION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/client_distributions/:id', (req, res) => {
+    const distribution = ClientAccountingRepository.getDistributionById(req.params.id!);
+    if (!distribution) {
+      return errorResponse(res, 'NOT_FOUND', 'Client distribution not found', 404);
+    }
+    successResponse(res, { distribution });
+  });
+
+  // --- Portfolio Cash Summary ---
+  router.get('/api/v1/accounting/portfolios/:portfolio_id/cash_summary', (req, res) => {
+    const asOfRes = parseIntegerParam(req, res, 'as_of', { min: 1 });
+    if (asOfRes.hasError) return;
+
+    const rawBasis = req.query['basis'];
+    let basis: 'cash' | 'accrual' = 'cash';
+    if (rawBasis !== undefined) {
+      if (rawBasis === 'accrual') {
+        basis = 'accrual';
+      } else if (rawBasis !== 'cash') {
+        return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "basis" must be "cash" or "accrual"', 400);
+      }
+    }
+
+    try {
+      const summary = ClientAccountingRepository.getPortfolioCashSummary(req.params.portfolio_id!, asOfRes.value, basis);
+      successResponse(res, { summary });
+    } catch (err: any) {
+      if (err.message && err.message.toLowerCase().includes('not found')) {
+        errorResponse(res, 'NOT_FOUND', err.message, 404);
+      } else {
+        errorResponse(res, 'INTERNAL_ERROR', err.message || 'Internal server error', 500);
+      }
+    }
+  });
+
+  // --- Management Fee Agreements ---
+  router.get('/api/v1/accounting/management_fee_agreements', (req, res) => {
+    const agreements = ClientAccountingRepository.listManagementFeeAgreements({
+      portfolio_id: req.query.portfolio_id,
+      property_id: req.query.property_id
+    });
+    successResponse(res, { agreements });
+  });
+
+  router.post('/api/v1/accounting/management_fee_agreements', (req, res) => {
+    const { calculation_method } = req.body || {};
+    if (!calculation_method) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'calculation_method is required', 400);
+    }
+    try {
+      const agreement = ClientAccountingRepository.createManagementFeeAgreement({
+        portfolio_id: req.body.portfolio_id || null,
+        property_id: req.body.property_id || null,
+        calculation_method,
+        percentage_bps: req.body.percentage_bps ? Number(req.body.percentage_bps) : 0,
+        flat_fee_cents: req.body.flat_fee_cents ? Number(req.body.flat_fee_cents) : 0,
+        fee_gl_account_id: req.body.fee_gl_account_id,
+        pass_through_expenses: req.body.pass_through_expenses ? 1 : 0
+      });
+      successResponse(res, { agreement }, 201);
+    } catch (err: any) {
+      errorResponse(res, 'AGREEMENT_CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/management_fee_agreements/:id', (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    successResponse(res, { agreement });
+  });
+
+  router.delete('/api/v1/accounting/management_fee_agreements/:id', (req, res) => {
+    const deleted = ClientAccountingRepository.deleteManagementFeeAgreement(req.params.id!);
+    if (!deleted) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    successResponse(res, { deleted: true });
+  });
+
+  router.get('/api/v1/accounting/management_fee_agreements/:id/calculate', (req, res) => {
+    try {
+      const calculation = ClientAccountingRepository.calculateManagementFee(req.params.id!, req.query.month);
+      successResponse(res, { calculation });
+    } catch (err: any) {
+      errorResponse(res, 'CALCULATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.post('/api/v1/accounting/management_fee_agreements/:id/post', (req, res) => {
+    try {
+      const result = ClientAccountingRepository.postManagementFee(req.params.id!, req.body?.month);
+      successResponse(res, { result }, 201);
+    } catch (err: any) {
+      errorResponse(res, 'POSTING_FAILED', err.message, 400);
+    }
   });
 }

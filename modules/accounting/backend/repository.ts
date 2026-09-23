@@ -24,6 +24,7 @@ export interface CreateTransactionData {
   lease_id?: string | null;
   payer_contact_id?: string | null;
   payee_contact_id?: string | null;
+  gl_account_id?: string | null;
 }
 
 export interface RentRollItem {
@@ -132,7 +133,15 @@ export class AccountingRepository {
     switch (data.transaction_type) {
       case 'charge': {
         const accountsReceivable = requireAccount('accounts_receivable');
-        const revAccount = mappedAccount || requireAccount('rent');
+        const explicitRevAccount = data.gl_account_id
+          ? ChartOfAccountsRepository.getAccountById(data.gl_account_id, dbInstance)
+          : null;
+        if (explicitRevAccount && explicitRevAccount.is_active !== 1) {
+          throw new Error(`GL account '${data.gl_account_id}' is inactive.`);
+        }
+        const revAccount = explicitRevAccount
+          || mappedAccount
+          || requireAccount('rent');
         lines.push(
           {
             account_id: accountsReceivable.id,
@@ -141,6 +150,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -150,6 +160,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -166,6 +177,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -175,6 +187,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -191,6 +204,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -200,6 +214,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -216,6 +231,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -225,6 +241,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -241,6 +258,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -250,6 +268,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -266,6 +285,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -275,6 +295,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payee_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -291,6 +312,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           },
           {
@@ -300,6 +322,7 @@ export class AccountingRepository {
             property_id: data.property_id,
             unit_id: data.unit_id,
             contact_id: data.payer_contact_id,
+            lease_id: data.lease_id || null,
             description: data.description
           }
         );
@@ -407,12 +430,43 @@ export class AccountingRepository {
     balanceCents: number;
     transactionCount: number;
   } {
-    const transactions = AccountingRepository.getLeaseTransactions(leaseId, dbInstance);
-    const balanceCents = calculateTenantBalance(transactions);
+    const operatorId = RequestContext.getOperatorId();
+    const db = dbInstance || getDatabase();
+
+    // Primary: calculate directly from double-entry journal_lines
+    const arAccount = ChartOfAccountsRepository.getAccountByMapping('accounts_receivable', db);
+    let arBalanceCents = 0;
+    let lineCount = 0;
+
+    if (arAccount) {
+      const row = db.prepare(`
+        SELECT
+          COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as balance_cents,
+          COUNT(*) as line_count
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+        JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+        WHERE jl.operator_id = ? AND jl.lease_id = ? AND jl.account_id = ?
+      `).get(operatorId, leaseId, arAccount.id) as { balance_cents: number; line_count: number } | undefined;
+      arBalanceCents = row ? Number(row.balance_cents) : 0;
+      lineCount = row ? Number(row.line_count) : 0;
+    }
+
+    // If no journal entries exist, fall back to single-entry transactions for legacy compatibility
+    if (lineCount === 0) {
+      const transactions = AccountingRepository.getLeaseTransactions(leaseId, dbInstance);
+      const balanceCents = calculateTenantBalance(transactions);
+      return {
+        leaseId,
+        balanceCents,
+        transactionCount: transactions.length
+      };
+    }
+
     return {
       leaseId,
-      balanceCents,
-      transactionCount: transactions.length
+      balanceCents: arBalanceCents,
+      transactionCount: lineCount
     };
   }
 
@@ -454,23 +508,87 @@ export class AccountingRepository {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
 
-    let sql = 'SELECT * FROM transactions WHERE operator_id = ? AND deleted_at IS NULL';
-    const params: any[] = [operatorId];
+    let yearStart: number | undefined;
+    let yearEnd: number | undefined;
+    if (filter?.year) {
+      yearStart = Date.UTC(filter.year, 0, 1, 0, 0, 0, 0);
+      yearEnd = Date.UTC(filter.year, 11, 31, 23, 59, 59, 999);
+    }
+
+    // Primary: calculate from double-entry journal_lines
+    let glSql = `
+      SELECT
+        coa.category_mapping,
+        coa.account_type,
+        SUM(CASE WHEN coa.account_type = 'Income' THEN (jl.credit_cents - jl.debit_cents) ELSE (jl.debit_cents - jl.credit_cents) END) as total_cents
+      FROM journal_lines jl
+      JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+      JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+      WHERE jl.operator_id = ?
+        AND coa.account_type IN ('Income', 'Expense', 'CostOfGoodsSold')
+    `;
+    const glParams: any[] = [operatorId];
 
     if (filter?.property_id) {
-      sql += ' AND property_id = ?';
-      params.push(filter.property_id);
+      glSql += ' AND jl.property_id = ?';
+      glParams.push(filter.property_id);
+    }
+    if (yearStart !== undefined && yearEnd !== undefined) {
+      glSql += ' AND je.date_ms >= ? AND je.date_ms <= ?';
+      glParams.push(yearStart, yearEnd);
+    }
+    glSql += ' GROUP BY coa.category_mapping, coa.account_type';
+
+    const glRows = db.prepare(glSql).all(...glParams) as Array<{
+      category_mapping: string | null;
+      account_type: string;
+      total_cents: number;
+    }>;
+
+    let totalIncomeCents = 0;
+    let totalOperatingExpenseCents = 0;
+    const incomeByCategory: Record<string, number> = {};
+    const expenseByCategory: Record<string, number> = {};
+
+    for (const r of glRows) {
+      const cat = r.category_mapping || (r.account_type === 'Income' ? 'rent' : 'repairs');
+      const amt = Number(r.total_cents);
+      if (r.account_type === 'Income') {
+        totalIncomeCents += amt;
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + amt;
+      } else {
+        totalOperatingExpenseCents += amt;
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + amt;
+      }
     }
 
-    if (filter?.year) {
-      const yearStart = Date.UTC(filter.year, 0, 1, 0, 0, 0, 0);
-      const yearEnd = Date.UTC(filter.year, 11, 31, 23, 59, 59, 999);
-      sql += ' AND transaction_date >= ? AND transaction_date <= ?';
-      params.push(yearStart, yearEnd);
+    // If no GL income lines were found (e.g. transactions were recorded as cash payments without an accrual charge),
+    // augment income from cash-basis payment transactions.
+    if (totalIncomeCents === 0) {
+      let pSql = "SELECT * FROM transactions WHERE operator_id = ? AND transaction_type = 'payment' AND deleted_at IS NULL";
+      const pParams: any[] = [operatorId];
+      if (filter?.property_id) {
+        pSql += ' AND property_id = ?';
+        pParams.push(filter.property_id);
+      }
+      if (yearStart !== undefined && yearEnd !== undefined) {
+        pSql += ' AND transaction_date >= ? AND transaction_date <= ?';
+        pParams.push(yearStart, yearEnd);
+      }
+      const paymentTxs = db.prepare(pSql).all(...pParams) as unknown as TransactionRecord[];
+      for (const p of paymentTxs) {
+        totalIncomeCents += p.amount_cents;
+        incomeByCategory[p.category] = (incomeByCategory[p.category] || 0) + p.amount_cents;
+      }
     }
 
-    const txs = db.prepare(sql).all(...params) as unknown as TransactionRecord[];
-    return calculateScheduleE(txs);
+    return {
+      totalIncomeCents,
+      totalOperatingExpenseCents,
+      netOperatingIncomeCents: totalIncomeCents - totalOperatingExpenseCents,
+      incomeByCategory,
+      expenseByCategory
+    };
   }
 
   public static processDepositDisposition(
@@ -734,18 +852,16 @@ export class AccountingRepository {
     // Collect payments by vendor contact
     const vendorMap = new Map<string, number>();
 
-    // 1. Check journal_lines where account is Expense/COGS and contact_id is set (excluding reversed entries)
+    // 1. Check journal_lines where account is Expense/COGS and contact_id is set (netting reversals)
     const journalVendorRows = db.prepare(`
-      SELECT jl.contact_id, SUM(jl.debit_cents) AS total_cents
+      SELECT jl.contact_id, SUM(jl.debit_cents - jl.credit_cents) AS total_cents
       FROM journal_lines jl
-      JOIN journal_entries je ON jl.journal_entry_id = je.id
-      JOIN chart_of_accounts coa ON jl.account_id = coa.id
+      JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+      JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
       WHERE jl.operator_id = ?
         AND jl.contact_id IS NOT NULL
         AND coa.account_type IN ('Expense', 'CostOfGoodsSold')
         AND je.date_ms >= ? AND je.date_ms <= ?
-        AND je.reversed_by_entry_id IS NULL
-        AND je.deleted_at IS NULL
       GROUP BY jl.contact_id
     `).all(operatorId, yearStart, yearEnd) as Array<{ contact_id: string; total_cents: number }>;
 
@@ -964,3 +1080,5 @@ export interface StatutoryDispositionTimelineResult {
   days_remaining: number;
   is_past_due: boolean;
 }
+
+export * from './client_accounting.js';

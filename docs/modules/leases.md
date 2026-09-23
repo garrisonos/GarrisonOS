@@ -76,6 +76,13 @@ Residential tenancies frequently involve multiple roommates, co-signers, and non
 * `DELETE /api/v1/leases/:id/recurring_charges/:charge_id`: Soft delete recurring fee schedule
 * `GET /api/v1/leases/:id/credits`: List tenant credits, concessions, and discounts
 * `POST /api/v1/leases/:id/credits`: Post promotional concession or ledger adjustment
+* `GET /api/v1/leases/late_fee_policies`: List configurable late fee policies across properties
+* `POST /api/v1/leases/late_fee_policies`: Create configurable late fee policy (flat, percent balance, or percent rent)
+* `GET /api/v1/leases/:id/late_fee_policy`: Retrieve the active late fee policy for the lease
+* `GET /api/v1/leases/:id/calculate_late_fee`: Calculate potential late fee against current double-entry AR balance (`?as_of=<ms>`)
+* `POST /api/v1/leases/:id/apply_late_fee`: Apply assessed late fee to tenant ledger and double-entry GL
+* `GET /api/v1/leases/:id/refunds`: List deposit and overpayment refunds issued for a lease
+* `POST /api/v1/leases/:id/refunds`: Issue deposit disposition or overpayment refund with check/ach reference
 * `GET /api/v1/leases/:id/clauses`: List custom lease clauses and legal covenants
 * `POST /api/v1/leases/:id/clauses`: Attach custom lease clause
 * `PUT /api/v1/leases/:id/clauses/:clause_id`: Update clause title, text, or display order
@@ -90,7 +97,7 @@ Residential tenancies frequently involve multiple roommates, co-signers, and non
 In addition to baseline monthly rent, leases support recurring charge schedules (e.g. pet rent, reserved parking space, storage unit, trash surcharge). Recurring charges specify:
 - `charge_category`: `base_rent`, `pet_rent`, `parking_fee`, `storage_fee`, `utility_surcharge`, or `amenity_fee`.
 - `amount_cents`: Integer cents due per cycle.
-- `gl_account_id`: Chart of Accounts revenue account to credit upon billing generation.
+- `gl_account_id`: Active, operator-owned Chart of Accounts revenue account to credit upon billing generation.
 - `billing_frequency`: `monthly`, `quarterly`, `annually`, or `one_time`.
 
 ### 6.2. Concessions & Adjustments
