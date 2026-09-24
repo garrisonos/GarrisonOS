@@ -124,6 +124,22 @@ describe('Modern UI, Branding & Presentation Engine Suite', () => {
     assert.match(output, /Active test body/);
   });
 
+  it('renderLayout injects default favicon links and og-image when custom favicon is not configured', () => {
+    const output = renderLayout({
+      title: 'Portfolio Overview',
+      content: html`<p>Active test body</p>`,
+      user: null,
+      operatorId,
+      navItems: [],
+      currentPath: '/dashboard'
+    });
+
+    assert.match(output, /<link rel="icon" type="image\/x-icon" href="\/public\/favicon\.ico">/);
+    assert.match(output, /<link rel="icon" type="image\/png" sizes="32x32" href="\/public\/favicon-32x32\.png">/);
+    assert.match(output, /<link rel="apple-touch-icon" sizes="180x180" href="\/public\/apple-touch-icon\.png">/);
+    assert.match(output, /<meta property="og:image" content="\/public\/og-image\.png">/);
+  });
+
   it('renderHeader renders brand badge, operator id, and theme toggle button', () => {
     const headerHtml = renderHeader(null, operatorId, 'Highland Asset Management').value;
     assert.match(headerHtml, /Highland Asset Management/);
