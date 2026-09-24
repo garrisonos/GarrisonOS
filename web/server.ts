@@ -8,6 +8,7 @@
 
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { pipeline } from 'node:stream';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -168,11 +169,29 @@ function proxyApiRequest(
     },
     (apiRes) => {
       res.writeHead(apiRes.statusCode || 200, apiRes.headers);
-      apiRes.pipe(res);
+      pipeline(apiRes, res, (err) => {
+        if (err && !res.destroyed) {
+          res.destroy(err);
+        }
+      });
     }
   );
 
+  proxyReq.setTimeout(30_000, () => {
+    proxyReq.destroy(new Error('Upstream timeout'));
+  });
+
+  req.on('close', () => {
+    if (!proxyReq.destroyed) {
+      proxyReq.destroy();
+    }
+  });
+
   proxyReq.on('error', (err) => {
+    if (res.headersSent) {
+      res.destroy(err);
+      return;
+    }
     if (!res.writableEnded) {
       res.writeHead(502, { 'Content-Type': 'application/json' });
       res.end(
@@ -180,14 +199,22 @@ function proxyApiRequest(
           success: false,
           error: {
             code: 'BAD_GATEWAY',
-            message: `Failed to proxy request to backend API: ${String(err)}`
+            message: 'Failed to proxy request to backend API'
           }
         })
       );
     }
   });
 
-  req.pipe(proxyReq);
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    proxyReq.end();
+  } else {
+    pipeline(req, proxyReq, (err) => {
+      if (err && !proxyReq.destroyed) {
+        proxyReq.destroy(err);
+      }
+    });
+  }
 }
 
 /**
@@ -224,8 +251,35 @@ export async function handleWebRequest(
 
   // Transparently reverse-proxy API requests (e.g. browser file downloads/exports)
   if (url.pathname.startsWith('/api/')) {
+    // SSRF and Path Traversal defense: reject control characters, backslashes, or protocol-relative prefixes
+    if (
+      /[\x00-\x1F\x7F]/.test(req.url || '') ||
+      (req.url || '').includes('\\') ||
+      url.pathname.includes('//') ||
+      (req.url || '').startsWith('//')
+    ) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: { code: 'BAD_REQUEST', message: 'Invalid API path' } }));
+      return;
+    }
+
+    const normalizedPath = path.posix.normalize(url.pathname);
+    if (!normalizedPath.startsWith('/api/')) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: { code: 'BAD_REQUEST', message: 'Invalid API path' } }));
+      return;
+    }
+
     const parsedApiUrl = new URL(apiUrl);
-    const targetUrl = new URL(url.pathname + url.search, parsedApiUrl);
+    const targetUrl = new URL(normalizedPath + url.search, parsedApiUrl);
+
+    // Assert that targetUrl strictly matches the backend apiUrl origin and protocol
+    if (targetUrl.origin !== parsedApiUrl.origin || targetUrl.protocol !== parsedApiUrl.protocol) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, error: { code: 'BAD_REQUEST', message: 'Cross-origin proxy request rejected' } }));
+      return;
+    }
+
     proxyApiRequest(req, res, targetUrl, session);
     return;
   }

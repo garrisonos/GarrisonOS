@@ -1,7 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
-import { hasPermission } from '../../../../core/rbac.js';
+import { checkUserPermission } from '../../../../core/rbac.js';
 
 function formatDate(epochMs: number): string {
   if (!epochMs) return '—';
@@ -19,7 +19,7 @@ function formatCurrency(cents: number): string {
 }
 
 export async function handle(ctx: PageContext): Promise<PageResult> {
-  if (!ctx.session.user || !hasPermission(ctx.session.user.role, 'accounting:view')) {
+  if (!ctx.session.user || !checkUserPermission(ctx.session.user.id, ctx.session.operatorId, 'accounting:view')) {
     return {
       title: '403 Forbidden',
       status: 403,
@@ -124,11 +124,24 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     properties = propRes?.data?.properties || [];
     portfolios = portRes?.data?.portfolios || (Array.isArray(portRes?.data) ? portRes.data : []);
 
-    // If portfolio specified or first available, fetch portfolio cash summary
-    const targetPortfolio = portfolioId || (portfolios[0]?.id || contributions[0]?.portfolio_id || distributions[0]?.portfolio_id || '');
-    if (targetPortfolio) {
-      const sRes = await ctx.api.get(`/api/v1/accounting/portfolios/${encodeURIComponent(targetPortfolio)}/cash_summary?basis=${basis}`).catch(() => ({ data: {} }));
+    // If portfolio specified, fetch portfolio cash summary; if omitted, aggregate across accessible portfolios
+    if (portfolioId) {
+      const sRes = await ctx.api.get(`/api/v1/accounting/portfolios/${encodeURIComponent(portfolioId)}/cash_summary?basis=${basis}`).catch(() => null);
       cashSummary = sRes?.data?.summary || null;
+    } else if (portfolios.length > 0) {
+      const summaries = await Promise.all(
+        portfolios.map((p) =>
+          ctx.api.get(`/api/v1/accounting/portfolios/${encodeURIComponent(p.id)}/cash_summary?basis=${basis}`).catch(() => null)
+        )
+      );
+      const valid = summaries.map((s) => s?.data?.summary).filter(Boolean);
+      if (valid.length > 0) {
+        cashSummary = {
+          net_operating_cash_cents: valid.reduce((sum, s) => sum + (s.net_operating_cash_cents || 0), 0),
+          available_for_distribution_cents: valid.reduce((sum, s) => sum + (s.available_for_distribution_cents || 0), 0),
+          reserve_requirement_cents: valid.reduce((sum, s) => sum + (s.reserve_requirement_cents || 0), 0)
+        };
+      }
     }
   } catch (err: any) {
     error = error || err.message;
@@ -136,9 +149,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
   const totalContributionsCents = contributions.reduce((sum, c) => sum + (c.amount_cents || 0), 0);
   const totalDistributionsCents = distributions.reduce((sum, d) => sum + (d.amount_cents || 0), 0);
-  const operatingCashCents = cashSummary ? cashSummary.net_operating_cash_cents : (totalContributionsCents - totalDistributionsCents);
-  const availableForDistributionCents = cashSummary ? cashSummary.available_for_distribution_cents : Math.max(0, totalContributionsCents - totalDistributionsCents);
-  const reserveTargetCents = cashSummary?.reserve_requirement_cents ?? 0;
+  const operatingCashCents: number | null = cashSummary ? cashSummary.net_operating_cash_cents : null;
+  const availableForDistributionCents: number | null = cashSummary ? cashSummary.available_for_distribution_cents : null;
+  const reserveTargetCents: number | null = cashSummary ? (cashSummary.reserve_requirement_cents ?? 0) : null;
 
   const errorAlert = error
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
@@ -253,11 +266,15 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           <span class="kpi-title">Operating Cash Balance</span>
           <span class="kpi-icon">🏦</span>
         </div>
-        <div class="kpi-value font-mono ${operatingCashCents >= 0 ? 'text-main' : 'text-danger'}">$${formatCurrency(operatingCashCents)}</div>
-        <div class="kpi-trend ${reserveTargetCents > 0 ? (operatingCashCents >= reserveTargetCents ? 'positive' : 'negative') : 'neutral'}">
-          ${reserveTargetCents > 0
-            ? (operatingCashCents >= reserveTargetCents ? '✓ Reserve requirement met' : '⚠️ Below reserve minimum')
-            : 'Operating cash reserve'}
+        <div class="kpi-value font-mono ${operatingCashCents !== null ? (operatingCashCents >= 0 ? 'text-main' : 'text-danger') : 'text-muted'}">
+          ${operatingCashCents !== null ? `$${formatCurrency(operatingCashCents)}` : '—'}
+        </div>
+        <div class="kpi-trend ${operatingCashCents !== null && reserveTargetCents !== null ? (reserveTargetCents > 0 ? (operatingCashCents >= reserveTargetCents ? 'positive' : 'negative') : 'neutral') : 'neutral'}">
+          ${operatingCashCents !== null && reserveTargetCents !== null
+            ? (reserveTargetCents > 0
+              ? (operatingCashCents >= reserveTargetCents ? '✓ Reserve requirement met' : '⚠️ Below reserve minimum')
+              : 'Operating cash reserve')
+            : 'Cash summary unavailable'}
         </div>
       </div>
 
@@ -266,9 +283,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           <span class="kpi-title">Operating Reserve Target</span>
           <span class="kpi-icon">🛡️</span>
         </div>
-        <div class="kpi-value font-mono">$${formatCurrency(reserveTargetCents)}</div>
-        <div class="kpi-trend ${reserveTargetCents === 0 ? 'text-muted' : 'neutral'}">
-          ${reserveTargetCents === 0 ? '(No reserve policy set)' : 'Fiduciary threshold'}
+        <div class="kpi-value font-mono">${reserveTargetCents !== null ? `$${formatCurrency(reserveTargetCents)}` : '—'}</div>
+        <div class="kpi-trend ${reserveTargetCents === null || reserveTargetCents === 0 ? 'text-muted' : 'neutral'}">
+          ${reserveTargetCents === null ? 'Cash summary unavailable' : (reserveTargetCents === 0 ? '(No reserve policy set)' : 'Fiduciary threshold')}
         </div>
       </div>
     </div>

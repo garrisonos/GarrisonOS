@@ -53,9 +53,9 @@ describe('Media Backup Integration & Full System Restore', () => {
 
     if (fs.existsSync(testBaseDir)) {
       try {
-        fs.rmSync(testBaseDir, { recursive: true, force: true });
+        fs.rmSync(testBaseDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       } catch (err: any) {
-        if (err.code !== 'ENOENT') throw err;
+        if (err.code !== 'ENOENT' && err.code !== 'EPERM' && err.code !== 'EBUSY') throw err;
       }
     }
   });

@@ -612,9 +612,13 @@ export class MaintenanceRepository {
     const now = Date.now();
     const id = generateUUIDv7();
 
+    if (!input.property_id || typeof input.property_id !== 'string' || input.property_id.trim().length === 0) {
+      throw new Error('Field "property_id" is required for preventative maintenance schedules.');
+    }
+
     MaintenanceRepository.validateOwnership(
       operatorId,
-      input.property_id || undefined,
+      input.property_id.trim(),
       input.unit_id,
       null,
       input.assigned_vendor_contact_id,
@@ -807,8 +811,11 @@ export class MaintenanceRepository {
     const params: any[] = [];
 
     if (input.property_id !== undefined) {
+      if (!input.property_id || typeof input.property_id !== 'string' || input.property_id.trim().length === 0) {
+        throw new Error('Field "property_id" cannot be cleared for preventative maintenance schedules.');
+      }
       updates.push('property_id = ?');
-      params.push(input.property_id || null);
+      params.push(input.property_id.trim());
     }
     if (input.building_id !== undefined) {
       updates.push('building_id = ?');

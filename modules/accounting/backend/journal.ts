@@ -497,7 +497,7 @@ export class JournalService {
     const params: any[] = [cutoffDate, operatorId];
 
     if (propertyId) {
-      sql += ` AND (jl.property_id = ? OR jl.property_id IS NULL)`;
+      sql += ` AND jl.property_id = ?`;
       params.push(propertyId);
     }
 

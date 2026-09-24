@@ -221,14 +221,18 @@ export class BrandingService {
       differs(input.primary_hover, selected.primaryHover) ||
       differs(input.accent_color, selected.accent)
     );
+    const changedColor =
+      differs(input.primary_color, current.primary_color) ||
+      differs(input.primary_hover, current.primary_hover) ||
+      differs(input.accent_color, current.accent_color);
 
     if (selected && !customized) {
       primary = selected.primary;
       hover = selected.primaryHover;
       accent = selected.accent;
-    } else if (customized || (input.primary_color && input.primary_color !== current.primary_color)) {
+    } else if (customized || changedColor) {
       preset = 'custom';
-      if (!input.primary_hover) {
+      if (differs(input.primary_color, current.primary_color) && !input.primary_hover) {
         hover = primary;
       }
     }

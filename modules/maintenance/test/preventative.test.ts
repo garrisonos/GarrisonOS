@@ -11,6 +11,7 @@ describe('Preventative Maintenance Scheduling Engine Suite', () => {
   const operatorA = generateUUIDv7();
   const operatorB = generateUUIDv7();
   const propertyA = generateUUIDv7();
+  const propertyB = generateUUIDv7();
   const vendorContactA = generateUUIDv7();
 
   before(() => {
@@ -25,8 +26,9 @@ describe('Preventative Maintenance Scheduling Engine Suite', () => {
 
     db.prepare(`
       INSERT INTO properties (id, operator_id, name, address_line1, city, state, postal_code, property_type, created_at, updated_at)
-      VALUES (?, ?, 'Highland Oaks', '100 Main St', 'Raleigh', 'NC', '27601', 'multi_family', ?, ?)
-    `).run(propertyA, operatorA, now, now);
+      VALUES (?, ?, 'Highland Oaks', '100 Main St', 'Raleigh', 'NC', '27601', 'multi_family', ?, ?),
+             (?, ?, 'Pine Grove', '200 Oak St', 'Raleigh', 'NC', '27601', 'multi_family', ?, ?)
+    `).run(propertyA, operatorA, now, now, propertyB, operatorB, now, now);
 
     db.prepare(`
       INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, email, created_at, updated_at)
@@ -158,6 +160,7 @@ describe('Preventative Maintenance Scheduling Engine Suite', () => {
 
       assert.throws(() => {
         MaintenanceRepository.createPreventativeSchedule({
+          property_id: propertyB,
           assigned_vendor_contact_id: vendorContactA, // belongs to Operator A
           title: 'Malicious Vendor Schedule',
           description: 'Accessing Operator A vendor',
@@ -182,5 +185,37 @@ describe('Preventative Maintenance Scheduling Engine Suite', () => {
     const nextSeasonal = MaintenanceRepository.computeNextDueDate(jan31, 'seasonal', 10); // target October
     const dSeason = new Date(nextSeasonal);
     assert.equal(dSeason.getMonth(), 9, 'Should target October (month index 9)');
+  });
+
+  it('strictly requires property_id on creation and prevents clearing on update', () => {
+    RequestContext.run({ operatorId: operatorA, correlationId: 'test-corr' }, () => {
+      assert.throws(() => {
+        MaintenanceRepository.createPreventativeSchedule({
+          property_id: '',
+          title: 'Schedule Without Property',
+          description: 'No property attached',
+          category: 'general',
+          priority: 'low',
+          frequency: 'monthly',
+          next_due_date: Date.now() + 86400000
+        });
+      }, /Field "property_id" is required/);
+
+      const created = MaintenanceRepository.createPreventativeSchedule({
+        property_id: propertyA,
+        title: 'Schedule With Property',
+        description: 'Property attached',
+        category: 'general',
+        priority: 'low',
+        frequency: 'monthly',
+        next_due_date: Date.now() + 86400000
+      });
+
+      assert.throws(() => {
+        MaintenanceRepository.updatePreventativeSchedule(created.id, {
+          property_id: ''
+        });
+      }, /Field "property_id" cannot be cleared/);
+    });
   });
 });

@@ -46,9 +46,11 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
     });
   });
 
-  after(() => {
+  after(async () => {
     if (webhookServer) {
-      webhookServer.close();
+      await new Promise<void>((resolve, reject) => {
+        webhookServer!.close((err) => (err ? reject(err) : resolve()));
+      });
     }
     closeDatabase();
   });
@@ -142,6 +144,19 @@ describe('Zero-Dependency Notification Dispatcher Suite', () => {
       const logs = dispatcher.listLogs(operatorA);
       const match = logs.find((l) => l.subject.includes('Water leak under kitchen sink'));
       assert.ok(match, 'Event listener must create notification log on work_order.created');
+    });
+  });
+
+  it('rejects unencrypted HTTP webhook URLs for remote destinations', () => {
+    RequestContext.run({ operatorId: operatorA, correlationId: 'test-corr' }, () => {
+      assert.throws(
+        () => {
+          dispatcher.updateSettings(operatorA, {
+            webhook_url: 'http://api.external-webhook.com/endpoint'
+          });
+        },
+        /must use HTTPS for remote destinations/
+      );
     });
   });
 });

@@ -323,7 +323,9 @@ export function registerRoutes(router: Router): void {
             entity_id: entityId,
             subject: subject.trim(),
             is_private: !!body['is_private'],
-            initial_message: typeof body['initial_message'] === 'string' ? body['initial_message'] : undefined,
+            initial_message: typeof body['initial_message'] === 'string'
+              ? body['initial_message']
+              : (typeof body['body'] === 'string' ? body['body'] : undefined),
             participant_contact_ids: Array.isArray(body['participant_contact_ids']) ? body['participant_contact_ids'] : undefined,
             participant_user_ids: Array.isArray(body['participant_user_ids']) ? body['participant_user_ids'] : undefined
           },

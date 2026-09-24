@@ -37,9 +37,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           .map((s: string) => s.trim())
           .filter(Boolean);
 
+        const userDesc = (ctx.body['description'] || '').trim();
+        const checklistText = checklist.length > 0 ? `Checklist:\n${checklist.map((item: string) => `- ${item}`).join('\n')}` : '';
+        const finalDescription = [userDesc, checklistText].filter(Boolean).join('\n\n') || ctx.body['title'] || '';
+
         await ctx.api.post('/api/v1/maintenance/preventative_schedules', {
           title: ctx.body['title'] || '',
-          description: ctx.body['description'] || checklist.join('\n') || ctx.body['title'] || '',
+          description: finalDescription,
           property_id: ctx.body['property_id'] || '',
           unit_id: ctx.body['unit_id'] || null,
           category: ctx.body['category'] || 'general',

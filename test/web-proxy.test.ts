@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 import * as http from 'node:http';
 import { handleWebRequest } from '../web/server.js';
 import { Session, commitSession } from '../web/lib/session.js';
+import { safeReturnUrl } from '../web/router.js';
 
 describe('Web Server - API Reverse Proxy Subsystem', () => {
   let backendServer: http.Server;
@@ -42,10 +43,10 @@ describe('Web Server - API Reverse Proxy Subsystem', () => {
 
     // 2. Start web presentation server routing to mock backend
     webServer = http.createServer((req, res) => {
-      handleWebRequest(req, res, `http://127.0.0.1:${backendPort}`).catch((err) => {
+      handleWebRequest(req, res, `http://127.0.0.1:${backendPort}`).catch(() => {
         if (!res.writableEnded) {
           res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end(String(err));
+          res.end('Internal Server Error');
         }
       });
     });
@@ -150,5 +151,50 @@ describe('Web Server - API Reverse Proxy Subsystem', () => {
     } finally {
       await new Promise<void>((resolve) => offlineWebServer.close(() => resolve()));
     }
+  });
+
+  it('rejects SSRF attempts with protocol-relative or backslash-tainted paths', async () => {
+    // Protocol-relative SSRF vector
+    const res = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+      const clientReq = http.request({
+        hostname: '127.0.0.1',
+        port: webPort,
+        path: '/api//attacker.example.com',
+        method: 'GET'
+      }, (clientRes) => {
+        const chunks: Buffer[] = [];
+        clientRes.on('data', (c) => chunks.push(c));
+        clientRes.on('end', () => {
+          resolve({
+            statusCode: clientRes.statusCode || 0,
+            body: Buffer.concat(chunks).toString('utf8')
+          });
+        });
+      });
+      clientReq.on('error', reject);
+      clientReq.end();
+    });
+
+    assert.equal(res.statusCode, 400);
+    const parsed = JSON.parse(res.body);
+    assert.equal(parsed.success, false);
+    assert.equal(parsed.error.code, 'BAD_REQUEST');
+  });
+
+  it('safeReturnUrl rejects control characters including tabs and returns default', () => {
+    // Standard valid path
+    assert.equal(safeReturnUrl('/leases/123'), '/leases/123');
+
+    // Tab character bypass (CWE-601 open redirect)
+    assert.equal(safeReturnUrl('/\t/attacker.example.com'), '/dashboard');
+    assert.equal(safeReturnUrl('/test\t/path'), '/dashboard');
+
+    // Newline characters
+    assert.equal(safeReturnUrl('/\r/evil.com'), '/dashboard');
+    assert.equal(safeReturnUrl('/\n/evil.com'), '/dashboard');
+
+    // Protocol-relative and backslash paths
+    assert.equal(safeReturnUrl('//attacker.example.com'), '/dashboard');
+    assert.equal(safeReturnUrl('/\\attacker.example.com'), '/dashboard');
   });
 });

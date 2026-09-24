@@ -7,6 +7,8 @@ import { generateMonthlyRentCharges } from './billing.js';
 import { ChartOfAccountsRepository } from './chart_of_accounts.js';
 import { QuickBooksService } from './quickbooks.js';
 import { JournalService } from './journal.js';
+import { RequestContext } from '../../../core/context.js';
+import { canAccessPortfolio } from '../../../core/rbac.js';
 import { ClientAccountingRepository } from './client_accounting.js';
 
 /**
@@ -571,23 +573,31 @@ export function registerRoutes(router: Router): void {
   // ==========================================
 
   // --- Client Capital Contributions ---
-  router.get('/api/v1/accounting/client_contributions', requirePermission('accounting:view'), (req, res) => {
+  router.get('/api/v1/accounting/client_contributions', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
     const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
     if (startRes.hasError) return;
     const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
     if (endRes.hasError) return;
 
-    const contributions = ClientAccountingRepository.listCapitalContributions({
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let contributions = ClientAccountingRepository.listCapitalContributions({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id,
       client_contact_id: req.query.client_contact_id,
       start_date: startRes.value,
       end_date: endRes.value
     });
+
+    if (userId && userId !== 'system') {
+      contributions = contributions.filter((c) => canAccessPortfolio(userId, c.portfolio_id, operatorId));
+    }
+
     successResponse(res, { contributions });
   });
 
-  router.post('/api/v1/accounting/client_contributions', requirePermission('accounting:transact'), (req, res) => {
+  router.post('/api/v1/accounting/client_contributions', requirePermission('accounting:transact'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { client_contact_id, portfolio_id, amount_cents } = req.body || {};
     if (!client_contact_id || !portfolio_id || amount_cents === undefined) {
       return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, and amount_cents are required', 400);
@@ -618,27 +628,40 @@ export function registerRoutes(router: Router): void {
     if (!contribution) {
       return errorResponse(res, 'NOT_FOUND', 'Client capital contribution not found', 404);
     }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessPortfolio(userId, contribution.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     successResponse(res, { contribution });
   });
 
   // --- Client Distributions / Draws ---
-  router.get('/api/v1/accounting/client_distributions', requirePermission('accounting:view'), (req, res) => {
+  router.get('/api/v1/accounting/client_distributions', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
     const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
     if (startRes.hasError) return;
     const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
     if (endRes.hasError) return;
 
-    const distributions = ClientAccountingRepository.listDistributions({
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let distributions = ClientAccountingRepository.listDistributions({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id,
       client_contact_id: req.query.client_contact_id,
       start_date: startRes.value,
       end_date: endRes.value
     });
+
+    if (userId && userId !== 'system') {
+      distributions = distributions.filter((d) => canAccessPortfolio(userId, d.portfolio_id, operatorId));
+    }
+
     successResponse(res, { distributions });
   });
 
-  router.post('/api/v1/accounting/client_distributions', requirePermission('accounting:disburse'), (req, res) => {
+  router.post('/api/v1/accounting/client_distributions', requirePermission('accounting:disburse'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { client_contact_id, portfolio_id, amount_cents, disbursement_method } = req.body || {};
     if (!client_contact_id || !portfolio_id || amount_cents === undefined || !disbursement_method) {
       return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, amount_cents, and disbursement_method are required', 400);
@@ -670,6 +693,11 @@ export function registerRoutes(router: Router): void {
     const distribution = ClientAccountingRepository.getDistributionById(req.params.id!);
     if (!distribution) {
       return errorResponse(res, 'NOT_FOUND', 'Client distribution not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessPortfolio(userId, distribution.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
     }
     successResponse(res, { distribution });
   });

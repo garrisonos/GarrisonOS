@@ -410,6 +410,14 @@ export class NotificationDispatcher {
       webhook_secret: settings.webhook_secret !== undefined ? (settings.webhook_secret || null) : (existing?.webhook_secret || null)
     };
 
+    if (merged.webhook_url) {
+      const parsed = new URL(merged.webhook_url);
+      const isLoopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1';
+      if (parsed.protocol !== 'https:' && !isLoopback) {
+        throw new Error('Webhook URL must use HTTPS for remote destinations (HTTP permitted only for loopback testing).');
+      }
+    }
+
     this.db.prepare(`
       INSERT INTO operator_notification_settings (
         operator_id, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass,
@@ -623,6 +631,11 @@ export class NotificationDispatcher {
   private executeHttpPost(targetUrl: string, body: string, signature: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const parsed = new URL(targetUrl);
+      const isLoopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1';
+      if (parsed.protocol !== 'https:' && !isLoopback) {
+        reject(new Error('Webhook dispatch rejected: remote webhook URLs must use HTTPS'));
+        return;
+      }
       const isHttps = parsed.protocol === 'https:';
       const transport = isHttps ? https : http;
 

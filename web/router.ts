@@ -60,6 +60,10 @@ import * as BackupIndex from '../modules/backup/frontend/pages/index.js';
 export function safeReturnUrl(url: unknown, defaultUrl: string = '/dashboard'): string {
   if (typeof url !== 'string') return defaultUrl;
   const trimmed = url.trim();
+  // Reject ASCII control characters (0x00-0x1F, 0x7F) including tabs, newlines, etc.
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    return defaultUrl;
+  }
   if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\') && !trimmed.includes('\\')) {
     return trimmed;
   }
