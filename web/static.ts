@@ -5,9 +5,27 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Root directory of the repository
-const rootDir = path.resolve(__dirname, '..');
-const publicDir = path.resolve(rootDir, 'web', 'public');
+function findPublicDir(): string {
+  // 1. When compiled into dist/web, traverse up to repository root
+  const distCandidate = path.resolve(__dirname, '..', '..', 'web', 'public');
+  if (fs.existsSync(distCandidate)) return distCandidate;
+
+  // 2. Check directly under dirname (if bundled or sibling)
+  const siblingCandidate = path.resolve(__dirname, 'public');
+  if (fs.existsSync(siblingCandidate)) return siblingCandidate;
+
+  // 3. Check parent web/public (e.g. source web/lib/ or web/)
+  const parentCandidate = path.resolve(__dirname, '..', 'web', 'public');
+  if (fs.existsSync(parentCandidate)) return parentCandidate;
+
+  // 4. Fallback to current working directory
+  const cwdCandidate = path.resolve(process.cwd(), 'web', 'public');
+  if (fs.existsSync(cwdCandidate)) return cwdCandidate;
+
+  return distCandidate;
+}
+
+const publicDir = findPublicDir();
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -77,7 +95,11 @@ export function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: 
 }
 
 /**
- * Convenience wrapper for handleStaticFile(req, res).
+ * Convenience wrapper for handleStaticFile(req, res) that parses the request URL pathname.
+ *
+ * @param req - Incoming HTTP request message.
+ * @param res - Node.js ServerResponse to write static file content to.
+ * @returns True if static file was handled, false otherwise.
  */
 export function handleStaticFile(req: IncomingMessage, res: ServerResponse): boolean {
   const parsedUrl = new URL(req.url || '/', 'http://localhost');

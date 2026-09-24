@@ -1,11 +1,14 @@
 import { ServerResponse } from 'node:http';
 import { Router, ApiRequest } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
+import { requirePermission, requirePortfolioAccess } from '../../../api/middleware.js';
 import { AccountingRepository } from './repository.js';
 import { generateMonthlyRentCharges } from './billing.js';
 import { ChartOfAccountsRepository } from './chart_of_accounts.js';
 import { QuickBooksService } from './quickbooks.js';
 import { JournalService } from './journal.js';
+import { RequestContext } from '../../../core/context.js';
+import { canAccessPortfolio } from '../../../core/rbac.js';
 import { ClientAccountingRepository } from './client_accounting.js';
 
 /**
@@ -570,23 +573,31 @@ export function registerRoutes(router: Router): void {
   // ==========================================
 
   // --- Client Capital Contributions ---
-  router.get('/api/v1/accounting/client_contributions', (req, res) => {
+  router.get('/api/v1/accounting/client_contributions', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
     const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
     if (startRes.hasError) return;
     const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
     if (endRes.hasError) return;
 
-    const contributions = ClientAccountingRepository.listCapitalContributions({
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let contributions = ClientAccountingRepository.listCapitalContributions({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id,
       client_contact_id: req.query.client_contact_id,
       start_date: startRes.value,
       end_date: endRes.value
     });
+
+    if (userId && userId !== 'system') {
+      contributions = contributions.filter((c) => canAccessPortfolio(userId, c.portfolio_id, operatorId));
+    }
+
     successResponse(res, { contributions });
   });
 
-  router.post('/api/v1/accounting/client_contributions', (req, res) => {
+  router.post('/api/v1/accounting/client_contributions', requirePermission('accounting:transact'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { client_contact_id, portfolio_id, amount_cents } = req.body || {};
     if (!client_contact_id || !portfolio_id || amount_cents === undefined) {
       return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, and amount_cents are required', 400);
@@ -612,32 +623,45 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  router.get('/api/v1/accounting/client_contributions/:id', (req, res) => {
+  router.get('/api/v1/accounting/client_contributions/:id', requirePermission('accounting:view'), (req, res) => {
     const contribution = ClientAccountingRepository.getCapitalContributionById(req.params.id!);
     if (!contribution) {
       return errorResponse(res, 'NOT_FOUND', 'Client capital contribution not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessPortfolio(userId, contribution.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
     }
     successResponse(res, { contribution });
   });
 
   // --- Client Distributions / Draws ---
-  router.get('/api/v1/accounting/client_distributions', (req, res) => {
+  router.get('/api/v1/accounting/client_distributions', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
     const startRes = parseIntegerParam(req, res, 'start_date', { min: 1 });
     if (startRes.hasError) return;
     const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
     if (endRes.hasError) return;
 
-    const distributions = ClientAccountingRepository.listDistributions({
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let distributions = ClientAccountingRepository.listDistributions({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id,
       client_contact_id: req.query.client_contact_id,
       start_date: startRes.value,
       end_date: endRes.value
     });
+
+    if (userId && userId !== 'system') {
+      distributions = distributions.filter((d) => canAccessPortfolio(userId, d.portfolio_id, operatorId));
+    }
+
     successResponse(res, { distributions });
   });
 
-  router.post('/api/v1/accounting/client_distributions', (req, res) => {
+  router.post('/api/v1/accounting/client_distributions', requirePermission('accounting:disburse'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { client_contact_id, portfolio_id, amount_cents, disbursement_method } = req.body || {};
     if (!client_contact_id || !portfolio_id || amount_cents === undefined || !disbursement_method) {
       return errorResponse(res, 'VALIDATION_ERROR', 'client_contact_id, portfolio_id, amount_cents, and disbursement_method are required', 400);
@@ -665,51 +689,69 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  router.get('/api/v1/accounting/client_distributions/:id', (req, res) => {
+  router.get('/api/v1/accounting/client_distributions/:id', requirePermission('accounting:view'), (req, res) => {
     const distribution = ClientAccountingRepository.getDistributionById(req.params.id!);
     if (!distribution) {
       return errorResponse(res, 'NOT_FOUND', 'Client distribution not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessPortfolio(userId, distribution.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
     }
     successResponse(res, { distribution });
   });
 
   // --- Portfolio Cash Summary ---
-  router.get('/api/v1/accounting/portfolios/:portfolio_id/cash_summary', (req, res) => {
-    const asOfRes = parseIntegerParam(req, res, 'as_of', { min: 1 });
-    if (asOfRes.hasError) return;
+  router.get(
+    '/api/v1/accounting/portfolios/:portfolio_id/cash_summary',
+    requirePermission('accounting:view'),
+    requirePortfolioAccess((req) => req.params['portfolio_id']),
+    (req, res) => {
+      const asOfRes = parseIntegerParam(req, res, 'as_of', { min: 1 });
+      if (asOfRes.hasError) return;
 
-    const rawBasis = req.query['basis'];
-    let basis: 'cash' | 'accrual' = 'cash';
-    if (rawBasis !== undefined) {
-      if (rawBasis === 'accrual') {
-        basis = 'accrual';
-      } else if (rawBasis !== 'cash') {
-        return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "basis" must be "cash" or "accrual"', 400);
+      const rawBasis = req.query['basis'];
+      let basis: 'cash' | 'accrual' = 'cash';
+      if (rawBasis !== undefined) {
+        if (rawBasis === 'accrual') {
+          basis = 'accrual';
+        } else if (rawBasis !== 'cash') {
+          return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "basis" must be "cash" or "accrual"', 400);
+        }
+      }
+
+      try {
+        const summary = ClientAccountingRepository.getPortfolioCashSummary(req.params.portfolio_id!, asOfRes.value, basis);
+        successResponse(res, { summary });
+      } catch (err: any) {
+        if (err.message && err.message.toLowerCase().includes('not found')) {
+          errorResponse(res, 'NOT_FOUND', err.message, 404);
+        } else {
+          errorResponse(res, 'INTERNAL_ERROR', err.message || 'Internal server error', 500);
+        }
       }
     }
-
-    try {
-      const summary = ClientAccountingRepository.getPortfolioCashSummary(req.params.portfolio_id!, asOfRes.value, basis);
-      successResponse(res, { summary });
-    } catch (err: any) {
-      if (err.message && err.message.toLowerCase().includes('not found')) {
-        errorResponse(res, 'NOT_FOUND', err.message, 404);
-      } else {
-        errorResponse(res, 'INTERNAL_ERROR', err.message || 'Internal server error', 500);
-      }
-    }
-  });
+  );
 
   // --- Management Fee Agreements ---
-  router.get('/api/v1/accounting/management_fee_agreements', (req, res) => {
-    const agreements = ClientAccountingRepository.listManagementFeeAgreements({
+  router.get('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let agreements = ClientAccountingRepository.listManagementFeeAgreements({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id
     });
+
+    if (userId && userId !== 'system') {
+      agreements = agreements.filter((a) => !a.portfolio_id || canAccessPortfolio(userId, a.portfolio_id, operatorId));
+    }
+
     successResponse(res, { agreements });
   });
 
-  router.post('/api/v1/accounting/management_fee_agreements', (req, res) => {
+  router.post('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:manage'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { calculation_method } = req.body || {};
     if (!calculation_method) {
       return errorResponse(res, 'VALIDATION_ERROR', 'calculation_method is required', 400);
@@ -730,15 +772,29 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  router.get('/api/v1/accounting/management_fee_agreements/:id', (req, res) => {
+  router.get('/api/v1/accounting/management_fee_agreements/:id', requirePermission('accounting:view'), (req, res) => {
     const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
     if (!agreement) {
       return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
     }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     successResponse(res, { agreement });
   });
 
-  router.delete('/api/v1/accounting/management_fee_agreements/:id', (req, res) => {
+  router.delete('/api/v1/accounting/management_fee_agreements/:id', requirePermission('accounting:manage'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     const deleted = ClientAccountingRepository.deleteManagementFeeAgreement(req.params.id!);
     if (!deleted) {
       return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
@@ -746,7 +802,16 @@ export function registerRoutes(router: Router): void {
     successResponse(res, { deleted: true });
   });
 
-  router.get('/api/v1/accounting/management_fee_agreements/:id/calculate', (req, res) => {
+  router.get('/api/v1/accounting/management_fee_agreements/:id/calculate', requirePermission('accounting:view'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const calculation = ClientAccountingRepository.calculateManagementFee(req.params.id!, req.query.month);
       successResponse(res, { calculation });
@@ -755,7 +820,16 @@ export function registerRoutes(router: Router): void {
     }
   });
 
-  router.post('/api/v1/accounting/management_fee_agreements/:id/post', (req, res) => {
+  router.post('/api/v1/accounting/management_fee_agreements/:id/post', requirePermission('accounting:transact'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const result = ClientAccountingRepository.postManagementFee(req.params.id!, req.body?.month);
       successResponse(res, { result }, 201);

@@ -20,6 +20,7 @@ import { loadModules, getLoadedModules } from '../core/module-loader.js';
 import { verifyPassword, hashPassword, createToken, generateUUIDv7 } from '../core/crypto.js';
 import { RequestContext } from '../core/context.js';
 import { getApplicationVersion } from '../core/version.js';
+import { registerNotificationListeners } from '../core/notification-listener.js';
 import {
   getUserPortfolioAccess,
   setUserPortfolioAccess,
@@ -1303,6 +1304,9 @@ export async function startServer(
 
   // Load all functional modules dynamically
   await loadModules(router, eventBus);
+
+  // Register core notification listeners on EventBus
+  registerNotificationListeners(eventBus);
 
   activeBackupScheduler = null;
   backupSchedulerReadiness = 'not-mounted';

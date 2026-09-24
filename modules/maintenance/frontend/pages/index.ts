@@ -158,7 +158,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         <h1 class="page-title">Work Orders & Repairs</h1>
         <p class="page-subtitle">Track repair tickets, dispatch vendors, and record maintenance expenses.</p>
       </div>
-      <button class="btn btn-primary" onclick="document.getElementById('addWorkOrderModal').showModal()">+ New Work Order</button>
+      <div class="btn-group">
+        <a href="/maintenance/preventative" class="btn btn-secondary">⏱️ Preventative Schedules</a>
+        <button class="btn btn-primary" onclick="document.getElementById('addWorkOrderModal').showModal()">+ New Work Order</button>
+      </div>
     </div>
 
     ${errorAlert}

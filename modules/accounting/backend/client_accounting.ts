@@ -126,14 +126,14 @@ export class ClientAccountingRepository {
       throw new Error(`Portfolio '${data.portfolio_id}' not found for current operator.`);
     }
 
-    // Verify property ownership if provided
+    // Verify property ownership and portfolio association if provided
     if (data.property_id) {
       const property = db.prepare(`
         SELECT id FROM properties
-        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).get(data.property_id, operatorId);
+        WHERE id = ? AND portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(data.property_id, data.portfolio_id, operatorId);
       if (!property) {
-        throw new Error(`Property '${data.property_id}' not found for current operator.`);
+        throw new Error(`Property '${data.property_id}' not found in portfolio '${data.portfolio_id}' for current operator.`);
       }
     }
 
@@ -338,13 +338,14 @@ export class ClientAccountingRepository {
       throw new Error(`Portfolio '${data.portfolio_id}' not found for current operator.`);
     }
 
+    // Verify property ownership and portfolio association if provided
     if (data.property_id) {
       const property = db.prepare(`
         SELECT id FROM properties
-        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).get(data.property_id, operatorId);
+        WHERE id = ? AND portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(data.property_id, data.portfolio_id, operatorId);
       if (!property) {
-        throw new Error(`Property '${data.property_id}' not found for current operator.`);
+        throw new Error(`Property '${data.property_id}' not found in portfolio '${data.portfolio_id}' for current operator.`);
       }
     }
 
@@ -678,10 +679,16 @@ export class ClientAccountingRepository {
 
     if (data.property_id) {
       const property = db.prepare(`
-        SELECT id FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).get(data.property_id, operatorId);
+        SELECT id, portfolio_id FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(data.property_id, operatorId) as { id: string; portfolio_id: string } | undefined;
       if (!property) {
         throw new Error(`Property '${data.property_id}' not found.`);
+      }
+      if (data.portfolio_id && property.portfolio_id && data.portfolio_id !== property.portfolio_id) {
+        throw new Error(`Property '${data.property_id}' does not belong to portfolio '${data.portfolio_id}'.`);
+      }
+      if (!data.portfolio_id && property.portfolio_id) {
+        data.portfolio_id = property.portfolio_id;
       }
     }
 

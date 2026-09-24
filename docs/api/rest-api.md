@@ -219,6 +219,13 @@ All JSON responses conform to standardized envelopes:
 * `POST /api/v1/maintenance/:id/tasks`: Create subtask checklist item
 * `PUT /api/v1/maintenance/:id/tasks/:task_id`: Mark subtask complete or reassign
 * `DELETE /api/v1/maintenance/:id`: Soft delete work order
+* `GET /api/v1/maintenance/preventative_schedules`: List preventative maintenance schedules
+* `POST /api/v1/maintenance/preventative_schedules`: Create recurring preventative maintenance schedule
+* `GET /api/v1/maintenance/preventative_schedules/:id`: Get schedule details
+* `PUT /api/v1/maintenance/preventative_schedules/:id`: Update schedule cadence, vendor, or due date
+* `DELETE /api/v1/maintenance/preventative_schedules/:id`: Soft delete schedule
+* `POST /api/v1/maintenance/preventative_schedules/run`: Manually trigger due work order generation pass across all due schedules
+* `POST /api/v1/maintenance/preventative_schedules/:id/trigger`: Manually trigger immediate work order creation from a specific schedule
 
 ### Universal Conversations & Notes
 

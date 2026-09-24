@@ -35,8 +35,10 @@ import * as LeasesShow from '../modules/leases/frontend/pages/show.js';
 
 import * as MaintenanceIndex from '../modules/maintenance/frontend/pages/index.js';
 import * as MaintenanceShow from '../modules/maintenance/frontend/pages/show.js';
+import * as MaintenancePreventative from '../modules/maintenance/frontend/pages/preventative.js';
 
 import * as AccountingIndex from '../modules/accounting/frontend/pages/index.js';
+import * as AccountingClient from '../modules/accounting/frontend/pages/client-accounting.js';
 import * as AccountingCOA from '../modules/accounting/frontend/pages/chart-of-accounts.js';
 import * as AccountingGL from '../modules/accounting/frontend/pages/general-ledger.js';
 import * as AccountingDetail from '../modules/accounting/frontend/pages/ledger-detail.js';
@@ -46,6 +48,61 @@ import * as AccountingScheduleE from '../modules/accounting/frontend/pages/sched
 import * as AccountingTrialBalance from '../modules/accounting/frontend/pages/trial-balance.js';
 
 import * as BackupIndex from '../modules/backup/frontend/pages/index.js';
+
+/**
+ * Validate and sanitize return URL to prevent open redirect vulnerabilities.
+ * Only relative path URLs starting with '/' (and not protocol-relative '//' or Windows path separators) are permitted.
+ *
+ * @param url - Candidate return URL.
+ * @param defaultUrl - Fallback URL if candidate is invalid or unsafe.
+ * @returns Safe relative URL path.
+ */
+export function safeReturnUrl(url: unknown, defaultUrl: string = '/dashboard'): string {
+  if (typeof url !== 'string') return defaultUrl;
+  const trimmed = url.trim();
+  // Reject ASCII control characters (0x00-0x1F, 0x7F) including tabs, newlines, etc.
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    return defaultUrl;
+  }
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\') && !trimmed.includes('\\')) {
+    return trimmed;
+  }
+  return defaultUrl;
+}
+
+const handleConversationCreate: PageHandler = async (ctx) => {
+  const returnUrl = safeReturnUrl(ctx.body['return_url']);
+  try {
+    const isPrivate = ctx.body['is_private'] === '1' || ctx.body['is_private'] === true;
+    const bodyText = typeof ctx.body['body'] === 'string' ? ctx.body['body'] : '';
+    await ctx.api.post('/api/v1/conversations', {
+      entity_type: ctx.body['entity_type'],
+      entity_id: ctx.body['entity_id'],
+      subject: ctx.body['subject'],
+      body: bodyText,
+      initial_message: bodyText,
+      is_private: isPrivate
+    });
+    ctx.session.addFlash('success', 'Conversation thread created successfully');
+  } catch (err: any) {
+    ctx.session.addFlash('error', `Failed to create conversation: ${err.message}`);
+  }
+  return { redirect: returnUrl, content: '' };
+};
+
+const handleConversationReply: PageHandler = async (ctx) => {
+  const convId = ctx.body['conversation_id'];
+  const returnUrl = safeReturnUrl(ctx.body['return_url']);
+  try {
+    await ctx.api.post(`/api/v1/conversations/${encodeURIComponent(convId)}/messages`, {
+      body: ctx.body['body']
+    });
+    ctx.session.addFlash('success', 'Reply posted');
+  } catch (err: any) {
+    ctx.session.addFlash('error', `Failed to post reply: ${err.message}`);
+  }
+  return { redirect: returnUrl, content: '' };
+};
 
 const ROUTE_TABLE: Record<string, PageHandler> = {
   '/': DashboardPage.handle,
@@ -66,8 +123,10 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
 
   '/maintenance': MaintenanceIndex.handle,
   '/maintenance/show': MaintenanceShow.handle,
+  '/maintenance/preventative': MaintenancePreventative.handle,
 
   '/accounting': AccountingIndex.handle,
+  '/accounting/client-accounting': AccountingClient.handle,
   '/accounting/chart-of-accounts': AccountingCOA.handle,
   '/accounting/general-ledger': AccountingGL.handle,
   '/accounting/ledger-detail': AccountingDetail.handle,
@@ -75,6 +134,9 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
   '/accounting/rent-roll': AccountingRentRoll.handle,
   '/accounting/schedule-e': AccountingScheduleE.handle,
   '/accounting/trial-balance': AccountingTrialBalance.handle,
+
+  '/conversations/create': handleConversationCreate,
+  '/conversations/reply': handleConversationReply,
 
   '/backup': BackupIndex.handle,
   '/backups': BackupIndex.handle,

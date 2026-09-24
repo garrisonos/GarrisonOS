@@ -1,0 +1,11 @@
+{
+  "id": "conversations",
+  "name": "Universal Conversations & Notes",
+  "description": "Polymorphic threaded notes and audit comments across operational entities with participant scoping",
+  "dependencies": [],
+  "permissions": [
+    "conversations:view",
+    "conversations:create",
+    "conversations:delete"
+  ]
+}

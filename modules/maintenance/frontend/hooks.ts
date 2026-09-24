@@ -8,6 +8,14 @@ HookRegistry.registerNavigation({
   section: 'operations'
 });
 
+HookRegistry.registerNavigation({
+  label: 'Preventative Maintenance',
+  route: '/maintenance/preventative',
+  icon: 'calendar',
+  order: 55,
+  section: 'operations'
+});
+
 HookRegistry.registerDashboardCard('/api/v1/maintenance/metrics', (res: any) => {
   try {
     if (!res || res.success !== true) {

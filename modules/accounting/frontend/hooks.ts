@@ -56,6 +56,14 @@ HookRegistry.registerNavigation({
   section: 'financial'
 });
 
+HookRegistry.registerNavigation({
+  label: 'Client Accounting',
+  route: '/accounting/client-accounting',
+  icon: 'file-bar-chart',
+  order: 47,
+  section: 'financial'
+});
+
 HookRegistry.registerDashboardCard('/api/v1/accounting/rent-roll', (res: any) => {
   try {
     if (!res || res.success !== true) {

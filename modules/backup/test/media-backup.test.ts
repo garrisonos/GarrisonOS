@@ -18,15 +18,23 @@ describe('Media Backup Integration & Full System Restore', () => {
   const originalSqlitePath = process.env['SQLITE_PATH'];
 
   before(() => {
+    closeDatabase();
+    if (fs.existsSync(testSqlitePath)) {
+      try {
+        fs.unlinkSync(testSqlitePath);
+      } catch (err: any) {
+        if (err.code !== 'ENOENT') throw err;
+      }
+    }
     fs.mkdirSync(testStorageDir, { recursive: true });
     fs.mkdirSync(path.dirname(testSqlitePath), { recursive: true });
     process.env['STORAGE_PATH'] = testStorageDir;
     process.env['SQLITE_PATH'] = testSqlitePath;
 
-    closeDatabase();
     const db = getDatabase({ path: testSqlitePath });
     runMigrations(db);
     ensureOperator(testTenant, db);
+    db.prepare('DELETE FROM users WHERE operator_id = ?').run(testTenant);
   });
 
   after(() => {
@@ -45,8 +53,10 @@ describe('Media Backup Integration & Full System Restore', () => {
 
     if (fs.existsSync(testBaseDir)) {
       try {
-        fs.rmSync(testBaseDir, { recursive: true, force: true });
-      } catch {}
+        fs.rmSync(testBaseDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      } catch (err: any) {
+        if (err.code !== 'ENOENT' && err.code !== 'EPERM' && err.code !== 'EBUSY') throw err;
+      }
     }
   });
 
@@ -67,6 +77,7 @@ describe('Media Backup Integration & Full System Restore', () => {
       db.prepare(`
         INSERT INTO users (id, operator_id, email, password_hash, first_name, last_name, role, created_at, updated_at)
         VALUES ('user-media-1', ?, 'media@test.com', 'hash', 'Media', 'Tester', 'manager', ?, ?)
+        ON CONFLICT (id) DO UPDATE SET updated_at = excluded.updated_at
       `).run(testTenant, now, now);
 
       // 3. Create full database backup
