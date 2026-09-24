@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import { ServerResponse } from 'node:http';
 import { PageContext, PageResult, PageHandler } from './lib/page-context.js';
 import { renderLayout } from './templates/layout.js';
+import { configuredPublicOrigin } from './lib/public-url.js';
 import { renderNotFoundPage } from './pages/notFound.js';
 import { renderErrorPage } from './pages/error.js';
 import { HookRegistry } from './lib/hooks.js';
@@ -203,6 +204,7 @@ export class WebRouter {
     if (!handler) {
       const notFoundContent = renderNotFoundPage();
       const body = renderLayout({
+        publicOrigin: configuredPublicOrigin(),
         title: '404 Not Found',
         content: notFoundContent,
         user: ctx.session.user,
@@ -238,6 +240,7 @@ export class WebRouter {
       }
 
       const body = renderLayout({
+        publicOrigin: configuredPublicOrigin(),
         title: result.title,
         content: result.content,
         user: ctx.session.user,
@@ -257,6 +260,7 @@ export class WebRouter {
       );
 
       const body = renderLayout({
+        publicOrigin: configuredPublicOrigin(),
         title: 'Error',
         content: errorContent,
         user: ctx.session.user,

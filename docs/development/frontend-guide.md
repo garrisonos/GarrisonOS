@@ -121,7 +121,7 @@ GarrisonOS presentation assets are hosted under `web/public/` (and archived for 
   * `/public/logo.png` (`docs/assets/logo.png`): High-resolution (2420 × 1760) brand logo and emblem used on authentication cards, setup wizards, and splash interfaces.
   * `/public/logo-nav.png` (`docs/assets/logo-nav.png`): Compact mark (111 × 88) formatted for application sidebar headers and responsive mobile navigation.
 * **Social & Meta Card**:
-  * `/public/og-image.png` (`docs/assets/og-image.png`): OpenGraph card (1200 × 630) injected into `<head>` meta tags (`og:image`) across all rendered layout shells.
+  * `/public/og-image.png` (`docs/assets/og-image.png`): OpenGraph card (1200 × 630) injected as an absolute URL into `<head>` meta tags (`og:image`) across the layout, login, and setup documents using `PUBLIC_ORIGIN` (or the local web port by default).
 * **Favicons & Touch Icons**:
   * `/public/favicon.ico` (`docs/assets/favicon.ico`): Standard multi-size ICO favicon served automatically at `/favicon.ico`.
   * `/public/favicon-32x32.png` & `/public/favicon-16x16.png`: Modern PNG tab favicons.

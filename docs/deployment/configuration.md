@@ -13,6 +13,7 @@ GarrisonOS is configured through standard environment variables loaded from `.en
 | `HOST` | `127.0.0.1` | Binding interface for Node.js engine. (Use `127.0.0.1` for loopback). |
 | `WEB_PORT` | `8080` | Port for the TypeScript web presentation server in local/standalone mode. |
 | `WEB_HOST` | `localhost` | Binding interface for the TypeScript web presentation server in local mode. |
+| `PUBLIC_ORIGIN` | `http://localhost:<WEB_PORT>` | Canonical HTTP(S) origin exposed to browsers (for example, `https://app.example.com`). Set this for deployed instances so social preview image URLs use the public hostname rather than localhost. Do not include credentials. |
 | `SQLITE_PATH` | `./garrison.sqlite` | File system path for the primary SQLite database. |
 | `STORAGE_PATH` | `./storage/uploads` | File system path for uploaded tenant attachments and receipts. |
 | `APP_SECRET` | *(Required in production)* | 32+ byte hex string (64 hex characters) used for HMAC-SHA256 session signatures and authentication tokens. |

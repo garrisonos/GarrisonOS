@@ -1,8 +1,8 @@
+# GarrisonOS Documentation
+
 <p align="center">
   <img src="assets/logo.png" alt="GarrisonOS Logo" width="220">
 </p>
-
-# GarrisonOS Documentation
 
 Welcome to the official documentation for **GarrisonOS**, the zero-dependency, open-source property management platform engineered for independent landlords, property managers, and real estate operators.
 

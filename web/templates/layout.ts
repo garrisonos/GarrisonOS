@@ -5,11 +5,17 @@ import { renderSidebar } from './sidebar.js';
 import { renderHeader } from './header.js';
 import { renderFlash } from './flash.js';
 import { OperatorBranding, BrandingService } from '../../core/branding.js';
+import { ogImageUrl } from '../lib/public-url.js';
 
 /**
  * Configuration options for rendering the primary application layout wrapper.
  */
 export interface LayoutOptions {
+  /**
+   * Canonical public origin for absolute social preview metadata.
+   */
+  publicOrigin: string;
+
   /**
    * Title of the page.
    */
@@ -58,6 +64,7 @@ export interface LayoutOptions {
  * @returns Complete HTML document string.
  */
 export function renderLayout(options: LayoutOptions): string {
+  const previewImageUrl = ogImageUrl(options.publicOrigin);
   const operatorId = options.operatorId || 'operator-demo';
   const branding = options.branding || BrandingService.getBranding(operatorId);
   const brandName = branding.brand_name || 'GarrisonOS';
@@ -84,7 +91,7 @@ export function renderLayout(options: LayoutOptions): string {
     ${faviconLink}
     <meta property="og:title" content="${pageTitle}">
     <meta property="og:description" content="Zero-dependency property management framework.">
-    <meta property="og:image" content="/public/og-image.png">
+    <meta property="og:image" content="${previewImageUrl}">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
     ${brandingStyles}

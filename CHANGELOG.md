@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Use canonical public HTTP(S) origins for OpenGraph images on layout, login, and setup pages; correct README headings and remove the stale test-suite badge count.
+
 - **Visual Identity, Brand Assets & Media Kit Integration**:
   - Ingested official GarrisonOS brand identity assets (`logo.png`, `logo-nav.png`, `og-image.png`, `apple-touch-icon.png`, `favicon.ico`, `favicon-16x16.png`, `favicon-32x32.png`) into `docs/assets/` and `web/public/`.
   - Updated root `README.md` and `docs/README.md` to prominently feature the primary logo, social card preview banner, updated directory trees, and comprehensive Brand Assets & Media Kit table.

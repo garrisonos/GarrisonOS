@@ -1,11 +1,17 @@
 import { html, raw, SafeHtml } from '../lib/html.js';
 import { csrfField, validateCsrf } from '../lib/csrf.js';
 import { PageContext, PageResult } from '../lib/page-context.js';
+import { configuredPublicOrigin, ogImageUrl } from '../lib/public-url.js';
 
 /**
  * Rendering options for the first-launch setup wizard page.
  */
 export interface SetupPageOptions {
+  /**
+   * Canonical public origin for absolute social preview metadata.
+   */
+  publicOrigin: string;
+
   /**
    * Cryptographic CSRF token.
    */
@@ -46,6 +52,7 @@ export interface SetupPageOptions {
  * @returns Complete HTML document string.
  */
 export function renderSetupPage(options: SetupPageOptions): string {
+  const previewImageUrl = ogImageUrl(options.publicOrigin);
   const activeTab = options.activeTab || 'fresh';
   const backupModuleEnabled = options.backupModuleEnabled ?? false;
   const formValues = options.formValues || {};
@@ -188,7 +195,7 @@ export function renderSetupPage(options: SetupPageOptions): string {
     <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
     <meta property="og:title" content="First-Launch Setup – GarrisonOS">
     <meta property="og:description" content="Zero-dependency Property Management">
-    <meta property="og:image" content="/public/og-image.png">
+    <meta property="og:image" content="${previewImageUrl}">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
 </head>
@@ -327,6 +334,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   }
 
   const content = renderSetupPage({
+    publicOrigin: configuredPublicOrigin(),
     csrfToken,
     error,
     activeTab,
@@ -340,4 +348,3 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     isFullDocument: true,
   };
 }
-

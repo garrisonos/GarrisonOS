@@ -1,11 +1,11 @@
+# GarrisonOS
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo.png">
     <img src="docs/assets/logo.png" alt="GarrisonOS Logo" width="280">
   </picture>
 </p>
-
-<h1 align="center">GarrisonOS</h1>
 
 <p align="center">
   <strong>The Open-Source, Zero-Dependency Property Management Engine</strong>
@@ -22,7 +22,7 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg" alt="TypeScript"></a>
   <a href="#dependencies--runtime-prerequisites"><img src="https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg" alt="Runtime Dependencies"></a>
   <a href="#architectural-principles"><img src="https://img.shields.io/badge/Architecture-Multi--Operator-orange.svg" alt="Architecture"></a>
-  <a href="#automated-test-suite"><img src="https://img.shields.io/badge/Tests-40%20Suites%20Passing-brightgreen.svg" alt="Test Suites"></a>
+  <a href="#automated-test-suite"><img src="https://img.shields.io/badge/Tests-Passing-brightgreen.svg" alt="Test Suites"></a>
   <a href="https://garrisonos.github.io/GarrisonOS/"><img src="https://img.shields.io/badge/Docs-GitHub_Pages-blue.svg" alt="Documentation"></a>
 </p>
 
@@ -534,7 +534,7 @@ node scripts/check-hygiene.js
 # 3. Security guardrail check (fail-closed installers, parameter validation)
 node scripts/check-security.js
 
-# 4. Automated test suite (all 40 suites must pass)
+# 4. Automated test suite (all suites must pass)
 npm.cmd test
 ```
 

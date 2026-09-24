@@ -2,11 +2,17 @@ import { html, raw, SafeHtml } from '../lib/html.js';
 import { csrfField, validateCsrf } from '../lib/csrf.js';
 import { FlashMessage } from '../lib/session.js';
 import { PageContext, PageResult } from '../lib/page-context.js';
+import { configuredPublicOrigin, ogImageUrl } from '../lib/public-url.js';
 
 /**
  * Template rendering options for the user login page.
  */
 export interface LoginPageOptions {
+  /**
+   * Canonical public origin for absolute social preview metadata.
+   */
+  publicOrigin: string;
+
   /**
    * Cryptographic CSRF token string.
    */
@@ -40,6 +46,7 @@ export interface LoginPageOptions {
  * @returns Complete HTML document string.
  */
 export function renderLoginPage(options: LoginPageOptions): string {
+  const previewImageUrl = ogImageUrl(options.publicOrigin);
   const flashes = (options.flashMessages || []).map(
     (f) =>
       html`<div class="alert alert-${f.type === 'error' ? 'danger' : f.type}" style="margin-bottom: 1.5rem;">
@@ -63,7 +70,7 @@ export function renderLoginPage(options: LoginPageOptions): string {
     <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
     <meta property="og:title" content="Sign In – GarrisonOS">
     <meta property="og:description" content="Zero-dependency Property Management">
-    <meta property="og:image" content="/public/og-image.png">
+    <meta property="og:image" content="${previewImageUrl}">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
 </head>
@@ -164,6 +171,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   }
 
   const content = renderLoginPage({
+    publicOrigin: configuredPublicOrigin(),
     csrfToken,
     flashMessages: ctx.session.getFlash(),
     error,

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { BrandingService, THEME_PRESETS } from '../../core/branding.js';
 import { renderLayout } from '../templates/layout.js';
+import { renderLoginPage } from '../pages/login.js';
+import { renderSetupPage } from '../pages/setup.js';
+import { ogImageUrl } from '../lib/public-url.js';
 import { renderHeader } from '../templates/header.js';
 import { renderSidebar } from '../templates/sidebar.js';
 import { renderConversationsWidget } from '../templates/conversations.js';
@@ -107,6 +110,7 @@ describe('Modern UI, Branding & Presentation Engine Suite', () => {
     branding.favicon_url = 'https://beacon.test/favicon.png';
 
     const output = renderLayout({
+      publicOrigin: 'https://app.garrison.test',
       title: 'Portfolio Overview',
       content: html`<p>Active test body</p>`,
       user: null,
@@ -126,6 +130,7 @@ describe('Modern UI, Branding & Presentation Engine Suite', () => {
 
   it('renderLayout injects default favicon links and og-image when custom favicon is not configured', () => {
     const output = renderLayout({
+      publicOrigin: 'https://app.garrison.test',
       title: 'Portfolio Overview',
       content: html`<p>Active test body</p>`,
       user: null,
@@ -137,7 +142,18 @@ describe('Modern UI, Branding & Presentation Engine Suite', () => {
     assert.match(output, /<link rel="icon" type="image\/x-icon" href="\/public\/favicon\.ico">/);
     assert.match(output, /<link rel="icon" type="image\/png" sizes="32x32" href="\/public\/favicon-32x32\.png">/);
     assert.match(output, /<link rel="apple-touch-icon" sizes="180x180" href="\/public\/apple-touch-icon\.png">/);
-    assert.match(output, /<meta property="og:image" content="\/public\/og-image\.png">/);
+    assert.match(output, /<meta property="og:image" content="https:\/\/app\.garrison\.test\/public\/og-image\.png">/);
+  });
+
+  it('renders standalone login and setup documents with absolute social preview URLs', () => {
+    const login = renderLoginPage({ csrfToken: 'test-token', publicOrigin: 'https://app.garrison.test' });
+    const setup = renderSetupPage({ csrfToken: 'test-token', publicOrigin: 'http://localhost:8080' });
+
+    assert.ok(login.startsWith('<!DOCTYPE html>'));
+    assert.ok(setup.startsWith('<!DOCTYPE html>'));
+    assert.match(login, /<meta property="og:image" content="https:\/\/app\.garrison\.test\/public\/og-image\.png">/);
+    assert.match(setup, /<meta property="og:image" content="http:\/\/localhost:8080\/public\/og-image\.png">/);
+    assert.throws(() => ogImageUrl('file:///tmp'), /HTTP\(S\) origin/);
   });
 
   it('renderHeader renders brand badge, operator id, and theme toggle button', () => {
