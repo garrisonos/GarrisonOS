@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Use canonical public HTTP(S) origins for OpenGraph images on layout, login, and setup pages; correct README headings and remove the stale test-suite badge count.
+
+- **Visual Identity, Brand Assets & Media Kit Integration**:
+  - Ingested official GarrisonOS brand identity assets (`logo.png`, `logo-nav.png`, `og-image.png`, `apple-touch-icon.png`, `favicon.ico`, `favicon-16x16.png`, `favicon-32x32.png`) into `docs/assets/` and `web/public/`.
+  - Updated root `README.md` and `docs/README.md` to prominently feature the primary logo, social card preview banner, updated directory trees, and comprehensive Brand Assets & Media Kit table.
+  - Enhanced web presentation layer (`web/templates/layout.ts`, `web/pages/login.ts`, `web/pages/setup.ts`, `web/server.ts`) with default multi-resolution favicon links, high-DPI Apple touch icon, OpenGraph metadata tags, and brand logos on authentication and setup wizard views.
+  - Added direct static fallback routing in `web/server.ts` for root `/favicon.ico` and `/apple-touch-icon.png` requests.
+  - Documented asset architecture and customization options in `docs/development/frontend-guide.md`.
+
 - **Sprint 4 Review Hardening, Security Remediations & Parity Alignment (PR #31)**:
   - **CodeRabbit & CodeQL Security Remediations**:
     - Refactored reverse proxy in `web/server.ts` to construct `http.RequestOptions` with explicit `hostname`, `port`, and `protocol` bound to the verified server origin, resolving CodeQL's `js/request-forgery` (SSRF) alert.

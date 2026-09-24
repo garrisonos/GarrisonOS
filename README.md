@@ -1,15 +1,34 @@
 # GarrisonOS
 
-> An open-source, modular, zero-dependency, lightweight property management framework designed to liberate property managers from closed vendor lock-in, inflexible data schemas, and proprietary software silos.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo.png">
+    <img src="docs/assets/logo.png" alt="GarrisonOS Logo" width="280">
+  </picture>
+</p>
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/Status-v0.1.0--alpha-yellow.svg)](#pre-production-disclaimer)
-[![Node.js](https://img.shields.io/badge/Node.js-v22.5%2B-green.svg)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg)](https://www.typescriptlang.org/)
-[![Dependencies](https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg)](#dependencies--runtime-prerequisites)
-[![Architecture](https://img.shields.io/badge/Architecture-Multi--Operator-orange.svg)](#architectural-principles)
-[![Test Suites](https://img.shields.io/badge/Tests-40%20Suites%20Passing-brightgreen.svg)](#automated-test-suite)
-[![Documentation](https://img.shields.io/badge/Docs-GitHub_Pages-blue.svg)](https://garrisonos.github.io/GarrisonOS/)
+<p align="center">
+  <strong>The Open-Source, Zero-Dependency Property Management Engine</strong>
+</p>
+
+<p align="center">
+  <em>An open-source, modular, zero-dependency, lightweight property management framework designed to liberate property managers from closed vendor lock-in, inflexible data schemas, and proprietary software silos.</em>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"></a>
+  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.1.0--alpha-yellow.svg" alt="Status"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-v22.5%2B-green.svg" alt="Node.js"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg" alt="TypeScript"></a>
+  <a href="#dependencies--runtime-prerequisites"><img src="https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg" alt="Runtime Dependencies"></a>
+  <a href="#architectural-principles"><img src="https://img.shields.io/badge/Architecture-Multi--Operator-orange.svg" alt="Architecture"></a>
+  <a href="#automated-test-suite"><img src="https://img.shields.io/badge/Tests-Passing-brightgreen.svg" alt="Test Suites"></a>
+  <a href="https://garrisonos.github.io/GarrisonOS/"><img src="https://img.shields.io/badge/Docs-GitHub_Pages-blue.svg" alt="Documentation"></a>
+</p>
+
+<p align="center">
+  <img src="docs/assets/og-image.png" alt="GarrisonOS Social Preview" width="100%">
+</p>
 
 ---
 
@@ -280,6 +299,7 @@ garrison-os/
 │
 ├── docs/                              # Comprehensive Documentation Hierarchy
 │   ├── README.md                      # Documentation navigation index
+│   ├── assets/                        # Brand identity, logos, navigation marks, and UI assets
 │   ├── ROADMAP.md                     # Canonical roadmap, sprint deliverables & scorecards
 │   ├── architecture/                  # Domain models DDL, REST API spec, multi-tenancy & blueprints
 │   ├── modules/                       # Module architectural guides
@@ -332,7 +352,7 @@ garrison-os/
 │   ├── lib/                           # API client, session auth, CSRF, and UI hooks
 │   ├── templates/                     # Base layout, header, dynamic sidebar, flash alerts
 │   ├── pages/                         # Dashboard, admin GUI, login, setup wizard & errors
-│   └── public/                        # Design tokens, CSS styles, and minimal JavaScript
+│   └── public/                        # Static brand assets (favicons, logo, OG card), CSS, JS
 │
 ├── scripts/                           # Zero-Dependency Operational & CI Tooling
 │   ├── setup.js                       # Automated preflight environment validator & seeder
@@ -514,7 +534,7 @@ node scripts/check-hygiene.js
 # 3. Security guardrail check (fail-closed installers, parameter validation)
 node scripts/check-security.js
 
-# 4. Automated test suite (all 40 suites must pass)
+# 4. Automated test suite (all suites must pass)
 npm.cmd test
 ```
 
@@ -538,6 +558,22 @@ GarrisonOS is built on and inspired by foundational open-source standards, speci
 * **Governance & Community Standards**: [Conventional Commits](https://www.conventionalcommits.org/), [Apache ICLA](https://www.apache.org/licenses/icla.pdf), [Contributor Covenant](https://www.contributor-covenant.org), and [Mozilla D&I](https://github.com/mozilla/diversity).
 
 For complete third-party notices, license texts, and detailed upstream attributions, see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+---
+
+## Brand Assets & Media Kit
+
+Official GarrisonOS visual identity assets, icons, and logos are located under [`docs/assets/`](docs/assets/) and deployed for web presentation under [`web/public/`](web/public/):
+
+| Asset | Preview | Dimensions & Format | Usage Context | Relative File Path |
+| :--- | :---: | :--- | :--- | :--- |
+| **Primary Brand Logo** | <img src="docs/assets/logo.png" width="70" alt="Brand Logo"> | 2420 × 1760 PNG | High-resolution hero branding, splash screens, documentation, and external media | [`docs/assets/logo.png`](docs/assets/logo.png) |
+| **Navigation Brand Mark** | <img src="docs/assets/logo-nav.png" width="45" alt="Navigation Mark"> | 111 × 88 PNG | Application sidebar header, top navigation bars, and compact headers | [`docs/assets/logo-nav.png`](docs/assets/logo-nav.png) |
+| **OpenGraph Social Banner** | <img src="docs/assets/og-image.png" width="140" alt="Social Card"> | 1200 × 630 PNG | Social preview card (Twitter/X, LinkedIn, Discord) and GitHub repository social preview | [`docs/assets/og-image.png`](docs/assets/og-image.png) |
+| **Apple Touch Icon** | <img src="docs/assets/apple-touch-icon.png" width="40" alt="Apple Touch Icon"> | 180 × 180 PNG | High-DPI iOS / iPadOS home screen bookmark icon | [`docs/assets/apple-touch-icon.png`](docs/assets/apple-touch-icon.png) |
+| **Favicon (Standard)** | <img src="docs/assets/favicon-32x32.png" width="32" alt="Favicon 32"> | 32 × 32 PNG | Standard browser tab icon for modern displays | [`docs/assets/favicon-32x32.png`](docs/assets/favicon-32x32.png) |
+| **Favicon (Compact)** | <img src="docs/assets/favicon-16x16.png" width="16" alt="Favicon 16"> | 16 × 16 PNG | Compact browser tab icon for standard DPI screens | [`docs/assets/favicon-16x16.png`](docs/assets/favicon-16x16.png) |
+| **Multi-Resolution Favicon** | <img src="docs/assets/favicon-32x32.png" width="24" alt="Favicon ICO"> | 16/32/48 ICO | Legacy root browser shortcut icon served at `/favicon.ico` | [`docs/assets/favicon.ico`](docs/assets/favicon.ico) |
 
 ---
 

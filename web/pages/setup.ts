@@ -1,11 +1,17 @@
 import { html, raw, SafeHtml } from '../lib/html.js';
 import { csrfField, validateCsrf } from '../lib/csrf.js';
 import { PageContext, PageResult } from '../lib/page-context.js';
+import { configuredPublicOrigin, ogImageUrl } from '../lib/public-url.js';
 
 /**
  * Rendering options for the first-launch setup wizard page.
  */
 export interface SetupPageOptions {
+  /**
+   * Canonical public origin for absolute social preview metadata.
+   */
+  publicOrigin: string;
+
   /**
    * Cryptographic CSRF token.
    */
@@ -46,6 +52,7 @@ export interface SetupPageOptions {
  * @returns Complete HTML document string.
  */
 export function renderSetupPage(options: SetupPageOptions): string {
+  const previewImageUrl = ogImageUrl(options.publicOrigin);
   const activeTab = options.activeTab || 'fresh';
   const backupModuleEnabled = options.backupModuleEnabled ?? false;
   const formValues = options.formValues || {};
@@ -182,13 +189,23 @@ export function renderSetupPage(options: SetupPageOptions): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>First-Launch Setup – GarrisonOS</title>
+    <link rel="icon" type="image/x-icon" href="/public/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/public/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
+    <meta property="og:title" content="First-Launch Setup – GarrisonOS">
+    <meta property="og:description" content="Zero-dependency Property Management">
+    <meta property="og:image" content="${previewImageUrl}">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
 </head>
 <body style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a; padding: 2rem 1rem;">
     <div class="card" style="width: 100%; max-width: 540px; padding: 2.5rem; box-shadow: var(--shadow-lg);">
         <div style="text-align: center; margin-bottom: 1.75rem;">
-            <h1 style="font-size: 1.85rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🏰 GarrisonOS</h1>
+            <a href="/" style="display: inline-block; text-decoration: none; margin-bottom: 0.75rem;">
+                <img src="/public/logo.png" alt="GarrisonOS" style="max-height: 80px; width: auto;">
+            </a>
+            <h1 style="font-size: 1.85rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">GarrisonOS</h1>
             <p style="color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem;">Initial Platform Setup & Onboarding</p>
         </div>
 
@@ -317,6 +334,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   }
 
   const content = renderSetupPage({
+    publicOrigin: configuredPublicOrigin(),
     csrfToken,
     error,
     activeTab,
@@ -330,4 +348,3 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     isFullDocument: true,
   };
 }
-

@@ -2,11 +2,17 @@ import { html, raw, SafeHtml } from '../lib/html.js';
 import { csrfField, validateCsrf } from '../lib/csrf.js';
 import { FlashMessage } from '../lib/session.js';
 import { PageContext, PageResult } from '../lib/page-context.js';
+import { configuredPublicOrigin, ogImageUrl } from '../lib/public-url.js';
 
 /**
  * Template rendering options for the user login page.
  */
 export interface LoginPageOptions {
+  /**
+   * Canonical public origin for absolute social preview metadata.
+   */
+  publicOrigin: string;
+
   /**
    * Cryptographic CSRF token string.
    */
@@ -40,6 +46,7 @@ export interface LoginPageOptions {
  * @returns Complete HTML document string.
  */
 export function renderLoginPage(options: LoginPageOptions): string {
+  const previewImageUrl = ogImageUrl(options.publicOrigin);
   const flashes = (options.flashMessages || []).map(
     (f) =>
       html`<div class="alert alert-${f.type === 'error' ? 'danger' : f.type}" style="margin-bottom: 1.5rem;">
@@ -57,13 +64,23 @@ export function renderLoginPage(options: LoginPageOptions): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign In – GarrisonOS</title>
+    <link rel="icon" type="image/x-icon" href="/public/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/public/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">
+    <meta property="og:title" content="Sign In – GarrisonOS">
+    <meta property="og:description" content="Zero-dependency Property Management">
+    <meta property="og:image" content="${previewImageUrl}">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
 </head>
 <body style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background-color: #0f172a;">
     <div class="card" style="width: 100%; max-width: 420px; padding: 2.5rem; box-shadow: var(--shadow-lg);">
         <div style="text-align: center; margin-bottom: 2rem;">
-            <h1 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">🏰 GarrisonOS</h1>
+            <a href="/" style="display: inline-block; text-decoration: none; margin-bottom: 0.75rem;">
+                <img src="/public/logo.png" alt="GarrisonOS" style="max-height: 80px; width: auto;">
+            </a>
+            <h1 style="font-size: 1.75rem; font-weight: 800; color: var(--text-main); letter-spacing: -0.02em;">GarrisonOS</h1>
             <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem;">Zero-dependency Property Management</p>
         </div>
 
@@ -154,6 +171,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   }
 
   const content = renderLoginPage({
+    publicOrigin: configuredPublicOrigin(),
     csrfToken,
     flashMessages: ctx.session.getFlash(),
     error,

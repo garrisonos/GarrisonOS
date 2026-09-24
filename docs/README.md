@@ -1,5 +1,9 @@
 # GarrisonOS Documentation
 
+<p align="center">
+  <img src="assets/logo.png" alt="GarrisonOS Logo" width="220">
+</p>
+
 Welcome to the official documentation for **GarrisonOS**, the zero-dependency, open-source property management platform engineered for independent landlords, property managers, and real estate operators.
 
 > [!WARNING]
@@ -11,6 +15,7 @@ Welcome to the official documentation for **GarrisonOS**, the zero-dependency, o
 
 ```text
 docs/
+├── assets/                # Visual identity, brand logos, favicons, OG preview card & screenshots
 ├── ROADMAP.md             # Phased development roadmap (Sprints 1-7) & Foundational MVP criteria
 ├── LLMREVIEW20260915.md   # Comprehensive architectural review, phase metrics & scorecard
 ├── architecture/          # Core engine design, multi-tenancy, data schemas, and blueprints
@@ -56,6 +61,7 @@ docs/
 * **Canonical Specifications**: [Domain Models Specification](architecture/domain-models.md) | [REST API Specification](architecture/api-spec.md) | [Bootstrap Specification](architecture/bootstrap-spec.md)
 * **Core Architecture**: [Architecture Overview](architecture/overview.md) | [Multi-Tenancy Guide](architecture/multi-tenancy.md)
 * **Domain Modules**: [Accounting & AP](modules/accounting.md) | [Leasing & AR](modules/leases.md) | [Properties](modules/properties.md) | [Contacts](modules/contacts.md) | [Maintenance](modules/maintenance.md) | [Backup](modules/backup.md)
-* **Developer Workflow**: [Getting Started](development/getting-started.md) | [Testing Guide](development/testing.md)
+* **Developer Workflow**: [Getting Started](development/getting-started.md) | [Testing Guide](development/testing.md) | [Frontend Presentation](development/frontend-guide.md)
 * **Production Operations**: [Self-Hosting Guide](deployment/self-hosting.md) | [Configuration Reference](deployment/configuration.md)
+* **Brand & Media Assets**: [Brand Assets & Media Kit](../README.md#brand-assets--media-kit) | [Primary Logo](assets/logo.png) | [Navigation Mark](assets/logo-nav.png) | [Social Card](assets/og-image.png)
 * **Legal & Security**: [Contributor License Agreement](legal/CLA.md) | [Security Policy](../SECURITY.md) | [Project License](../LICENSE)

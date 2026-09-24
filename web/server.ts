@@ -12,7 +12,7 @@ import { pipeline } from 'node:stream';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { handleStaticFile } from './static.js';
+import { handleStaticFile, serveStatic } from './static.js';
 import { getSession, commitSession, Session } from './lib/session.js';
 import { ApiClient } from './lib/api-client.js';
 import { PageContext } from './lib/page-context.js';
@@ -244,9 +244,17 @@ export async function handleWebRequest(
     return;
   }
 
-  // Serve static assets
+  // Serve static assets and standard root icons
   if (url.pathname.startsWith('/public/')) {
     const handled = handleStaticFile(req, res);
+    if (handled) return;
+  }
+  if (url.pathname === '/favicon.ico') {
+    const handled = serveStatic(req, res, '/public/favicon.ico');
+    if (handled) return;
+  }
+  if (url.pathname === '/apple-touch-icon.png') {
+    const handled = serveStatic(req, res, '/public/apple-touch-icon.png');
     if (handled) return;
   }
 
