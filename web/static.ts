@@ -95,7 +95,11 @@ export function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: 
 }
 
 /**
- * Convenience wrapper for handleStaticFile(req, res).
+ * Convenience wrapper for handleStaticFile(req, res) that parses the request URL pathname.
+ *
+ * @param req - Incoming HTTP request message.
+ * @param res - Node.js ServerResponse to write static file content to.
+ * @returns True if static file was handled, false otherwise.
  */
 export function handleStaticFile(req: IncomingMessage, res: ServerResponse): boolean {
   const parsedUrl = new URL(req.url || '/', 'http://localhost');

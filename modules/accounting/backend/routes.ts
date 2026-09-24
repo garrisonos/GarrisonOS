@@ -735,15 +735,23 @@ export function registerRoutes(router: Router): void {
   );
 
   // --- Management Fee Agreements ---
-  router.get('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:view'), (req, res) => {
-    const agreements = ClientAccountingRepository.listManagementFeeAgreements({
+  router.get('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:view'), requirePortfolioAccess((req) => req.query['portfolio_id']), (req, res) => {
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+
+    let agreements = ClientAccountingRepository.listManagementFeeAgreements({
       portfolio_id: req.query.portfolio_id,
       property_id: req.query.property_id
     });
+
+    if (userId && userId !== 'system') {
+      agreements = agreements.filter((a) => !a.portfolio_id || canAccessPortfolio(userId, a.portfolio_id, operatorId));
+    }
+
     successResponse(res, { agreements });
   });
 
-  router.post('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:manage'), (req, res) => {
+  router.post('/api/v1/accounting/management_fee_agreements', requirePermission('accounting:manage'), requirePortfolioAccess((req) => req.body?.portfolio_id), (req, res) => {
     const { calculation_method } = req.body || {};
     if (!calculation_method) {
       return errorResponse(res, 'VALIDATION_ERROR', 'calculation_method is required', 400);
@@ -769,10 +777,24 @@ export function registerRoutes(router: Router): void {
     if (!agreement) {
       return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
     }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     successResponse(res, { agreement });
   });
 
   router.delete('/api/v1/accounting/management_fee_agreements/:id', requirePermission('accounting:manage'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     const deleted = ClientAccountingRepository.deleteManagementFeeAgreement(req.params.id!);
     if (!deleted) {
       return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
@@ -781,6 +803,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.get('/api/v1/accounting/management_fee_agreements/:id/calculate', requirePermission('accounting:view'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const calculation = ClientAccountingRepository.calculateManagementFee(req.params.id!, req.query.month);
       successResponse(res, { calculation });
@@ -790,6 +821,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/management_fee_agreements/:id/post', requirePermission('accounting:transact'), (req, res) => {
+    const agreement = ClientAccountingRepository.getManagementFeeAgreement(req.params.id!);
+    if (!agreement) {
+      return errorResponse(res, 'NOT_FOUND', 'Management fee agreement not found', 404);
+    }
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && agreement.portfolio_id && !canAccessPortfolio(userId, agreement.portfolio_id, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const result = ClientAccountingRepository.postManagementFee(req.params.id!, req.body?.month);
       successResponse(res, { result }, 201);

@@ -141,17 +141,19 @@ function parseRequestBody(req: http.IncomingMessage): Promise<Record<string, any
  *
  * @param req - Incoming HTTP request from the browser.
  * @param res - Server response stream to forward the backend response into.
- * @param targetUrl - Resolved destination URL on the backend API server.
+ * @param backendOrigin - Resolved destination URL on the backend API server.
+ * @param safePath - Sanitized relative request path and query string starting with /api/.
  * @param session - Active user session containing cryptographic auth token and operator context.
  */
 function proxyApiRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  targetUrl: URL,
+  backendOrigin: URL,
+  safePath: string,
   session: Session
 ): void {
   const headers = { ...req.headers };
-  headers.host = targetUrl.host;
+  headers.host = backendOrigin.host;
 
   if (session.authToken && !headers['authorization']) {
     headers['authorization'] = `Bearer ${session.authToken}`;
@@ -160,29 +162,32 @@ function proxyApiRequest(
     headers['x-operator-id'] = session.operatorId;
   }
 
-  const transport = targetUrl.protocol === 'https:' ? https : http;
-  const proxyReq = transport.request(
-    targetUrl,
-    {
-      method: req.method,
-      headers
-    },
-    (apiRes) => {
-      res.writeHead(apiRes.statusCode || 200, apiRes.headers);
-      pipeline(apiRes, res, (err) => {
-        if (err && !res.destroyed) {
-          res.destroy(err);
-        }
-      });
-    }
-  );
+  const transport = backendOrigin.protocol === 'https:' ? https : http;
+  const requestOptions: http.RequestOptions = {
+    protocol: backendOrigin.protocol,
+    hostname: backendOrigin.hostname,
+    port: backendOrigin.port || (backendOrigin.protocol === 'https:' ? 443 : 80),
+    path: safePath,
+    method: req.method,
+    headers
+  };
+
+  const proxyReq = transport.request(requestOptions, (apiRes) => {
+    res.writeHead(apiRes.statusCode || 200, apiRes.headers);
+    pipeline(apiRes, res, (err) => {
+      if (err && !res.destroyed) {
+        res.destroy(err);
+      }
+    });
+  });
 
   proxyReq.setTimeout(30_000, () => {
     proxyReq.destroy(new Error('Upstream timeout'));
   });
 
-  req.on('close', () => {
-    if (!proxyReq.destroyed) {
+  // Cancel upstream request only if client connection drops before response is finished
+  res.on('close', () => {
+    if (!res.writableFinished && !proxyReq.destroyed) {
       proxyReq.destroy();
     }
   });
@@ -271,16 +276,9 @@ export async function handleWebRequest(
     }
 
     const parsedApiUrl = new URL(apiUrl);
-    const targetUrl = new URL(normalizedPath + url.search, parsedApiUrl);
+    const safePathAndQuery = normalizedPath + url.search;
 
-    // Assert that targetUrl strictly matches the backend apiUrl origin and protocol
-    if (targetUrl.origin !== parsedApiUrl.origin || targetUrl.protocol !== parsedApiUrl.protocol) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: false, error: { code: 'BAD_REQUEST', message: 'Cross-origin proxy request rejected' } }));
-      return;
-    }
-
-    proxyApiRequest(req, res, targetUrl, session);
+    proxyApiRequest(req, res, parsedApiUrl, safePathAndQuery, session);
     return;
   }
 

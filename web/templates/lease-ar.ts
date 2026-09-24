@@ -2,13 +2,23 @@ import { html, raw, SafeHtml } from '../lib/html.js';
 import { csrfField } from '../lib/csrf.js';
 import { RecurringLeaseCharge, LeaseCreditConcession, SecurityDepositRefund } from '../../modules/leases/backend/repository.js';
 
+/**
+ * Properties required to render the Lease AR and Fee Management sub-panel.
+ */
 export interface LeaseARProps {
+  /** Target lease identifier. */
   leaseId: string;
+  /** Cryptographic CSRF token for state-modifying actions. */
   csrfToken: string;
+  /** Total deposit held in trust (cents). */
   depositHeldCents: number;
+  /** Configured recurring charges for the lease. */
   recurringCharges: RecurringLeaseCharge[];
+  /** Granted concessions and one-off credits. */
   credits: LeaseCreditConcession[];
+  /** Historical and pending security deposit refunds. */
   refunds: SecurityDepositRefund[];
+  /** Optional delinquency metrics and proposed late fee assessments. */
   lateFeeInfo?: {
     isDelinquent: boolean;
     unpaidBalanceCents: number;
@@ -16,6 +26,7 @@ export interface LeaseARProps {
     daysOverdue: number;
     policySummary?: string;
   };
+  /** Candidate payee contacts for refund disbursements. */
   contacts: Array<{ id: string; first_name: string; last_name: string }>;
 }
 
@@ -29,6 +40,13 @@ function formatDate(epochMs: number): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * Server-side renders the Lease Accounts Receivable, recurring charges,
+ * credits, late fees, and security deposit refund management interface.
+ *
+ * @param props - Lease financial data and CSRF context.
+ * @returns SafeHtml component block.
+ */
 export function renderLeaseARSubsystem(props: LeaseARProps): SafeHtml {
   const {
     leaseId,

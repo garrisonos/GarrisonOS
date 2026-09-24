@@ -4,6 +4,9 @@ import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
 
+/**
+ * Polymorphic entity types that can host threaded conversations and staff notes.
+ */
 export type ConversationEntityType =
   | 'lease'
   | 'property'
@@ -14,69 +17,135 @@ export type ConversationEntityType =
   | 'bill'
   | 'portfolio';
 
+/**
+ * Threaded conversation entity record.
+ */
 export interface Conversation {
+  /** RFC 9562 UUIDv7 primary key. */
   id: string;
+  /** Operator isolation UUID. */
   operator_id: string;
+  /** Target polymorphic entity type. */
   entity_type: ConversationEntityType;
+  /** Target polymorphic entity identifier. */
   entity_id: string;
+  /** Conversation thread subject line or title. */
   subject: string;
+  /** Whether the thread is private to internal staff (1) or visible to external participants (0). */
   is_private: number;
+  /** Staff user ID who created the conversation, if applicable. */
   created_by?: string | null;
+  /** Contact ID who created the conversation, if applicable. */
   created_by_contact_id?: string | null;
+  /** UTC timestamp (epoch ms) of creation. */
   created_at: number;
+  /** UTC timestamp (epoch ms) of last modification. */
   updated_at: number;
+  /** Soft-deletion timestamp (epoch ms), or null. */
   deleted_at?: number | null;
+  /** Total count of non-deleted messages in this thread. */
   message_count?: number;
+  /** UTC timestamp (epoch ms) of latest message. */
   last_message_at?: number;
+  /** Full name of the creator. */
   creator_name?: string;
 }
 
+/**
+ * Participant enrolled in a conversation thread.
+ */
 export interface ConversationParticipant {
+  /** Unique participant record identifier. */
   id: string;
+  /** Operator isolation identifier. */
   operator_id: string;
+  /** Associated conversation thread identifier. */
   conversation_id: string;
+  /** User identifier if participant is a staff user. */
   user_id?: string | null;
+  /** Contact identifier if participant is an external contact (tenant, owner, vendor). */
   contact_id?: string | null;
+  /** Resolved name of participant. */
   participant_name?: string;
+  /** Enrolled timestamp (epoch ms). */
   created_at: number;
 }
 
+/**
+ * Message record posted within a conversation thread.
+ */
 export interface ConversationMessage {
+  /** Unique message identifier. */
   id: string;
+  /** Operator isolation identifier. */
   operator_id: string;
+  /** Parent conversation thread identifier. */
   conversation_id: string;
+  /** Staff author user identifier, if authored by staff. */
   author_user_id?: string | null;
+  /** External contact identifier, if authored by contact. */
   author_contact_id?: string | null;
+  /** Display author name. */
   author_name?: string;
+  /** Author system role or entity relationship. */
   author_role?: string;
+  /** Raw text message body content. */
   body: string;
+  /** Creation timestamp (epoch ms). */
   created_at: number;
+  /** Soft-delete timestamp (epoch ms), if retracted. */
   deleted_at?: number | null;
 }
 
+/**
+ * Input payload for initializing a new conversation thread.
+ */
 export interface CreateConversationInput {
+  /** Target polymorphic entity type. */
   entity_type: ConversationEntityType;
+  /** Target entity UUID. */
   entity_id: string;
+  /** Conversation subject. */
   subject: string;
+  /** True or 1 if thread is internal staff-only notes. */
   is_private?: boolean | number;
+  /** Optional body of the initial message to post immediately. */
   initial_message?: string;
+  /** Candidate contact participants to enroll. */
   participant_contact_ids?: string[];
+  /** Candidate staff user participants to enroll. */
   participant_user_ids?: string[];
 }
 
+/**
+ * Filter parameters for querying conversations.
+ */
 export interface ListConversationsFilter {
+  /** Filter by polymorphic entity type. */
   entity_type?: ConversationEntityType;
+  /** Filter by specific entity identifier. */
   entity_id?: string;
+  /** Earliest modification cutoff (epoch ms). */
   last_modified_start?: number;
+  /** Latest modification cutoff (epoch ms). */
   last_modified_end?: number;
+  /** Pagination page limit. */
   limit?: number;
+  /** 1-based page number. */
   page?: number;
 }
 
+/**
+ * Context of the user or contact requesting conversation data.
+ */
 export interface RequesterContext {
+  /** Active staff user UUID. */
   userId?: string;
+  /** Active external contact UUID. */
   contactId?: string;
+  /** System RBAC role string. */
   role?: string;
+  /** Whether the requester belongs to internal operating staff. */
   isStaff?: boolean;
 }
 

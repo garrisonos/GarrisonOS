@@ -69,6 +69,38 @@ describe('Modern UI, Branding & Presentation Engine Suite', () => {
     assert.match(css, /--accent: #3b82f6;/);
   });
 
+  it('BrandingService rejects invalid hex colors during update', () => {
+    assert.throws(() => {
+      BrandingService.updateBranding(operatorId, {
+        primary_color: 'red; } </style><script>alert(1)</script>'
+      }, db);
+    }, /Branding colors must be valid six-digit hex values/);
+
+    assert.throws(() => {
+      BrandingService.updateBranding(operatorId, {
+        primary_hover: '#zzz123'
+      }, db);
+    }, /Branding colors must be valid six-digit hex values/);
+  });
+
+  it('renderBrandingCss sanitizes non-hex values with safe fallbacks preventing injection', () => {
+    const maliciousBranding = {
+      operator_id: operatorId,
+      brand_name: 'Malicious Ops',
+      theme_preset: 'custom' as const,
+      primary_color: 'red; } </style><script>',
+      primary_hover: 'blue; }',
+      accent_color: 'rgba(0,0,0,0)',
+      default_dark_mode: 0,
+      updated_at: Date.now()
+    };
+    const css = BrandingService.renderBrandingCss(maliciousBranding);
+    assert.ok(!css.includes('script'));
+    assert.match(css, /--primary: #1d4ed8;/);
+    assert.match(css, /--primary-hover: #1e40af;/);
+    assert.match(css, /--accent: #3b82f6;/);
+  });
+
   it('renderLayout injects branding CSS, title, anti-FOUC script, and theme tokens', () => {
     const branding = BrandingService.getBranding(operatorId, db);
     branding.brand_name = 'Beacon Peak Capital';

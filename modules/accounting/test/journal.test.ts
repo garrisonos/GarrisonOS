@@ -284,5 +284,69 @@ describe('Accounting Module - Native Double-Entry Journal Service', () => {
       });
     });
   });
+
+  it('preserves zero-activity accounts with zero balances in property-specific trial balance', () => {
+    runInOperatorContext('prop-tb-zero-activity-test', () => {
+      ChartOfAccountsRepository.ensureDefaultAccounts();
+      const allAccounts = ChartOfAccountsRepository.listAccounts();
+      assert.ok(allAccounts.length > 5);
+
+      const ar = allAccounts.find((a) => a.category_mapping === 'accounts_receivable')!;
+      const rent = allAccounts.find((a) => a.category_mapping === 'rent')!;
+      const db = getDatabase();
+      const now = Date.now();
+      const targetPropertyId = 'prop-unit-alpha-1';
+      const otherPropertyId = 'prop-unit-beta-2';
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'prop-tb-zero-activity-test', 'Property Alpha', 'multi_family', '100 Main', 'Austin', 'TX', '78701', ?, ?),
+               (?, 'prop-tb-zero-activity-test', 'Property Beta', 'multi_family', '200 Main', 'Austin', 'TX', '78701', ?, ?)
+      `).run(targetPropertyId, now, now, otherPropertyId, now, now);
+
+      // Post activity only for targetPropertyId on two accounts
+      JournalService.postEntry({
+        memo: 'Property Alpha Rent Charge',
+        source_type: 'rent_billing',
+        lines: [
+          { account_id: ar.id, debit_cents: 125000, credit_cents: 0, property_id: targetPropertyId },
+          { account_id: rent.id, debit_cents: 0, credit_cents: 125000, property_id: targetPropertyId }
+        ]
+      });
+
+      // Post activity on another property
+      JournalService.postEntry({
+        memo: 'Property Beta Rent Charge',
+        source_type: 'rent_billing',
+        lines: [
+          { account_id: ar.id, debit_cents: 200000, credit_cents: 0, property_id: otherPropertyId },
+          { account_id: rent.id, debit_cents: 0, credit_cents: 200000, property_id: otherPropertyId }
+        ]
+      });
+
+      // Query property-scoped trial balance for Property Alpha
+      const report = JournalService.getTrialBalance(undefined, targetPropertyId);
+      assert.ok(report.isBalanced);
+      assert.equal(report.totalDebitCents, 125000);
+      assert.equal(report.totalCreditCents, 125000);
+
+      // Verify that all Chart of Accounts accounts remain present in the report
+      assert.equal(report.accounts.length, allAccounts.length);
+
+      // Verify zero-activity account has 0 debit and 0 credit
+      const bank = allAccounts.find((a) => a.category_mapping === 'operating_bank')!;
+      const bankItem = report.accounts.find((a) => a.account_id === bank.id);
+      assert.ok(bankItem);
+      assert.equal(bankItem.total_debit_cents, 0);
+      assert.equal(bankItem.total_credit_cents, 0);
+      assert.equal(bankItem.net_balance_cents, 0);
+
+      // Verify active account has exact property amount
+      const arItem = report.accounts.find((a) => a.account_id === ar.id);
+      assert.ok(arItem);
+      assert.equal(arItem.total_debit_cents, 125000);
+      assert.equal(arItem.total_credit_cents, 0);
+    });
+  });
 });
 

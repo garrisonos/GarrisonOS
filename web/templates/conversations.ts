@@ -1,16 +1,29 @@
 import { html, raw, SafeHtml } from '../lib/html.js';
 import { Conversation, ConversationMessage } from '../../modules/conversations/backend/repository.js';
 
+/**
+ * Thread model extended with populated child messages for presentation.
+ */
 export interface ConversationThreadWithMessages extends Conversation {
+  /** Ordered list of messages belonging to this thread. */
   messages?: ConversationMessage[];
 }
 
+/**
+ * Options for configuring and rendering the universal conversations widget.
+ */
 export interface ConversationsWidgetOptions {
+  /** Polymorphic target entity type (e.g. lease, property, work_order). */
   entityType: string;
+  /** Primary identifier of the parent entity. */
   entityId: string;
+  /** Existing conversation threads associated with the entity. */
   conversations: ConversationThreadWithMessages[];
+  /** Whether the active user is permitted to create new threads. */
   canCreate?: boolean;
+  /** Active user role for privacy gating (staff vs external). */
   currentUserRole?: string;
+  /** Target endpoint URL for submitting new conversations. */
   postActionUrl?: string;
 }
 
@@ -30,6 +43,9 @@ function formatTimestamp(epochMs: number): string {
 /**
  * Universal SSR Conversations and Notes widget.
  * Embeddable across properties, units, leases, contacts, and work order show pages.
+ *
+ * @param options - Configuration options and thread data for the widget.
+ * @returns SafeHtml template component.
  */
 export function renderConversationsWidget(options: ConversationsWidgetOptions): SafeHtml {
   const {

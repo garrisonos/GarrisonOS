@@ -41,6 +41,16 @@ function normalizeSection(rawSec?: string): string {
   return rawSec.charAt(0).toUpperCase() + rawSec.slice(1);
 }
 
+/**
+ * Server-side renders the primary application navigation sidebar.
+ * Organizes registered module hooks into categorical sections (Portfolio, Operations, Financials, System).
+ *
+ * @param navItems - List of navigation items registered across core and modular subsystems.
+ * @param currentPath - Active request URL path for highlighting the selected item.
+ * @param branding - Optional operator branding parameters (logo, brand name).
+ * @param user - Active session user profile, or null.
+ * @returns SafeHtml template component.
+ */
 export function renderSidebar(
   navItems: NavigationItem[],
   currentPath: string,

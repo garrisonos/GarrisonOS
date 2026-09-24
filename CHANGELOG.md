@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Sprint 4 Review Hardening, Security Remediations & Parity Alignment (PR #31)**:
   - **CodeRabbit & CodeQL Security Remediations**:
-    - Hardened reverse proxy in `web/server.ts` against SSRF attacks by strictly validating normalized paths, rejecting control characters, backslashes, and protocol-relative prefixes (`//`), piping stream responses with timeout protection and client disconnect aborts, and suppressing stack trace leaks in 502 error responses.
+    - Refactored reverse proxy in `web/server.ts` to construct `http.RequestOptions` with explicit `hostname`, `port`, and `protocol` bound to the verified server origin, resolving CodeQL's `js/request-forgery` (SSRF) alert.
+    - Fixed stream premature cancellation in `web/server.ts` by listening on `res.on('close')` with `!res.writableFinished && !proxyReq.destroyed` instead of `req.on('close')`, ensuring proxied mutating requests (`POST`/`PUT`/`DELETE`) with bodies stream to completion without gateway aborts. Added integration test verifying POST payload proxying.
+    - Corrected property-scoped trial balance query in `modules/accounting/backend/journal.ts` by relocating the `jl.property_id` filter into the `LEFT JOIN` subquery, preserving zero-activity accounts with `$0.00` balances in property financial reports.
+    - Remediated cross-portfolio property IDOR in `modules/accounting/backend/client_accounting.ts` by validating that `property_id` belongs strictly to the submitted `portfolio_id` before creating capital contributions and distributions.
+    - Bound `requirePortfolioAccess` middleware and portfolio authorization checks to management fee agreement endpoints (`GET`, `POST`, `GET /:id`, `DELETE /:id`, `GET /:id/calculate`, `POST /:id/post`) and enforced property-to-portfolio consistency in agreement creation.
+    - Hardened operator branding in `core/branding.ts` by validating custom colors against `/^#[0-9a-fA-F]{6}$/` and sanitizing tokens with safe fallbacks in `renderBrandingCss`, preventing CSS and script injection.
+    - Achieved 100% docstring coverage across touched exported interfaces, types, functions, and classes across `web/`, `modules/`, and `core/`, satisfying `AGENTS.md` and exceeding CodeRabbit's quality gate.
     - Sanitized `safeReturnUrl` in `web/router.ts` to reject ASCII control characters (`/[\x00-\x1F\x7F]/`), closing tab-character open redirect vectors (`CWE-601`).
     - Enforced mandatory HTTPS for remote webhook endpoints in `core/notifications.ts`, rejecting cleartext HTTP while permitting loopback HTTP (`127.0.0.1`, `localhost`) for testing.
     - Refactored `BrandingService` color diffing in `core/branding.ts` to detect accent- and hover-only customizations against current values and correctly transition preset state to `'custom'`.
-    - Enforced strict single-property trial balance filtering (`jl.property_id = ?`) in `JournalService.getTrialBalance`, excluding unallocated journal lines from property-specific reports.
+    - Enforced strict single-property trial balance filtering in `JournalService.getTrialBalance`, excluding unallocated journal lines from property-specific reports.
     - Bound `requirePortfolioAccess` to contribution and distribution mutation endpoints in `modules/accounting/backend/routes.ts`, verified query `portfolio_id` permissions, and filtered unallocated results by user-accessible portfolios.
     - Updated client accounting presentation in `modules/accounting/frontend/pages/client-accounting.ts` to evaluate operator role overrides via `checkUserPermission`, aggregate cash metrics across all accessible portfolios, and remove unverified fallback math when cash summary data is unavailable.
     - Enforced mandatory `property_id` in `createPreventativeSchedule`, prohibited clearing properties on updates, and combined checklist items with user descriptions in `modules/maintenance/`.

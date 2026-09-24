@@ -29,6 +29,16 @@ describe('Web Server - API Reverse Proxy Subsystem', () => {
         return;
       }
 
+      if (req.url === '/api/v1/test-echo' && req.method === 'POST') {
+        const bodyChunks: Buffer[] = [];
+        req.on('data', (c) => bodyChunks.push(c));
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ received: JSON.parse(Buffer.concat(bodyChunks).toString('utf8')) }));
+        });
+        return;
+      }
+
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }));
     });
@@ -196,5 +206,38 @@ describe('Web Server - API Reverse Proxy Subsystem', () => {
     // Protocol-relative and backslash paths
     assert.equal(safeReturnUrl('//attacker.example.com'), '/dashboard');
     assert.equal(safeReturnUrl('/\\attacker.example.com'), '/dashboard');
+  });
+
+  it('transparently proxies POST requests with a request body without premature connection abort', async () => {
+    const postPayload = JSON.stringify({ action: 'create_item', amount: 5000 });
+    const res = await new Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+      const clientReq = http.request({
+        hostname: '127.0.0.1',
+        port: webPort,
+        path: '/api/v1/test-echo',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postPayload)
+        }
+      }, (clientRes) => {
+        const chunks: Buffer[] = [];
+        clientRes.on('data', (c) => chunks.push(c));
+        clientRes.on('end', () => {
+          resolve({
+            statusCode: clientRes.statusCode || 0,
+            headers: clientRes.headers,
+            body: Buffer.concat(chunks).toString('utf8')
+          });
+        });
+      });
+      clientReq.on('error', reject);
+      clientReq.write(postPayload);
+      clientReq.end();
+    });
+
+    assert.equal(res.statusCode, 200);
+    const parsed = JSON.parse(res.body);
+    assert.deepEqual(parsed.received, { action: 'create_item', amount: 5000 });
   });
 });

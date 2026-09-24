@@ -406,4 +406,68 @@ describe('Accounting Module - Client Accounting & Management Fees', () => {
       assert.equal(cashSummaryAfterExpense.available_for_distribution_cents, 200000);
     });
   });
+
+  it('rejects cross-portfolio property assignment on capital contributions, distributions, and fee agreements', () => {
+    runInOperatorContext('client-acct-portfolio-scoping-test', () => {
+      ChartOfAccountsRepository.ensureDefaultAccounts();
+      const db = getDatabase();
+      const now = Date.now();
+
+      const portfolioA = generateUUIDv7();
+      const portfolioB = generateUUIDv7();
+      const propertyA = generateUUIDv7();
+      const propertyB = generateUUIDv7();
+      const contactId = generateUUIDv7();
+
+      db.prepare(`
+        INSERT INTO portfolios (id, operator_id, name, created_at, updated_at)
+        VALUES (?, 'client-acct-portfolio-scoping-test', 'Portfolio A', ?, ?),
+               (?, 'client-acct-portfolio-scoping-test', 'Portfolio B', ?, ?)
+      `).run(portfolioA, now, now, portfolioB, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, portfolio_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'client-acct-portfolio-scoping-test', ?, 'Property A', 'multi_family', '100 Main', 'Austin', 'TX', '78701', ?, ?),
+               (?, 'client-acct-portfolio-scoping-test', ?, 'Property B', 'multi_family', '200 Main', 'Austin', 'TX', '78701', ?, ?)
+      `).run(propertyA, portfolioA, now, now, propertyB, portfolioB, now, now);
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, email, created_at, updated_at)
+        VALUES (?, 'client-acct-portfolio-scoping-test', 'owner', 'Alice', 'Investor', 'alice@example.com', ?, ?)
+      `).run(contactId, now, now);
+
+      // Contribution with Portfolio A but Property B must be rejected
+      assert.throws(() => {
+        ClientAccountingRepository.createCapitalContribution({
+          portfolio_id: portfolioA,
+          property_id: propertyB,
+          client_contact_id: contactId,
+          amount_cents: 500000,
+          contribution_date: now
+        });
+      }, /Property '.*' not found in portfolio/);
+
+      // Distribution with Portfolio A but Property B must be rejected
+      assert.throws(() => {
+        ClientAccountingRepository.createDistribution({
+          portfolio_id: portfolioA,
+          property_id: propertyB,
+          client_contact_id: contactId,
+          amount_cents: 200000,
+          disbursement_method: 'ach',
+          distribution_date: now
+        });
+      }, /Property '.*' not found in portfolio/);
+
+      // Management fee agreement with Portfolio A but Property B must be rejected
+      assert.throws(() => {
+        ClientAccountingRepository.createManagementFeeAgreement({
+          portfolio_id: portfolioA,
+          property_id: propertyB,
+          calculation_method: 'percentage_collected_revenue',
+          percentage_bps: 800
+        });
+      }, /Property '.*' does not belong to portfolio/);
+    });
+  });
 });

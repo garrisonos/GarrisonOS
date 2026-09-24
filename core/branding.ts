@@ -289,18 +289,23 @@ export class BrandingService {
    * @returns Safe inline <style> block string.
    */
   public static renderBrandingCss(branding: OperatorBranding): string {
+    const hexPattern = /^#[0-9a-fA-F]{6}$/;
+    const primary = hexPattern.test(branding.primary_color) ? branding.primary_color : '#1d4ed8';
+    const primaryHover = hexPattern.test(branding.primary_hover) ? branding.primary_hover : '#1e40af';
+    const accent = hexPattern.test(branding.accent_color) ? branding.accent_color : '#3b82f6';
+
     return `<style id="garrison-branding-vars">
       :root {
-        --primary: ${branding.primary_color};
-        --primary-hover: ${branding.primary_hover};
-        --primary-light: ${branding.primary_color}1a;
-        --primary-glow: ${branding.primary_color}33;
+        --primary: ${primary};
+        --primary-hover: ${primaryHover};
+        --primary-light: ${primary}1a;
+        --primary-glow: ${primary}33;
         --primary-text-on-dark: #93c5fd;
-        --accent: ${branding.accent_color};
+        --accent: ${accent};
       }
       :root[data-theme="dark"] {
-        --primary-light: ${branding.primary_color}25;
-        --primary-glow: ${branding.primary_color}4d;
+        --primary-light: ${primary}25;
+        --primary-glow: ${primary}4d;
       }
     </style>`;
   }

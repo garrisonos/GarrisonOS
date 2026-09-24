@@ -491,20 +491,17 @@ export class JournalService {
          AND jl.operator_id = je.operator_id
         WHERE je.deleted_at IS NULL
           AND je.date_ms <= ?
+          ${propertyId ? 'AND jl.property_id = ?' : ''}
       ) jl ON coa.id = jl.account_id AND coa.operator_id = jl.operator_id
       WHERE coa.operator_id = ? AND coa.deleted_at IS NULL
-    `;
-    const params: any[] = [cutoffDate, operatorId];
-
-    if (propertyId) {
-      sql += ` AND jl.property_id = ?`;
-      params.push(propertyId);
-    }
-
-    sql += `
       GROUP BY coa.id, coa.account_number, coa.account_name, coa.account_type
       ORDER BY coa.account_number ASC, coa.account_name ASC
     `;
+    const params: any[] = [cutoffDate];
+    if (propertyId) {
+      params.push(propertyId);
+    }
+    params.push(operatorId);
 
     const rows = db.prepare(sql).all(...params) as Array<{
       account_id: string;
