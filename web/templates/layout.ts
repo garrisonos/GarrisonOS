@@ -68,7 +68,12 @@ export function renderLayout(options: LayoutOptions): string {
   const flash = renderFlash(options.flashMessages || []);
   const bodyContent = typeof options.content === 'string' ? raw(options.content) : options.content;
   const brandingStyles = raw(BrandingService.renderBrandingCss(branding));
-  const faviconLink = branding.favicon_url ? html`<link rel="icon" href="${branding.favicon_url}">` : raw('');
+  const faviconLink = branding.favicon_url
+    ? html`<link rel="icon" href="${branding.favicon_url}">`
+    : html`<link rel="icon" type="image/x-icon" href="/public/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/public/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/public/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/public/apple-touch-icon.png">`;
 
   const doc = html`<!DOCTYPE html>
 <html lang="en">
@@ -77,6 +82,9 @@ export function renderLayout(options: LayoutOptions): string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${pageTitle}</title>
     ${faviconLink}
+    <meta property="og:title" content="${pageTitle}">
+    <meta property="og:description" content="Zero-dependency property management framework.">
+    <meta property="og:image" content="/public/og-image.png">
     <link rel="stylesheet" href="/public/css/variables.css">
     <link rel="stylesheet" href="/public/css/style.css">
     ${brandingStyles}
