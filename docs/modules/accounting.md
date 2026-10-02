@@ -162,6 +162,33 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 * `POST /api/v1/accounting/management_fee_agreements/:id/calculate`: Preview calculated fee for target month (`YYYY-MM`)
 * `POST /api/v1/accounting/management_fee_agreements/:id/post`: Post calculated monthly fee accrual (debit `5070 Management Fees Expense`, credit `2010 Accounts Payable`)
 
+### 4.10. Accounts Payable, Vendor Credits, Check Printing & Bank Deposits
+
+* `GET /api/v1/accounting/bills`: List vendor bills with pagination and status/date filtering
+* `POST /api/v1/accounting/bills`: Create draft bill with multi-unit, multi-property split allocations
+* `GET /api/v1/accounting/bills/:id`: Get bill details with itemized expense allocations
+* `PUT /api/v1/accounting/bills/:id`: Update draft or pending bill
+* `POST /api/v1/accounting/bills/:id/approve`: Approve bill and post balanced GL accrual (Dr Expense / Cr 2010 AP)
+* `POST /api/v1/accounting/bills/:id/void`: Void bill and reverse accrual journal entry
+* `GET /api/v1/accounting/recurring_bills`: List scheduled recurring bill templates
+* `POST /api/v1/accounting/recurring_bills`: Register recurring bill template with interval rules
+* `POST /api/v1/accounting/recurring_bills/run`: Trigger generation pass for due recurring bills
+* `GET /api/v1/accounting/vendor_credits`: List vendor credit memos with status and date filtering
+* `POST /api/v1/accounting/vendor_credits`: Record credit memo and post GL adjustment (Dr 2010 AP / Cr Expense)
+* `GET /api/v1/accounting/vendor_credits/:id`: Get vendor credit details and allocations
+* `POST /api/v1/accounting/vendor_credits/:id/apply`: Apply credit memo balance to offset open approved bills
+* `POST /api/v1/accounting/vendor_credits/:id/void`: Void unapplied credit memo and reverse GL entry
+* `GET /api/v1/accounting/checks`: List issued vendor checks from the check register
+* `POST /api/v1/accounting/checks`: Issue check settling approved bills and post GL payment (Dr 2010 AP / Cr Bank)
+* `GET /api/v1/accounting/checks/:id`: Get check details, payee information, and bill allocations
+* `GET /api/v1/accounting/checks/:id/pdf`: Generate zero-dependency ANSI X9.100-140 PDF check stock with MICR line and remittance vouchers
+* `POST /api/v1/accounting/checks/:id/void`: Void issued check, reopen bills, and reverse GL disbursement
+* `GET /api/v1/accounting/deposits/undeposited`: List receipts in Account 1030 Undeposited Funds awaiting batch deposit
+* `GET /api/v1/accounting/deposits`: List batched bank deposits
+* `POST /api/v1/accounting/deposits`: Group undeposited receipts into bank deposit and clear GL (Dr Bank / Cr 1030)
+* `GET /api/v1/accounting/deposits/:id`: Get deposit slip details and itemized receipts
+* `POST /api/v1/accounting/deposits/:id/void`: Void deposit, return receipts to undeposited pool, and reverse GL entry
+
 ---
 
 ## 5. QuickBooks Compatibility Architecture

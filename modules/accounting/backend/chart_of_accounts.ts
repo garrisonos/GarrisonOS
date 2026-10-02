@@ -57,6 +57,14 @@ export const DEFAULT_PROPERTY_MANAGEMENT_COA: DefaultAccountDefinition[] = [
     description: 'Dedicated escrow/trust account holding refundable tenant security deposits'
   },
   {
+    account_number: '1030',
+    account_name: 'Undeposited Funds',
+    account_type: 'OtherCurrentAsset',
+    qb_account_type: 'OtherCurrentAsset',
+    category_mapping: 'undeposited_funds',
+    description: 'Clearing account for receipts awaiting deposit batching'
+  },
+  {
     account_number: '1100',
     account_name: 'Accounts Receivable (Tenant Receivables)',
     account_type: 'AccountsReceivable',
