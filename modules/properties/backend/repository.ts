@@ -1,6 +1,27 @@
 import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
+import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
+
+/**
+ * Permitted amenity catalog categories.
+ */
+export type AmenityCategory = 'community' | 'unit' | 'accessibility' | 'pet' | 'eco';
+
+/**
+ * Standardized Amenity catalog entity.
+ */
+export interface Amenity {
+  id: string;
+  operator_id: string;
+  name: string;
+  category: AmenityCategory;
+  description?: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at?: number | null;
+}
 
 /**
  * Portfolio entity representing a grouping of real estate properties.
@@ -33,6 +54,12 @@ export interface Property {
   state: string;
   postal_code: string;
   year_built?: number | null;
+  published_for_rent?: number;
+  posting_title?: string | null;
+  marketing_description?: string | null;
+  pet_policy?: string | null;
+  specials?: string | null;
+  custom_fields?: string | null;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -49,6 +76,7 @@ export interface Building {
   building_number?: string | null;
   floors?: number | null;
   notes?: string | null;
+  custom_fields?: string | null;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -70,6 +98,12 @@ export interface Unit {
   square_feet?: number | null;
   market_rent_cents: number;
   target_deposit_cents: number;
+  published_for_rent?: number;
+  posting_title?: string | null;
+  marketing_description?: string | null;
+  pet_policy?: string | null;
+  specials?: string | null;
+  custom_fields?: string | null;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -84,16 +118,23 @@ export class PropertiesRepository {
   /**
    * List all active portfolios belonging to the active operator.
    *
-   * @returns Array of active Portfolio records ordered by name.
+   * @param filter - Optional filter containing temporal range and order_by options.
+   * @returns Array of active Portfolio records ordered by name or custom sort.
    */
-  public static listPortfolios(): Portfolio[] {
+  public static listPortfolios(filter?: { temporal?: Record<string, number>; orderBy?: string }): Portfolio[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
-    return db.prepare(`
-      SELECT * FROM portfolios
-      WHERE operator_id = ? AND deleted_at IS NULL
-      ORDER BY name ASC
-    `).all(operatorId) as unknown as Portfolio[];
+    let sql = 'SELECT * FROM portfolios WHERE operator_id = ? AND deleted_at IS NULL';
+    const params: any[] = [operatorId];
+
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'name ASC'}`;
+    return db.prepare(sql).all(...params) as unknown as Portfolio[];
   }
 
   /**
@@ -182,10 +223,14 @@ export class PropertiesRepository {
   /**
    * List active properties for the active operator, optionally filtered by portfolio.
    *
-   * @param filter - Optional filter containing portfolio_id.
-   * @returns Array of active Property records ordered by name.
+   * @param filter - Optional filter containing portfolio_id, temporal options, and order_by.
+   * @returns Array of active Property records ordered by name or custom sort.
    */
-  public static listProperties(filter?: { portfolio_id?: string }): Property[] {
+  public static listProperties(filter?: {
+    portfolio_id?: string;
+    temporal?: Record<string, number>;
+    orderBy?: string;
+  }): Property[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     let sql = 'SELECT * FROM properties WHERE operator_id = ? AND deleted_at IS NULL';
@@ -195,7 +240,14 @@ export class PropertiesRepository {
       sql += ' AND portfolio_id = ?';
       params.push(filter.portfolio_id);
     }
-    sql += ' ORDER BY name ASC';
+
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'name ASC'}`;
 
     return db.prepare(sql).all(...params) as unknown as Property[];
   }
@@ -219,31 +271,41 @@ export class PropertiesRepository {
   /**
    * Create a new property record scoped to the active operator.
    *
-   * @param data - Initial property creation payload.
+   * @param data - Initial property creation payload including syndication profiles and custom fields.
    * @returns The newly created Property entity.
    */
   public static createProperty(data: {
     name: string;
     property_type: Property['property_type'];
     address_line1: string;
-    address_line2?: string;
+    address_line2?: string | null;
     city: string;
     state: string;
     postal_code: string;
-    portfolio_id?: string;
-    year_built?: number;
+    portfolio_id?: string | null;
+    year_built?: number | null;
+    published_for_rent?: boolean | number;
+    posting_title?: string | null;
+    marketing_description?: string | null;
+    pet_policy?: string | null;
+    specials?: string | null;
+    custom_fields?: Record<string, any> | string;
   }): Property {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const id = generateUUIDv7();
     const now = Date.now();
 
+    const publishedForRent = data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0;
+    const customFieldsJson = CustomFieldsService.prepareForWrite('property', data.custom_fields);
+
     db.prepare(`
       INSERT INTO properties (
         id, operator_id, portfolio_id, name, property_type,
         address_line1, address_line2, city, state, postal_code,
-        year_built, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        year_built, published_for_rent, posting_title, marketing_description,
+        pet_policy, specials, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       operatorId,
@@ -256,6 +318,12 @@ export class PropertiesRepository {
       data.state,
       data.postal_code,
       data.year_built || null,
+      publishedForRent,
+      data.posting_title || null,
+      data.marketing_description || null,
+      data.pet_policy || null,
+      data.specials || null,
+      customFieldsJson,
       now,
       now
     );
@@ -270,7 +338,10 @@ export class PropertiesRepository {
    * @param data - Fields to update.
    * @returns The updated Property entity or null if not found.
    */
-  public static updateProperty(id: string, data: Partial<Omit<Property, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): Property | null {
+  public static updateProperty(id: string, data: Partial<Omit<Property, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at' | 'published_for_rent'>> & {
+    custom_fields?: Record<string, any> | string;
+    published_for_rent?: boolean | number;
+  }): Property | null {
     const existing = PropertiesRepository.getPropertyById(id);
     if (!existing) return null;
 
@@ -278,13 +349,20 @@ export class PropertiesRepository {
     const db = getDatabase();
     const now = Date.now();
 
-    const updated = { ...existing, ...data, updated_at: now };
+    const publishedForRent = data.published_for_rent !== undefined
+      ? (data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0)
+      : (existing.published_for_rent ?? 0);
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('property', data.custom_fields, existing.custom_fields);
+
+    const updated = { ...existing, ...data, published_for_rent: publishedForRent, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE properties SET
         portfolio_id = ?, name = ?, property_type = ?,
         address_line1 = ?, address_line2 = ?, city = ?, state = ?, postal_code = ?,
-        year_built = ?, updated_at = ?
+        year_built = ?, published_for_rent = ?, posting_title = ?, marketing_description = ?,
+        pet_policy = ?, specials = ?, custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.portfolio_id || null,
@@ -296,6 +374,12 @@ export class PropertiesRepository {
       updated.state,
       updated.postal_code,
       updated.year_built || null,
+      updated.published_for_rent,
+      updated.posting_title || null,
+      updated.marketing_description || null,
+      updated.pet_policy || null,
+      updated.specials || null,
+      updated.custom_fields,
       now,
       id,
       operatorId
@@ -327,9 +411,13 @@ export class PropertiesRepository {
    * List active buildings for the active operator, optionally filtered by property.
    *
    * @param propertyId - Optional UUIDv7 of the property.
-   * @returns Array of active Building records ordered by name.
+   * @param filter - Optional filter containing temporal options and order_by.
+   * @returns Array of active Building records ordered by name or custom sort.
    */
-  public static listBuildings(propertyId?: string): Building[] {
+  public static listBuildings(
+    propertyId?: string,
+    filter?: { temporal?: Record<string, number>; orderBy?: string }
+  ): Building[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     let sql = 'SELECT * FROM buildings WHERE operator_id = ? AND deleted_at IS NULL';
@@ -339,7 +427,14 @@ export class PropertiesRepository {
       sql += ' AND property_id = ?';
       params.push(propertyId);
     }
-    sql += ' ORDER BY name ASC';
+
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'name ASC'}`;
 
     return db.prepare(sql).all(...params) as unknown as Building[];
   }
@@ -372,17 +467,20 @@ export class PropertiesRepository {
     building_number?: string | null;
     floors?: number | null;
     notes?: string | null;
+    custom_fields?: Record<string, any> | string;
   }): Building {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const id = generateUUIDv7();
     const now = Date.now();
 
+    const customFieldsJson = CustomFieldsService.prepareForWrite('building', data.custom_fields);
+
     db.prepare(`
       INSERT INTO buildings (
         id, operator_id, property_id, name, building_number,
-        floors, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        floors, notes, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       operatorId,
@@ -391,6 +489,7 @@ export class PropertiesRepository {
       data.building_number || null,
       data.floors || null,
       data.notes || null,
+      customFieldsJson,
       now,
       now
     );
@@ -405,24 +504,33 @@ export class PropertiesRepository {
    * @param data - Fields to update.
    * @returns The updated Building entity or null if not found.
    */
-  public static updateBuilding(id: string, data: Partial<Omit<Building, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): Building | null {
+  public static updateBuilding(
+    id: string,
+    data: Partial<Omit<Building, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>> & {
+      custom_fields?: Record<string, any> | string;
+    }
+  ): Building | null {
     const existing = PropertiesRepository.getBuildingById(id);
     if (!existing) return null;
 
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const now = Date.now();
-    const updated = { ...existing, ...data, updated_at: now };
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('building', data.custom_fields, existing.custom_fields);
+
+    const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE buildings SET
-        name = ?, building_number = ?, floors = ?, notes = ?, updated_at = ?
+        name = ?, building_number = ?, floors = ?, notes = ?, custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.name,
       updated.building_number || null,
       updated.floors || null,
       updated.notes || null,
+      updated.custom_fields,
       now,
       id,
       operatorId
@@ -462,10 +570,16 @@ export class PropertiesRepository {
   /**
    * List active units for the active operator matching optional filters.
    *
-   * @param filter - Optional filters for property_id, building_id, or status.
-   * @returns Array of active Unit records ordered by unit_number.
+   * @param filter - Optional filters for property_id, building_id, status, temporal ranges, or order_by.
+   * @returns Array of active Unit records ordered by unit_number or custom sort.
    */
-  public static listUnits(filter?: { property_id?: string; building_id?: string; status?: string }): Unit[] {
+  public static listUnits(filter?: {
+    property_id?: string;
+    building_id?: string;
+    status?: string;
+    temporal?: Record<string, number>;
+    orderBy?: string;
+  }): Unit[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     let sql = 'SELECT * FROM units WHERE operator_id = ? AND deleted_at IS NULL';
@@ -483,7 +597,14 @@ export class PropertiesRepository {
       sql += ' AND status = ?';
       params.push(filter.status);
     }
-    sql += ' ORDER BY unit_number ASC';
+
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'unit_number ASC'}`;
 
     return db.prepare(sql).all(...params) as unknown as Unit[];
   }
@@ -508,7 +629,7 @@ export class PropertiesRepository {
    * Create a new unit record scoped to the active operator.
    * Validates that building_id (if supplied) exists and belongs to the property.
    *
-   * @param data - Initial unit creation payload.
+   * @param data - Initial unit creation payload including syndication profiles and custom fields.
    * @returns The newly created Unit entity.
    * @throws Error if building_id is invalid or belongs to a different property.
    */
@@ -519,9 +640,15 @@ export class PropertiesRepository {
     status?: Unit['status'];
     bedrooms?: number;
     bathrooms?: number;
-    square_feet?: number;
+    square_feet?: number | null;
     market_rent_cents: number;
     target_deposit_cents?: number;
+    published_for_rent?: boolean | number;
+    posting_title?: string | null;
+    marketing_description?: string | null;
+    pet_policy?: string | null;
+    specials?: string | null;
+    custom_fields?: Record<string, any> | string;
   }): Unit {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
@@ -535,12 +662,16 @@ export class PropertiesRepository {
       }
     }
 
+    const publishedForRent = data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0;
+    const customFieldsJson = CustomFieldsService.prepareForWrite('unit', data.custom_fields);
+
     db.prepare(`
       INSERT INTO units (
         id, operator_id, property_id, building_id, unit_number, status,
         bedrooms, bathrooms, square_feet, market_rent_cents, target_deposit_cents,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        published_for_rent, posting_title, marketing_description, pet_policy, specials,
+        custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       operatorId,
@@ -553,6 +684,12 @@ export class PropertiesRepository {
       data.square_feet || null,
       data.market_rent_cents || 0,
       data.target_deposit_cents || 0,
+      publishedForRent,
+      data.posting_title || null,
+      data.marketing_description || null,
+      data.pet_policy || null,
+      data.specials || null,
+      customFieldsJson,
       now,
       now
     );
@@ -569,28 +706,48 @@ export class PropertiesRepository {
    * @returns The updated Unit entity or null if not found.
    * @throws Error if building_id is invalid or belongs to a different property.
    */
-  public static updateUnit(id: string, data: Partial<Omit<Unit, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): Unit | null {
+  public static updateUnit(id: string, data: Partial<Omit<Unit, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at' | 'published_for_rent'>> & {
+    custom_fields?: Record<string, any> | string;
+    published_for_rent?: boolean | number;
+  }): Unit | null {
     const existing = PropertiesRepository.getUnitById(id);
     if (!existing) return null;
 
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const now = Date.now();
-    const updated = { ...existing, ...data, updated_at: now };
 
-    const targetPropertyId = updated.property_id;
-    if (updated.building_id) {
-      const building = PropertiesRepository.getBuildingById(updated.building_id);
+    const targetPropertyId = data.property_id !== undefined ? data.property_id : existing.property_id;
+    const targetBuildingId = data.building_id !== undefined ? data.building_id : existing.building_id;
+
+    if (targetBuildingId) {
+      const building = PropertiesRepository.getBuildingById(targetBuildingId);
       if (!building || building.property_id !== targetPropertyId) {
         throw new Error('Invalid building_id: building does not exist or does not belong to the specified property');
       }
     }
 
+    const publishedForRent = data.published_for_rent !== undefined
+      ? (data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0)
+      : (existing.published_for_rent ?? 0);
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('unit', data.custom_fields, existing.custom_fields);
+
+    const updated = {
+      ...existing,
+      ...data,
+      published_for_rent: publishedForRent,
+      custom_fields: customFieldsJson,
+      updated_at: now
+    };
+
     db.prepare(`
       UPDATE units SET
         property_id = ?, building_id = ?, unit_number = ?, status = ?,
         bedrooms = ?, bathrooms = ?, square_feet = ?,
-        market_rent_cents = ?, target_deposit_cents = ?, updated_at = ?
+        market_rent_cents = ?, target_deposit_cents = ?,
+        published_for_rent = ?, posting_title = ?, marketing_description = ?,
+        pet_policy = ?, specials = ?, custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.property_id,
@@ -602,6 +759,12 @@ export class PropertiesRepository {
       updated.square_feet || null,
       updated.market_rent_cents,
       updated.target_deposit_cents,
+      updated.published_for_rent,
+      updated.posting_title || null,
+      updated.marketing_description || null,
+      updated.pet_policy || null,
+      updated.specials || null,
+      updated.custom_fields,
       now,
       id,
       operatorId
@@ -643,6 +806,332 @@ export class PropertiesRepository {
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(now, id, operatorId);
     return info.changes > 0;
+  }
+
+  // --- Amenities Catalog & Junctions ---
+
+  /**
+   * List active amenities in the catalog for the active operator, optionally filtered by category.
+   *
+   * @param filter - Optional category, temporal range, and order_by parameters.
+   * @returns Array of active Amenity catalog records.
+   */
+  public static listAmenities(filter?: {
+    category?: AmenityCategory;
+    temporal?: Record<string, number>;
+    orderBy?: string;
+  }): Amenity[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    let sql = 'SELECT * FROM amenities WHERE operator_id = ? AND deleted_at IS NULL';
+    const params: any[] = [operatorId];
+
+    if (filter?.category) {
+      sql += ' AND category = ?';
+      params.push(filter.category);
+    }
+
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'name ASC'}`;
+
+    return db.prepare(sql).all(...params) as unknown as Amenity[];
+  }
+
+  /**
+   * Retrieve an amenity by unique ID within the active operator context.
+   *
+   * @param id - Unique UUIDv7 of the amenity.
+   * @returns The amenity record or null if not found.
+   */
+  public static getAmenityById(id: string): Amenity | null {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const row = db.prepare(`
+      SELECT * FROM amenities
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).get(id, operatorId) as Amenity | undefined;
+    return row || null;
+  }
+
+  /**
+   * Create a new amenity in the catalog for the active operator.
+   *
+   * @param data - Amenity creation payload.
+   * @returns The newly created Amenity entity.
+   * @throws Error if category is invalid or amenity name already exists for the operator.
+   */
+  public static createAmenity(data: {
+    name: string;
+    category: AmenityCategory;
+    description?: string | null;
+  }): Amenity {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const id = generateUUIDv7();
+    const now = Date.now();
+
+    const cleanName = (data.name || '').trim();
+    if (!cleanName) {
+      throw new Error('Amenity name is required');
+    }
+
+    const validCategories: AmenityCategory[] = ['community', 'unit', 'accessibility', 'pet', 'eco'];
+    if (!validCategories.includes(data.category)) {
+      throw new Error(`Invalid category "${data.category}". Must be one of: ${validCategories.join(', ')}`);
+    }
+
+    const existing = db.prepare(`
+      SELECT id FROM amenities
+      WHERE operator_id = ? AND name = ? AND deleted_at IS NULL
+    `).get(operatorId, cleanName);
+
+    if (existing) {
+      const err: any = new Error(`An amenity with name "${cleanName}" already exists`);
+      err.code = 'CONFLICT';
+      throw err;
+    }
+
+    db.prepare(`
+      INSERT INTO amenities (id, operator_id, name, category, description, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, operatorId, cleanName, data.category, data.description || null, now, now);
+
+    return PropertiesRepository.getAmenityById(id)!;
+  }
+
+  /**
+   * Update an existing amenity in the catalog.
+   *
+   * @param id - Unique UUIDv7 of the amenity to update.
+   * @param data - Fields to update.
+   * @returns The updated Amenity entity or null if not found.
+   */
+  public static updateAmenity(
+    id: string,
+    data: Partial<{ name: string; category: AmenityCategory; description: string | null }>
+  ): Amenity | null {
+    const existing = PropertiesRepository.getAmenityById(id);
+    if (!existing) return null;
+
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    const name = data.name !== undefined ? data.name.trim() : existing.name;
+    if (!name) {
+      throw new Error('Amenity name cannot be empty');
+    }
+
+    const category = data.category !== undefined ? data.category : existing.category;
+    const validCategories: AmenityCategory[] = ['community', 'unit', 'accessibility', 'pet', 'eco'];
+    if (!validCategories.includes(category)) {
+      throw new Error(`Invalid category "${category}". Must be one of: ${validCategories.join(', ')}`);
+    }
+
+    if (name !== existing.name) {
+      const duplicate = db.prepare(`
+        SELECT id FROM amenities
+        WHERE operator_id = ? AND name = ? AND id <> ? AND deleted_at IS NULL
+      `).get(operatorId, name, id);
+
+      if (duplicate) {
+        const err: any = new Error(`An amenity with name "${name}" already exists`);
+        err.code = 'CONFLICT';
+        throw err;
+      }
+    }
+
+    const description = data.description !== undefined ? data.description : existing.description;
+
+    db.prepare(`
+      UPDATE amenities
+      SET name = ?, category = ?, description = ?, updated_at = ?
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).run(name, category, description || null, now, id, operatorId);
+
+    return PropertiesRepository.getAmenityById(id);
+  }
+
+  /**
+   * Soft-delete an amenity from the catalog and decouple linked property/unit junctions.
+   *
+   * @param id - Unique UUIDv7 of the amenity to delete.
+   * @returns True if soft-deleted, false otherwise.
+   */
+  public static deleteAmenity(id: string): boolean {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    return withTransaction((tx) => {
+      const info = tx.prepare(`
+        UPDATE amenities SET deleted_at = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(now, now, id, operatorId);
+
+      if (info.changes > 0) {
+        tx.prepare(`
+          UPDATE property_amenities SET deleted_at = ?
+          WHERE amenity_id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).run(now, id, operatorId);
+
+        tx.prepare(`
+          UPDATE unit_amenities SET deleted_at = ?
+          WHERE amenity_id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).run(now, id, operatorId);
+      }
+
+      return info.changes > 0;
+    }, db);
+  }
+
+  /**
+   * List all amenities associated with a specific property.
+   *
+   * @param propertyId - Unique UUIDv7 of the property.
+   * @returns Array of Amenity entities linked to this property.
+   */
+  public static getPropertyAmenities(propertyId: string): Amenity[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT a.* FROM amenities a
+      JOIN property_amenities pa ON pa.amenity_id = a.id
+      WHERE pa.property_id = ? AND pa.operator_id = ? AND pa.deleted_at IS NULL
+        AND a.operator_id = ? AND a.deleted_at IS NULL
+      ORDER BY a.category ASC, a.name ASC
+    `).all(propertyId, operatorId, operatorId) as unknown as Amenity[];
+  }
+
+  /**
+   * Replace and synchronize the set of amenities assigned to a property.
+   *
+   * @param propertyId - Unique UUIDv7 of the property.
+   * @param amenityIds - Array of amenity UUIDs to associate.
+   * @returns Array of resulting Amenity entities linked to the property.
+   */
+  public static setPropertyAmenities(propertyId: string, amenityIds: string[]): Amenity[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    const property = PropertiesRepository.getPropertyById(propertyId);
+    if (!property) {
+      const err: any = new Error('Property not found');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    if (amenityIds.length > 0) {
+      const placeholders = amenityIds.map(() => '?').join(', ');
+      const found = db.prepare(`
+        SELECT id FROM amenities
+        WHERE operator_id = ? AND id IN (${placeholders}) AND deleted_at IS NULL
+      `).all(operatorId, ...amenityIds) as Array<{ id: string }>;
+
+      if (found.length !== amenityIds.length) {
+        const foundSet = new Set(found.map((f) => f.id));
+        const missing = amenityIds.filter((id) => !foundSet.has(id));
+        const err: any = new Error(`One or more amenities do not exist or belong to another operator: ${missing.join(', ')}`);
+        err.code = 'VALIDATION_ERROR';
+        throw err;
+      }
+    }
+
+    withTransaction((tx) => {
+      tx.prepare(`
+        UPDATE property_amenities SET deleted_at = ?
+        WHERE property_id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(now, propertyId, operatorId);
+
+      const insertStmt = tx.prepare(`
+        INSERT INTO property_amenities (id, operator_id, property_id, amenity_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+
+      for (const amenityId of amenityIds) {
+        insertStmt.run(generateUUIDv7(), operatorId, propertyId, amenityId, now);
+      }
+    }, db);
+
+    return PropertiesRepository.getPropertyAmenities(propertyId);
+  }
+
+  /**
+   * List all amenities associated with a specific unit.
+   *
+   * @param unitId - Unique UUIDv7 of the unit.
+   * @returns Array of Amenity entities linked to this unit.
+   */
+  public static getUnitAmenities(unitId: string): Amenity[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    return db.prepare(`
+      SELECT a.* FROM amenities a
+      JOIN unit_amenities ua ON ua.amenity_id = a.id
+      WHERE ua.unit_id = ? AND ua.operator_id = ? AND ua.deleted_at IS NULL
+        AND a.operator_id = ? AND a.deleted_at IS NULL
+      ORDER BY a.category ASC, a.name ASC
+    `).all(unitId, operatorId, operatorId) as unknown as Amenity[];
+  }
+
+  /**
+   * Replace and synchronize the set of amenities assigned to a unit.
+   *
+   * @param unitId - Unique UUIDv7 of the unit.
+   * @param amenityIds - Array of amenity UUIDs to associate.
+   * @returns Array of resulting Amenity entities linked to the unit.
+   */
+  public static setUnitAmenities(unitId: string, amenityIds: string[]): Amenity[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    const unit = PropertiesRepository.getUnitById(unitId);
+    if (!unit) {
+      const err: any = new Error('Unit not found');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    if (amenityIds.length > 0) {
+      const placeholders = amenityIds.map(() => '?').join(', ');
+      const found = db.prepare(`
+        SELECT id FROM amenities
+        WHERE operator_id = ? AND id IN (${placeholders}) AND deleted_at IS NULL
+      `).all(operatorId, ...amenityIds) as Array<{ id: string }>;
+
+      if (found.length !== amenityIds.length) {
+        const foundSet = new Set(found.map((f) => f.id));
+        const missing = amenityIds.filter((id) => !foundSet.has(id));
+        const err: any = new Error(`One or more amenities do not exist or belong to another operator: ${missing.join(', ')}`);
+        err.code = 'VALIDATION_ERROR';
+        throw err;
+      }
+    }
+
+    withTransaction((tx) => {
+      tx.prepare(`
+        UPDATE unit_amenities SET deleted_at = ?
+        WHERE unit_id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(now, unitId, operatorId);
+
+      const insertStmt = tx.prepare(`
+        INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+
+      for (const amenityId of amenityIds) {
+        insertStmt.run(generateUUIDv7(), operatorId, unitId, amenityId, now);
+      }
+    }, db);
+
+    return PropertiesRepository.getUnitAmenities(unitId);
   }
 
   // --- Metrics ---

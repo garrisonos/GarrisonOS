@@ -1,6 +1,8 @@
 import { getDatabase } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
+import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 export interface Contact {
   id: string;
@@ -18,6 +20,7 @@ export interface Contact {
   w9_received?: number;
   tax_classification?: string | null;
   notes?: string | null;
+  custom_fields?: string | null;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -34,7 +37,12 @@ export const VALID_TAX_CLASSIFICATIONS = ['individual', 'llc', 'corporation', 'p
 export type TaxClassification = typeof VALID_TAX_CLASSIFICATIONS[number];
 
 export class ContactsRepository {
-  public static listContacts(filter?: { contact_type?: string; query?: string }): Contact[] {
+  public static listContacts(filter?: {
+    contact_type?: string;
+    query?: string;
+    temporal?: Record<string, number>;
+    orderBy?: string;
+  }): Contact[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     let sql = 'SELECT * FROM contacts WHERE operator_id = ? AND deleted_at IS NULL';
@@ -51,7 +59,13 @@ export class ContactsRepository {
       params.push(term, term, term, term, term);
     }
 
-    sql += ' ORDER BY last_name ASC, first_name ASC';
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal);
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
+
+    sql += ` ORDER BY ${filter?.orderBy || 'last_name ASC, first_name ASC'}`;
     return db.prepare(sql).all(...params) as unknown as Contact[];
   }
 
@@ -78,6 +92,7 @@ export class ContactsRepository {
     w9_received?: number;
     tax_classification?: string;
     notes?: string;
+    custom_fields?: Record<string, any> | string;
   }): Contact {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
@@ -88,12 +103,14 @@ export class ContactsRepository {
       throw new Error(`Invalid tax_classification: "${data.tax_classification}". Allowed values: ${VALID_TAX_CLASSIFICATIONS.join(', ')}`);
     }
 
+    const customFieldsJson = CustomFieldsService.prepareForWrite('contact', data.custom_fields);
+
     db.prepare(`
       INSERT INTO contacts (
         id, operator_id, contact_type, first_name, last_name,
         company_name, email, phone, secondary_phone,
-        tax_id_last4, vendor_specialty, w9_received, tax_classification, notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tax_id_last4, vendor_specialty, w9_received, tax_classification, notes, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       operatorId,
@@ -109,6 +126,7 @@ export class ContactsRepository {
       data.w9_received ? 1 : 0,
       data.tax_classification || null,
       data.notes || null,
+      customFieldsJson,
       now,
       now
     );
@@ -116,7 +134,7 @@ export class ContactsRepository {
     return ContactsRepository.getContactById(id)!;
   }
 
-  public static updateContact(id: string, data: Partial<Omit<Contact, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): Contact | null {
+  public static updateContact(id: string, data: Partial<Omit<Contact, 'id' | 'operator_id' | 'tenant_id' | 'created_at' | 'updated_at' | 'deleted_at'>> & { custom_fields?: Record<string, any> | string }): Contact | null {
     const existing = ContactsRepository.getContactById(id);
     if (!existing) return null;
 
@@ -128,13 +146,15 @@ export class ContactsRepository {
       throw new Error(`Invalid tax_classification: "${data.tax_classification}". Allowed values: ${VALID_TAX_CLASSIFICATIONS.join(', ')}`);
     }
 
-    const updated = { ...existing, ...data, updated_at: now };
+    const customFieldsJson = CustomFieldsService.prepareForWrite('contact', data.custom_fields, existing.custom_fields);
+
+    const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE contacts SET
         contact_type = ?, first_name = ?, last_name = ?,
         company_name = ?, email = ?, phone = ?, secondary_phone = ?,
-        tax_id_last4 = ?, vendor_specialty = ?, w9_received = ?, tax_classification = ?, notes = ?, updated_at = ?
+        tax_id_last4 = ?, vendor_specialty = ?, w9_received = ?, tax_classification = ?, notes = ?, custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.contact_type,
@@ -149,6 +169,7 @@ export class ContactsRepository {
       updated.w9_received ? 1 : 0,
       updated.tax_classification || null,
       updated.notes || null,
+      customFieldsJson,
       now,
       id,
       operatorId

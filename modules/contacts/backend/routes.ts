@@ -1,12 +1,24 @@
 import { Router } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
 import { ContactsRepository } from './repository.js';
+import { validateTemporalParams, parseOrderByClause } from '../../../api/query-parser.js';
 
 export function registerRoutes(router: Router): void {
   router.get('/api/v1/contacts', (req, res) => {
+    const temporalResult = validateTemporalParams(req.query as Record<string, string>, ['created_at', 'updated_at']);
+    if (temporalResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporalResult.error, 400);
+    }
+    const orderResult = parseOrderByClause(req.query.order_by as string, ['created_at', 'updated_at', 'first_name', 'last_name', 'company_name', 'email'], 'last_name ASC, first_name ASC');
+    if (orderResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderResult.error, 400);
+    }
+
     const contacts = ContactsRepository.listContacts({
       contact_type: req.query.contact_type,
-      query: req.query.q
+      query: req.query.q,
+      temporal: temporalResult.params,
+      orderBy: orderResult.clause
     });
     successResponse(res, { contacts });
   });
@@ -20,7 +32,10 @@ export function registerRoutes(router: Router): void {
       const contact = ContactsRepository.createContact(req.body);
       successResponse(res, { contact }, 201);
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message, 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -40,7 +55,10 @@ export function registerRoutes(router: Router): void {
       }
       successResponse(res, { contact });
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message, 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
