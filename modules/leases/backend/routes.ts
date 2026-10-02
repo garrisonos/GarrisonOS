@@ -3,12 +3,34 @@ import { successResponse, errorResponse } from '../../../api/response.js';
 import { LeasesRepository } from './repository.js';
 import { eventBus } from '../../../core/events.js';
 import { RequestContext } from '../../../core/context.js';
+import { validateTemporalParams, parseOrderByClause } from '../../../api/query-parser.js';
 
 export function registerRoutes(router: Router): void {
   router.get('/api/v1/leases', (req, res) => {
+    const temporalResult = validateTemporalParams(req.query as Record<string, string>, [
+      'start_date',
+      'end_date',
+      'created_at',
+      'updated_at'
+    ]);
+    if (temporalResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporalResult.error, 400);
+    }
+
+    const orderResult = parseOrderByClause(
+      req.query.order_by as string,
+      ['start_date', 'end_date', 'rent_amount_cents', 'created_at', 'updated_at'],
+      'start_date DESC'
+    );
+    if (orderResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderResult.error, 400);
+    }
+
     const leases = LeasesRepository.listLeases({
       status: req.query.status,
-      unit_id: req.query.unit_id
+      unit_id: req.query.unit_id,
+      temporal: temporalResult.params,
+      orderBy: orderResult.clause
     });
     successResponse(res, { leases });
   });

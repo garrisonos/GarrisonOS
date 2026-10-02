@@ -3,6 +3,7 @@ import { successResponse, errorResponse } from '../../../api/response.js';
 import { MaintenanceRepository } from './repository.js';
 import { eventBus } from '../../../core/events.js';
 import { RequestContext } from '../../../core/context.js';
+import { validateTemporalParams, parseOrderByClause } from '../../../api/query-parser.js';
 
 /**
  * Register REST API routes for the Maintenance module.
@@ -16,11 +17,32 @@ export function registerRoutes(router: Router): void {
   });
 
   router.getBatchSafe('/api/v1/maintenance/work-orders', (req, res) => {
+    const temporalResult = validateTemporalParams(req.query as Record<string, string>, [
+      'created_at',
+      'updated_at',
+      'scheduled_date',
+      'completed_date'
+    ]);
+    if (temporalResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporalResult.error, 400);
+    }
+
+    const orderResult = parseOrderByClause(
+      req.query['order_by'] as string,
+      ['created_at', 'updated_at', 'scheduled_date', 'completed_date', 'priority', 'status', 'estimated_cost_cents', 'actual_cost_cents'],
+      ''
+    );
+    if (orderResult.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderResult.error, 400);
+    }
+
     const workOrders = MaintenanceRepository.listWorkOrders({
       status: req.query['status'],
       priority: req.query['priority'],
       property_id: req.query['property_id'],
-      unit_id: req.query['unit_id']
+      unit_id: req.query['unit_id'],
+      temporal: temporalResult.params,
+      orderBy: orderResult.clause || undefined
     });
     successResponse(res, { workOrders });
   });

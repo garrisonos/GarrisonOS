@@ -1,4 +1,5 @@
 import { getDatabase, withTransaction } from '../../../database/client.js';
+import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
@@ -49,6 +50,8 @@ export interface WorkOrder {
   updated_at: number;
   /** Soft-deletion timestamp in epoch milliseconds, or null if active. */
   deleted_at?: number | null;
+  /** Dynamic custom fields serialized as a JSON string or object. */
+  custom_fields?: Record<string, any> | string;
 }
 
 /**
@@ -250,6 +253,8 @@ export class MaintenanceRepository {
     priority?: string;
     property_id?: string;
     unit_id?: string;
+    temporal?: Record<string, number>;
+    orderBy?: string;
   }): WorkOrderWithDetails[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
@@ -286,8 +291,22 @@ export class MaintenanceRepository {
       sql += ' AND w.unit_id = ?';
       params.push(filter.unit_id);
     }
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal, 'w');
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
 
-    sql += " ORDER BY CASE w.priority WHEN 'emergency' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, w.created_at DESC";
+    if (filter?.orderBy) {
+      // Qualify columns with w. table alias to avoid ambiguity with joined tables
+      const qualifiedOrder = filter.orderBy
+        .split(',')
+        .map((part) => `w.${part.trim()}`)
+        .join(', ');
+      sql += ` ORDER BY ${qualifiedOrder}`;
+    } else {
+      sql += " ORDER BY CASE w.priority WHEN 'emergency' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, w.created_at DESC";
+    }
 
     const rows = db.prepare(sql).all(...params) as unknown as WorkOrderWithDetails[];
     return rows.map((row) => ({
@@ -350,6 +369,7 @@ export class MaintenanceRepository {
     scheduled_date?: number;
     estimated_cost_cents?: number;
     actual_cost_cents?: number;
+    custom_fields?: Record<string, any> | string;
   }): WorkOrderWithDetails {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
@@ -365,13 +385,17 @@ export class MaintenanceRepository {
       data.vendor_contact_id
     );
 
+    const customFieldsJson = data.custom_fields !== undefined
+      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
+      : '{}';
+
     db.prepare(`
       INSERT INTO work_orders (
         id, operator_id, property_id, unit_id, title, description,
         status, priority, category, permission_to_enter, entry_instructions,
         requested_by_contact_id, vendor_contact_id, scheduled_date,
-        estimated_cost_cents, actual_cost_cents, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        estimated_cost_cents, actual_cost_cents, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       operatorId,
@@ -389,6 +413,7 @@ export class MaintenanceRepository {
       data.scheduled_date || null,
       data.estimated_cost_cents || 0,
       data.actual_cost_cents || 0,
+      customFieldsJson,
       now,
       now
     );
@@ -404,7 +429,7 @@ export class MaintenanceRepository {
    * @param data - Mutable work order fields.
    * @returns Updated work order with details or null if not found.
    */
-  public static updateWorkOrder(id: string, data: Partial<Omit<WorkOrder, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): WorkOrderWithDetails | null {
+  public static updateWorkOrder(id: string, data: Partial<Omit<WorkOrder, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>> & { custom_fields?: Record<string, any> | string }): WorkOrderWithDetails | null {
     const existing = MaintenanceRepository.getWorkOrderById(id);
     if (!existing) return null;
 
@@ -440,13 +465,17 @@ export class MaintenanceRepository {
       }
     }
 
+    const customFieldsJson = data.custom_fields !== undefined
+      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
+      : (typeof existing.custom_fields === 'string' ? existing.custom_fields : JSON.stringify(existing.custom_fields || {}));
+
     db.prepare(`
       UPDATE work_orders SET
         property_id = ?, unit_id = ?, title = ?, description = ?,
         status = ?, priority = ?, category = ?, permission_to_enter = ?,
         entry_instructions = ?, requested_by_contact_id = ?, vendor_contact_id = ?,
         scheduled_date = ?, completed_date = ?, estimated_cost_cents = ?,
-        actual_cost_cents = ?, updated_at = ?
+        actual_cost_cents = ?, custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.property_id,
@@ -464,6 +493,7 @@ export class MaintenanceRepository {
       updated.completed_date || null,
       updated.estimated_cost_cents,
       updated.actual_cost_cents,
+      customFieldsJson,
       now,
       id,
       operatorId

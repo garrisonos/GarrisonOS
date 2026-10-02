@@ -30,6 +30,8 @@ import {
   hasPermission,
   loadOperatorRoleOverrides
 } from '../core/rbac.js';
+import { CustomFieldsService, CustomFieldEntityType } from '../core/custom-fields.js';
+import { handleBulkIngestion } from './bulk.js';
 
 const NODE_ENV = process.env['NODE_ENV'] || 'development';
 const APP_SECRET = process.env['APP_SECRET'] || (
@@ -1282,6 +1284,121 @@ export function createRouter(serverPort: number = PORT): Router {
     }, db);
 
     successResponse(res, { deleted: true });
+  });
+
+  // --- Bulk Transactional Ingestion ---
+  router.post('/api/v1/:resource/bulk', (req, res) => {
+    handleBulkIngestion(req, res);
+  });
+
+  router.post('/api/v1/properties/units/bulk', (req, res) => {
+    handleBulkIngestion(req, res, 'units');
+  });
+
+  // --- Dynamic Custom Fields Engine ---
+  const handleListDefinitions = (req: any, res: any) => {
+    const rawEntityType = req.query['entity_type'] as string | undefined;
+    const entityType = rawEntityType ? (rawEntityType.toLowerCase() as CustomFieldEntityType) : undefined;
+    const definitions = CustomFieldsService.listDefinitions(entityType);
+    successResponse(res, { definitions });
+  };
+
+  router.get('/api/v1/custom_fields/definitions', handleListDefinitions);
+  router.get('/api/v1/custom-fields/definitions', handleListDefinitions);
+
+  const handleCreateDefinition = (req: any, res: any) => {
+    const { entity_type, field_name, field_label, data_type, options, is_required } = req.body || {};
+    if (!entity_type || !field_name || !field_label || !data_type) {
+      return errorResponse(
+        res,
+        'VALIDATION_ERROR',
+        'entity_type, field_name, field_label, and data_type are required',
+        400
+      );
+    }
+
+    try {
+      const definition = CustomFieldsService.createDefinition({
+        entity_type: entity_type.toLowerCase() as CustomFieldEntityType,
+        field_name,
+        field_label,
+        data_type: data_type.toLowerCase(),
+        options,
+        is_required
+      });
+      successResponse(res, { definition }, 201);
+    } catch (err: any) {
+      const status = err.code === 'CONFLICT' ? 409 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+    }
+  };
+
+  router.post('/api/v1/custom_fields/definitions', handleCreateDefinition);
+  router.post('/api/v1/custom-fields/definitions', handleCreateDefinition);
+
+  const handleUpdateDefinition = (req: any, res: any) => {
+    try {
+      const definition = CustomFieldsService.updateDefinition(req.params.id!, req.body || {});
+      if (!definition) {
+        return errorResponse(res, 'NOT_FOUND', 'Custom field definition not found', 404);
+      }
+      successResponse(res, { definition });
+    } catch (err: any) {
+      const status = err.code === 'CONFLICT' ? 409 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+    }
+  };
+
+  router.put('/api/v1/custom_fields/definitions/:id', handleUpdateDefinition);
+  router.put('/api/v1/custom-fields/definitions/:id', handleUpdateDefinition);
+
+  const handleDeleteDefinition = (req: any, res: any) => {
+    const deleted = CustomFieldsService.deleteDefinition(req.params.id!);
+    if (!deleted) {
+      return errorResponse(res, 'NOT_FOUND', 'Custom field definition not found', 404);
+    }
+    successResponse(res, { deleted: true });
+  };
+
+  router.delete('/api/v1/custom_fields/definitions/:id', handleDeleteDefinition);
+  router.delete('/api/v1/custom-fields/definitions/:id', handleDeleteDefinition);
+
+  // Update Entity Custom Fields (PUT /api/v1/:entity_type/:id/custom_fields)
+  router.put('/api/v1/:entity_type/:id/custom_fields', (req, res) => {
+    const rawType = req.params['entity_type']?.toLowerCase();
+    const typeMap: Record<string, CustomFieldEntityType> = {
+      property: 'property',
+      properties: 'property',
+      building: 'building',
+      buildings: 'building',
+      unit: 'unit',
+      units: 'unit',
+      lease: 'lease',
+      leases: 'lease',
+      contact: 'contact',
+      contacts: 'contact',
+      work_order: 'work_order',
+      work_orders: 'work_order',
+      maintenance: 'work_order'
+    };
+
+    const entityType = typeMap[rawType || ''];
+    if (!entityType) {
+      return errorResponse(res, 'VALIDATION_ERROR', `Entity type "${rawType}" does not support custom fields`, 400);
+    }
+
+    const customFields = req.body?.custom_fields ?? req.body;
+    if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'custom_fields object payload is required', 400);
+    }
+
+    try {
+      const result = CustomFieldsService.updateEntityCustomFields(entityType, req.params.id!, customFields);
+      successResponse(res, result);
+    } catch (err: any) {
+      const status = err.code === 'NOT_FOUND' ? 404 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+    }
   });
 
   return router;

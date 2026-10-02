@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Sprint 5 MVP Enhancement — Batch 5B: Inventory, Catalog & Engine Enhancements (Tasks 32, 33, 34)**:
+  - **Task 32 (Property & Unit Amenities Catalog & Syndication Profiles)**:
+    - Added database migration `0003_amenities_and_marketing.sql` establishing tables `amenities`, `property_amenities`, and `unit_amenities`.
+    - Added syndication and listing marketing profile columns (`published_for_rent`, `posting_title`, `marketing_description`, `pet_policy`, `specials`) to `properties` and `units`.
+    - Implemented amenities catalog CRUD and property/unit association methods in `PropertiesRepository` (`listAmenities`, `getAmenityById`, `createAmenity`, `updateAmenity`, `deleteAmenity`, `getPropertyAmenities`, `setPropertyAmenities`, `getUnitAmenities`, `setUnitAmenities`).
+    - Added REST endpoints: `GET/POST/PUT/DELETE /api/v1/amenities`, `GET/PUT /api/v1/properties/:id/amenities`, and `GET/PUT /api/v1/properties/units/:unit_id/amenities`.
+  - **Task 33 (Dynamic Custom Fields Engine)**:
+    - Added database migration `0009_custom_field_definitions.sql` for schema definition table `custom_field_definitions` and modular migrations `modules/properties/backend/migrations/0003_amenities_and_marketing.sql`, `modules/leases/backend/migrations/0004_add_custom_fields.sql`, `modules/contacts/backend/migrations/0003_add_custom_fields.sql`, and `modules/maintenance/backend/migrations/0003_add_custom_fields.sql` adding `custom_fields TEXT NOT NULL DEFAULT '{}'` to parent entities (`properties`, `buildings`, `units`, `leases`, `contacts`, `work_orders`).
+    - Implemented `CustomFieldsService` in `core/custom-fields.ts` supporting definition CRUD, strict type validation across all 5 data types (`string`, `number`, `boolean`, `date`, `select`), strict Gregorian date validation in `YYYY-MM-DD` format with leap year calculation, required field enforcement, and `updateEntityCustomFields` for atomic entity updates.
+    - Mounted REST endpoints: `GET/POST /api/v1/custom_fields/definitions` (and kebab alias `/custom-fields/definitions`), `GET/PUT/DELETE /api/v1/custom_fields/definitions/:id`, and `PUT /api/v1/:entity_type/:id/custom_fields`.
+  - **Task 34 (Standardized Bulk Ingestion & Temporal Query Conventions)**:
+    - Created `api/bulk.ts` with `executeBulkIngestion` and `handleBulkIngestion` supporting high-volume batch ingestion (up to 100 items per batch) with transactional all-or-nothing rollback on partial failure or constraint violation.
+    - Mounted bulk routes: `POST /api/v1/:resource/bulk` and `POST /api/v1/properties/units/bulk`.
+    - Created universal query parser `api/query-parser.ts` offering `validateTemporalParams` (strict integer ms timestamps, `*_start <= *_end`), `parseOrderByClause` (multi-key sorting with column whitelisting), and `buildTemporalSqlConditions` with table alias support.
+    - Integrated universal temporal filtering and `order_by` sorting across collection endpoints in `properties`, `contacts`, `leases`, and `maintenance` modules.
+  - **Comprehensive Automated & Red Team Test Coverage**:
+    - Added test suites in `modules/properties/test/amenities.test.ts`, `test/custom-fields.test.ts`, `test/bulk-temporal.test.ts`, and `test/red-team-5b.test.ts` verifying BOLA/IDOR isolation, SQL injection evasion in `order_by`, atomic bulk rollback, and Gregorian calendar date validation edge cases (54 test suites passing with 100% success rate).
+
 - **Sprint 5 Foundational MVP — Batch 5A: Accounts Payable, Check Printing, Vendor Credits & Bank Deposits**:
   - **Task 28 (Accounts Payable Core Subsystem)**:
     - Added database migration `0006_accounts_payable_and_banking.sql` establishing schema for `bills`, `bill_allocations`, and `recurring_bills`.
