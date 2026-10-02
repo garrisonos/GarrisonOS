@@ -140,7 +140,15 @@ export class VendorChecksRepository {
     }
 
     let allocTotal = 0;
+    const seenBillIds = new Set<string>();
     for (const alloc of input.bill_allocations) {
+      if (!alloc.bill_id) {
+        throw new Error('bill_id is required for each allocation.');
+      }
+      if (seenBillIds.has(alloc.bill_id)) {
+        throw new Error(`Duplicate bill allocation for bill "${alloc.bill_id}". Combine amounts into a single allocation.`);
+      }
+      seenBillIds.add(alloc.bill_id);
       if (!Number.isSafeInteger(alloc.amount_cents) || alloc.amount_cents <= 0) {
         throw new Error('Bill allocation amount_cents must be a positive integer in cents.');
       }

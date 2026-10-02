@@ -32,6 +32,9 @@ export interface CheckPdfData {
  */
 export function numberToWords(cents: number): string {
   if (cents <= 0) return 'ZERO AND 00/100 DOLLARS';
+  if (cents > 999_999_999_99) {
+    throw new Error('Amount exceeds maximum check print limit of $999,999,999.99');
+  }
 
   const dollars = Math.floor(cents / 100);
   const remainingCents = cents % 100;
@@ -78,10 +81,15 @@ export function numberToWords(cents: number): string {
 }
 
 /**
- * Escapes characters for PDF literal strings `( ... )`.
+ * Escapes characters for PDF literal strings `( ... )`, sanitizing unicode and newlines.
  */
 function escapePdfString(str: string): string {
   return str
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\r\n/g, ' ')
+    .replace(/[\r\n]/g, ' ')
     .replace(/\\/g, '\\\\')
     .replace(/\(/g, '\\(')
     .replace(/\)/g, '\\)');

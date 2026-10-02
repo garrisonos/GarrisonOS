@@ -159,7 +159,12 @@ export class BankDepositsRepository {
     const validatedReceipts: { entry_id: string; amount_cents: number; property_id?: string | null }[] = [];
 
     if (input.receipt_entry_ids && input.receipt_entry_ids.length > 0) {
+      const seenReceiptIds = new Set<string>();
       for (const entryId of input.receipt_entry_ids) {
+        if (seenReceiptIds.has(entryId)) {
+          throw new Error(`Duplicate receipt entry "${entryId}" in deposit batch.`);
+        }
+        seenReceiptIds.add(entryId);
         // Fetch debit amount to 1030
         const lineRow = db.prepare(`
           SELECT jl.debit_cents, jl.property_id

@@ -283,8 +283,8 @@ export class AccountsPayableRepository {
     const now = Date.now();
     const status: BillStatus = input.status === 'pending_approval' ? 'pending_approval' : 'draft';
 
-    return withTransaction(() => {
-      db.prepare(`
+    return withTransaction((tx) => {
+      tx.prepare(`
         INSERT INTO bills (
           id, operator_id, vendor_id, invoice_number, invoice_date, due_date,
           payment_terms, reference_number, subtotal_cents, tax_cents,
@@ -318,7 +318,7 @@ export class AccountsPayableRepository {
 
       for (const alloc of input.allocations) {
         const allocId = generateUUIDv7();
-        db.prepare(`
+        tx.prepare(`
           INSERT INTO bill_allocations (
             id, operator_id, bill_id, portfolio_id, property_id, unit_id,
             gl_account_id, amount_cents, amount_settled_cents, description,
@@ -531,8 +531,8 @@ export class AccountsPayableRepository {
       );
     }
 
-    return withTransaction(() => {
-      db.prepare(`
+    return withTransaction((tx) => {
+      tx.prepare(`
         UPDATE bills SET
           vendor_id = ?, invoice_number = ?, invoice_date = ?, due_date = ?,
           payment_terms = ?, reference_number = ?, subtotal_cents = ?, tax_cents = ?,
@@ -559,14 +559,14 @@ export class AccountsPayableRepository {
 
       if (input.allocations) {
         // Soft delete old allocations and replace with new ones
-        db.prepare(`
+        tx.prepare(`
           UPDATE bill_allocations SET deleted_at = ?
           WHERE bill_id = ? AND operator_id = ? AND deleted_at IS NULL
         `).run(now, id, operatorId);
 
         for (const alloc of allocations) {
           const allocId = generateUUIDv7();
-          db.prepare(`
+          tx.prepare(`
             INSERT INTO bill_allocations (
               id, operator_id, bill_id, portfolio_id, property_id, unit_id,
               gl_account_id, amount_cents, amount_settled_cents, description,

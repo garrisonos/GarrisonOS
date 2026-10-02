@@ -320,9 +320,9 @@ export class VendorCreditsRepository {
     const now = Date.now();
     const allocId = generateUUIDv7();
 
-    return withTransaction(() => {
+    return withTransaction((tx) => {
       // 1. Insert credit allocation
-      db.prepare(`
+      tx.prepare(`
         INSERT INTO vendor_credit_allocations (
           id, operator_id, credit_id, bill_id, applied_amount_cents, applied_date, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -332,7 +332,7 @@ export class VendorCreditsRepository {
       const newCreditRemaining = credit.remaining_amount_cents - amountCents;
       const newCreditStatus: VendorCreditStatus = newCreditRemaining === 0 ? 'fully_applied' : 'partially_applied';
 
-      db.prepare(`
+      tx.prepare(`
         UPDATE vendor_credits SET
           remaining_amount_cents = ?, status = ?, updated_at = ?
         WHERE id = ? AND operator_id = ?
@@ -342,7 +342,7 @@ export class VendorCreditsRepository {
       const newBillPaid = bill.amount_paid_cents + amountCents;
       const newBillStatus = newBillPaid === bill.total_amount_cents ? 'paid' : 'partially_paid';
 
-      db.prepare(`
+      tx.prepare(`
         UPDATE bills SET
           amount_paid_cents = ?, status = ?, updated_at = ?
         WHERE id = ? AND operator_id = ?
@@ -356,7 +356,7 @@ export class VendorCreditsRepository {
         const availableInLine = ba.amount_cents - ba.amount_settled_cents;
         if (availableInLine > 0) {
           const settleThisLine = Math.min(remainingToSettle, availableInLine);
-          db.prepare(`
+          tx.prepare(`
             UPDATE bill_allocations SET
               amount_settled_cents = amount_settled_cents + ?
             WHERE id = ? AND operator_id = ?
