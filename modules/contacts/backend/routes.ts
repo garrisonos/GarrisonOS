@@ -32,7 +32,10 @@ export function registerRoutes(router: Router): void {
       const contact = ContactsRepository.createContact(req.body);
       successResponse(res, { contact }, 201);
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message, 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -52,7 +55,10 @@ export function registerRoutes(router: Router): void {
       }
       successResponse(res, { contact });
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message, 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 

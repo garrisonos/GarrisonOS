@@ -96,7 +96,6 @@ export function withTransaction<T>(
 
   try {
     const result = fn(db);
-    transactionDepth--;
     if (isTopLevel) {
       db.exec('COMMIT;');
     } else {
@@ -104,7 +103,6 @@ export function withTransaction<T>(
     }
     return result;
   } catch (error) {
-    transactionDepth--;
     try {
       if (isTopLevel) {
         db.exec('ROLLBACK;');
@@ -116,5 +114,7 @@ export function withTransaction<T>(
       // Ignore rollback errors if already rolled back
     }
     throw error;
+  } finally {
+    transactionDepth = Math.max(0, transactionDepth - 1);
   }
 }

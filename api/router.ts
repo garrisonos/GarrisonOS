@@ -397,11 +397,13 @@ export class Router {
       await next();
     } catch (error: any) {
       if (!res.writableEnded) {
+        const statusCode = error.statusCode || (error.code === 'VALIDATION_ERROR' ? 400 : 500);
         errorResponse(
           res,
           error.code || 'INTERNAL_ERROR',
           error.message || 'An unexpected internal server error occurred',
-          error.statusCode || 500
+          statusCode,
+          error.details
         );
       }
     }

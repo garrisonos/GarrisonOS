@@ -1329,7 +1329,7 @@ export function createRouter(serverPort: number = PORT): Router {
       successResponse(res, { definition }, 201);
     } catch (err: any) {
       const status = err.code === 'CONFLICT' ? 409 : 400;
-      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status, err.details);
     }
   };
 
@@ -1345,7 +1345,7 @@ export function createRouter(serverPort: number = PORT): Router {
       successResponse(res, { definition });
     } catch (err: any) {
       const status = err.code === 'CONFLICT' ? 409 : 400;
-      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status, err.details);
     }
   };
 
@@ -1408,7 +1408,7 @@ export function createRouter(serverPort: number = PORT): Router {
       successResponse(res, result);
     } catch (err: any) {
       const status = err.code === 'NOT_FOUND' ? 404 : 400;
-      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status);
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message, status, err.details);
     }
   });
 

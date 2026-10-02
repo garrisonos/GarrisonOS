@@ -223,7 +223,10 @@ export function registerRoutes(router: Router): void {
       const unit = PropertiesRepository.createUnit(req.body);
       successResponse(res, { unit }, 201);
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message || 'Failed to create unit', 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -243,7 +246,10 @@ export function registerRoutes(router: Router): void {
       }
       successResponse(res, { unit });
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message || 'Failed to update unit', 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -324,8 +330,15 @@ export function registerRoutes(router: Router): void {
         400
       );
     }
-    const property = PropertiesRepository.createProperty(req.body);
-    successResponse(res, { property }, 201);
+    try {
+      const property = PropertiesRepository.createProperty(req.body);
+      successResponse(res, { property }, 201);
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
+    }
   });
 
   router.get('/api/v1/properties/:id', (req, res) => {
@@ -340,11 +353,18 @@ export function registerRoutes(router: Router): void {
   });
 
   router.put('/api/v1/properties/:id', (req, res) => {
-    const property = PropertiesRepository.updateProperty(req.params.id!, req.body || {});
-    if (!property) {
-      return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+    try {
+      const property = PropertiesRepository.updateProperty(req.params.id!, req.body || {});
+      if (!property) {
+        return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+      }
+      successResponse(res, { property });
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
     }
-    successResponse(res, { property });
   });
 
   router.delete('/api/v1/properties/:id', (req, res) => {
@@ -400,15 +420,22 @@ export function registerRoutes(router: Router): void {
       }
       parsedFloors = num;
     }
-    const building = PropertiesRepository.createBuilding({
-      property_id: property.id,
-      name,
-      building_number,
-      floors: parsedFloors,
-      notes,
-      custom_fields
-    });
-    successResponse(res, { building }, 201);
+    try {
+      const building = PropertiesRepository.createBuilding({
+        property_id: property.id,
+        name,
+        building_number,
+        floors: parsedFloors,
+        notes,
+        custom_fields
+      });
+      successResponse(res, { building }, 201);
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
+    }
   });
 
   router.get('/api/v1/buildings/:id', (req, res) => {
@@ -428,11 +455,18 @@ export function registerRoutes(router: Router): void {
         return errorResponse(res, 'VALIDATION_ERROR', 'floors must be a positive integer', 400);
       }
     }
-    const building = PropertiesRepository.updateBuilding(req.params.id!, req.body || {});
-    if (!building) {
-      return errorResponse(res, 'NOT_FOUND', 'Building not found', 404);
+    try {
+      const building = PropertiesRepository.updateBuilding(req.params.id!, req.body || {});
+      if (!building) {
+        return errorResponse(res, 'NOT_FOUND', 'Building not found', 404);
+      }
+      successResponse(res, { building });
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
     }
-    successResponse(res, { building });
   });
 
   router.delete('/api/v1/buildings/:id', (req, res) => {

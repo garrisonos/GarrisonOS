@@ -4,7 +4,7 @@ import { createTestDb, runInOperatorContext } from './helpers.js';
 import { CustomFieldsService } from '../core/custom-fields.js';
 import { PropertiesRepository } from '../modules/properties/backend/repository.js';
 import { ContactsRepository } from '../modules/contacts/backend/repository.js';
-import { closeDatabase, getDatabase } from '../database/client.js';
+import { closeDatabase, getDatabase, withTransaction } from '../database/client.js';
 
 describe('Core - Dynamic Custom Fields Engine', () => {
   before(() => {
@@ -320,6 +320,55 @@ describe('Core - Dynamic Custom Fields Engine', () => {
           });
         }, /is required/);
       });
+    });
+
+    it('attaches statusCode 400 and VALIDATION_ERROR code to prepareForWrite errors', () => {
+      runInOperatorContext('op-cf-status-code', () => {
+        CustomFieldsService.createDefinition({
+          entity_type: 'building',
+          field_name: 'inspector_id',
+          field_label: 'Inspector ID',
+          data_type: 'string',
+          is_required: true
+        });
+
+        try {
+          CustomFieldsService.prepareForWrite('building', {});
+          assert.fail('Expected prepareForWrite to throw');
+        } catch (err: any) {
+          assert.equal(err.code, 'VALIDATION_ERROR');
+          assert.equal(err.statusCode, 400);
+          assert.ok(Array.isArray(err.details));
+        }
+      });
+    });
+
+    it('ensures transactionDepth in withTransaction resets properly even if COMMIT fails', () => {
+      const db = getDatabase();
+      const originalExec = db.exec.bind(db);
+      let caught = false;
+      try {
+        withTransaction((tx) => {
+          tx.exec = (sql: string) => {
+            if (typeof sql === 'string' && sql.includes('COMMIT')) {
+              throw new Error('Simulated COMMIT failure');
+            }
+            return originalExec(sql);
+          };
+        });
+      } catch (err: any) {
+        caught = true;
+        assert.equal(err.message, 'Simulated COMMIT failure');
+      } finally {
+        db.exec = originalExec;
+      }
+      assert.ok(caught);
+
+      // Verify that subsequent transactions still work as top-level transactions
+      const res = withTransaction(() => {
+        return 42;
+      });
+      assert.equal(res, 42);
     });
   });
 });

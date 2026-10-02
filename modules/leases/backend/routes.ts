@@ -40,8 +40,15 @@ export function registerRoutes(router: Router): void {
     if (!unit_id || !start_date || !end_date || rent_amount_cents === undefined) {
       return errorResponse(res, 'VALIDATION_ERROR', 'unit_id, start_date, end_date, and rent_amount_cents are required', 400);
     }
-    const lease = LeasesRepository.createLease(req.body);
-    successResponse(res, { lease }, 201);
+    try {
+      const lease = LeasesRepository.createLease(req.body);
+      successResponse(res, { lease }, 201);
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
+    }
   });
 
   router.get('/api/v1/leases/:id', (req, res) => {
@@ -53,11 +60,18 @@ export function registerRoutes(router: Router): void {
   });
 
   router.put('/api/v1/leases/:id', (req, res) => {
-    const lease = LeasesRepository.updateLease(req.params.id!, req.body || {});
-    if (!lease) {
-      return errorResponse(res, 'NOT_FOUND', 'Lease not found', 404);
+    try {
+      const lease = LeasesRepository.updateLease(req.params.id!, req.body || {});
+      if (!lease) {
+        return errorResponse(res, 'NOT_FOUND', 'Lease not found', 404);
+      }
+      successResponse(res, { lease });
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
     }
-    successResponse(res, { lease });
   });
 
   router.post('/api/v1/leases/:id/activate', (req, res) => {

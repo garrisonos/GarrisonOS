@@ -55,8 +55,11 @@ export function registerRoutes(router: Router): void {
     try {
       const workOrder = MaintenanceRepository.createWorkOrder(req.body);
       successResponse(res, { workOrder }, 201);
-    } catch (err) {
-      return errorResponse(res, 'VALIDATION_ERROR', (err as Error).message, 400);
+    } catch (err: any) {
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -75,8 +78,11 @@ export function registerRoutes(router: Router): void {
         return errorResponse(res, 'NOT_FOUND', 'Work order not found', 404);
       }
       successResponse(res, { workOrder });
-    } catch (err) {
-      return errorResponse(res, 'VALIDATION_ERROR', (err as Error).message, 400);
+    } catch (err: any) {
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 

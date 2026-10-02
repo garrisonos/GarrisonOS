@@ -325,16 +325,12 @@ export function handleBulkIngestion(req: ApiRequest, res: ServerResponse, explic
         message: err.message || 'Bulk ingestion failed'
       }
     ];
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        success: false,
-        error: {
-          code: err.code || 'VALIDATION_ERROR',
-          message: err.message || 'Bulk ingestion failed; all changes rolled back',
-          details
-        }
-      })
+    errorResponse(
+      res,
+      err.code || 'VALIDATION_ERROR',
+      err.message || 'Bulk ingestion failed; all changes rolled back',
+      400,
+      details
     );
   }
 }

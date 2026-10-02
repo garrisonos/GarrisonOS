@@ -486,6 +486,7 @@ export class CustomFieldsService {
       if (!res.valid) {
         const err: any = new Error(res.errors.join('; '));
         err.code = 'VALIDATION_ERROR';
+        err.statusCode = 400;
         err.details = res.errors;
         throw err;
       }
@@ -496,6 +497,7 @@ export class CustomFieldsService {
       if (isUpdate) {
         const err: any = new Error('custom_fields cannot be null');
         err.code = 'VALIDATION_ERROR';
+        err.statusCode = 400;
         throw err;
       }
       // On create, treat null as empty object
@@ -503,6 +505,7 @@ export class CustomFieldsService {
       if (!res.valid) {
         const err: any = new Error(res.errors.join('; '));
         err.code = 'VALIDATION_ERROR';
+        err.statusCode = 400;
         err.details = res.errors;
         throw err;
       }
@@ -516,6 +519,7 @@ export class CustomFieldsService {
       } catch {
         const err: any = new Error('custom_fields must be a valid JSON object');
         err.code = 'VALIDATION_ERROR';
+        err.statusCode = 400;
         throw err;
       }
     } else {
@@ -525,6 +529,7 @@ export class CustomFieldsService {
     if (typeof parsedInput !== 'object' || parsedInput === null || Array.isArray(parsedInput)) {
       const err: any = new Error('custom_fields must be a JSON object');
       err.code = 'VALIDATION_ERROR';
+      err.statusCode = 400;
       throw err;
     }
 
@@ -546,6 +551,7 @@ export class CustomFieldsService {
     if (!res.valid) {
       const err: any = new Error(res.errors.join('; '));
       err.code = 'VALIDATION_ERROR';
+      err.statusCode = 400;
       err.details = res.errors;
       throw err;
     }
