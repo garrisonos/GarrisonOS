@@ -2,6 +2,7 @@ import { getDatabase } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 export interface Contact {
   id: string;
@@ -102,9 +103,7 @@ export class ContactsRepository {
       throw new Error(`Invalid tax_classification: "${data.tax_classification}". Allowed values: ${VALID_TAX_CLASSIFICATIONS.join(', ')}`);
     }
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : '{}';
+    const customFieldsJson = CustomFieldsService.prepareForWrite('contact', data.custom_fields);
 
     db.prepare(`
       INSERT INTO contacts (
@@ -147,11 +146,9 @@ export class ContactsRepository {
       throw new Error(`Invalid tax_classification: "${data.tax_classification}". Allowed values: ${VALID_TAX_CLASSIFICATIONS.join(', ')}`);
     }
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : (typeof existing.custom_fields === 'string' ? existing.custom_fields : JSON.stringify(existing.custom_fields || {}));
+    const customFieldsJson = CustomFieldsService.prepareForWrite('contact', data.custom_fields, existing.custom_fields);
 
-    const updated = { ...existing, ...data, updated_at: now };
+    const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE contacts SET

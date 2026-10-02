@@ -1349,6 +1349,17 @@ export function createRouter(serverPort: number = PORT): Router {
     }
   };
 
+  const handleGetDefinition = (req: any, res: any) => {
+    const definition = CustomFieldsService.getDefinitionById(req.params.id!);
+    if (!definition) {
+      return errorResponse(res, 'NOT_FOUND', 'Custom field definition not found', 404);
+    }
+    successResponse(res, { definition });
+  };
+
+  router.get('/api/v1/custom_fields/definitions/:id', handleGetDefinition);
+  router.get('/api/v1/custom-fields/definitions/:id', handleGetDefinition);
+
   router.put('/api/v1/custom_fields/definitions/:id', handleUpdateDefinition);
   router.put('/api/v1/custom-fields/definitions/:id', handleUpdateDefinition);
 

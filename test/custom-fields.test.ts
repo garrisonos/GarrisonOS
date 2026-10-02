@@ -246,4 +246,80 @@ describe('Core - Dynamic Custom Fields Engine', () => {
       assert.deepEqual(JSON.parse(fetched!.custom_fields as string), { asset_code: 'PROP-1000' });
     });
   });
+
+  describe('CustomFieldsService.prepareForWrite and Definition Retrieval', () => {
+    it('retrieves definition by ID and returns null for non-existent ID', () => {
+      runInOperatorContext('op-cf-get-by-id', () => {
+        const def = CustomFieldsService.createDefinition({
+          entity_type: 'contact',
+          field_name: 'alt_id',
+          field_label: 'Alt ID',
+          data_type: 'string'
+        });
+
+        const found = CustomFieldsService.getDefinitionById(def.id);
+        assert.ok(found);
+        assert.equal(found.id, def.id);
+        assert.equal(found.field_name, 'alt_id');
+
+        const notFound = CustomFieldsService.getDefinitionById('018f0000-0000-7000-8000-000000000000');
+        assert.equal(notFound, null);
+      });
+    });
+
+    it('validates, formats, and merges custom fields with prepareForWrite', () => {
+      runInOperatorContext('op-cf-prepare-write', () => {
+        CustomFieldsService.createDefinition({
+          entity_type: 'property',
+          field_name: 'zone_code',
+          field_label: 'Zone Code',
+          data_type: 'string',
+          is_required: true
+        });
+
+        // 1. Throws on create if required field is omitted
+        assert.throws(() => {
+          CustomFieldsService.prepareForWrite('property', {});
+        }, /is required/);
+
+        // 2. Throws on invalid JSON string
+        assert.throws(() => {
+          CustomFieldsService.prepareForWrite('property', '{bad-json');
+        }, /must be a valid JSON object/);
+
+        // 3. Throws on non-object / array
+        assert.throws(() => {
+          CustomFieldsService.prepareForWrite('property', [1, 2, 3]);
+        }, /must be a JSON object/);
+
+        // 4. Throws on null for update
+        assert.throws(() => {
+          CustomFieldsService.prepareForWrite('property', null, '{"zone_code":"Z-1"}');
+        }, /cannot be null/);
+
+        // 5. Merges existing fields on update
+        const mergedJson = CustomFieldsService.prepareForWrite(
+          'property',
+          { extra_info: 'test' },
+          '{"zone_code":"Z-1"}'
+        );
+        const parsed = JSON.parse(mergedJson);
+        assert.equal(parsed.zone_code, 'Z-1');
+        assert.equal(parsed.extra_info, 'test');
+
+        // 6. Direct repository call enforces prepareForWrite
+        assert.throws(() => {
+          PropertiesRepository.createProperty({
+            name: 'Invalid Direct Prop',
+            property_type: 'single_family',
+            address_line1: '123 Test St',
+            city: 'Austin',
+            state: 'TX',
+            postal_code: '78701',
+            custom_fields: {} // missing required zone_code!
+          });
+        }, /is required/);
+      });
+    });
+  });
 });

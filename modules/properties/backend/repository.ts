@@ -2,6 +2,7 @@ import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 /**
  * Permitted amenity catalog categories.
@@ -296,9 +297,7 @@ export class PropertiesRepository {
     const now = Date.now();
 
     const publishedForRent = data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0;
-    const customFieldsJson = typeof data.custom_fields === 'object' && data.custom_fields !== null
-      ? JSON.stringify(data.custom_fields)
-      : (data.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('property', data.custom_fields);
 
     db.prepare(`
       INSERT INTO properties (
@@ -354,9 +353,7 @@ export class PropertiesRepository {
       ? (data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0)
       : (existing.published_for_rent ?? 0);
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'object' && data.custom_fields !== null ? JSON.stringify(data.custom_fields) : data.custom_fields)
-      : (existing.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('property', data.custom_fields, existing.custom_fields);
 
     const updated = { ...existing, ...data, published_for_rent: publishedForRent, custom_fields: customFieldsJson, updated_at: now };
 
@@ -477,9 +474,7 @@ export class PropertiesRepository {
     const id = generateUUIDv7();
     const now = Date.now();
 
-    const customFieldsJson = typeof data.custom_fields === 'object' && data.custom_fields !== null
-      ? JSON.stringify(data.custom_fields)
-      : (data.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('building', data.custom_fields);
 
     db.prepare(`
       INSERT INTO buildings (
@@ -522,9 +517,7 @@ export class PropertiesRepository {
     const db = getDatabase();
     const now = Date.now();
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'object' && data.custom_fields !== null ? JSON.stringify(data.custom_fields) : data.custom_fields)
-      : (existing.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('building', data.custom_fields, existing.custom_fields);
 
     const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
@@ -670,9 +663,7 @@ export class PropertiesRepository {
     }
 
     const publishedForRent = data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0;
-    const customFieldsJson = typeof data.custom_fields === 'object' && data.custom_fields !== null
-      ? JSON.stringify(data.custom_fields)
-      : (data.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('unit', data.custom_fields);
 
     db.prepare(`
       INSERT INTO units (
@@ -740,9 +731,7 @@ export class PropertiesRepository {
       ? (data.published_for_rent === true || data.published_for_rent === 1 ? 1 : 0)
       : (existing.published_for_rent ?? 0);
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'object' && data.custom_fields !== null ? JSON.stringify(data.custom_fields) : data.custom_fields)
-      : (existing.custom_fields || '{}');
+    const customFieldsJson = CustomFieldsService.prepareForWrite('unit', data.custom_fields, existing.custom_fields);
 
     const updated = {
       ...existing,

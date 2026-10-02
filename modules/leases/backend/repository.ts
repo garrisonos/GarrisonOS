@@ -4,6 +4,7 @@ import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
 import { JournalService } from '../../accounting/backend/journal.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 /**
  * Itemized recurring charge attached to a lease contract.
@@ -257,7 +258,18 @@ export class LeasesRepository {
       params.push(...temporalParams);
     }
 
-    sql += ` ORDER BY ${filter?.orderBy || 'l.start_date DESC'}`;
+    if (filter?.orderBy) {
+      const qualifiedOrder = filter.orderBy
+        .split(',')
+        .map((part) => {
+          const trimmed = part.trim();
+          return trimmed.startsWith('l.') ? trimmed : `l.${trimmed}`;
+        })
+        .join(', ');
+      sql += ` ORDER BY ${qualifiedOrder}`;
+    } else {
+      sql += ' ORDER BY l.start_date DESC';
+    }
     const rows = db.prepare(sql).all(...params) as unknown as LeaseWithDetails[];
     return rows.map((row) => ({
       ...row,
@@ -336,9 +348,7 @@ export class LeasesRepository {
     const leaseId = generateUUIDv7();
     const now = Date.now();
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : '{}';
+    const customFieldsJson = CustomFieldsService.prepareForWrite('lease', data.custom_fields);
 
     return withTransaction((tx) => {
       tx.prepare(`
@@ -404,11 +414,9 @@ export class LeasesRepository {
     const db = getDatabase();
     const now = Date.now();
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : (typeof existing.custom_fields === 'string' ? existing.custom_fields : JSON.stringify(existing.custom_fields || {}));
+    const customFieldsJson = CustomFieldsService.prepareForWrite('lease', data.custom_fields, existing.custom_fields);
 
-    const updated = { ...existing, ...data, updated_at: now };
+    const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE leases SET

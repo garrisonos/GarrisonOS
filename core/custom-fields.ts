@@ -59,13 +59,31 @@ export interface CustomFieldValidationResult {
   errors: string[];
 }
 
-const ENTITY_TABLE_MAP: Record<CustomFieldEntityType, string> = {
-  property: 'properties',
-  building: 'buildings',
-  unit: 'units',
-  lease: 'leases',
-  contact: 'contacts',
-  work_order: 'work_orders'
+const ENTITY_SQL: Record<CustomFieldEntityType, { select: string; update: string }> = {
+  property: {
+    select: 'SELECT * FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE properties SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  building: {
+    select: 'SELECT * FROM buildings WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE buildings SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  unit: {
+    select: 'SELECT * FROM units WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE units SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  lease: {
+    select: 'SELECT * FROM leases WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE leases SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  contact: {
+    select: 'SELECT * FROM contacts WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE contacts SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  work_order: {
+    select: 'SELECT * FROM work_orders WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE work_orders SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  }
 };
 
 const VALID_ENTITY_TYPES: Set<string> = new Set(['property', 'building', 'unit', 'lease', 'contact', 'work_order']);
@@ -437,6 +455,105 @@ export class CustomFieldsService {
   }
 
   /**
+   * Prepares, validates, and serializes a custom_fields payload for database storage.
+   *
+   * Validates types and definitions, merges with existing custom fields on update,
+   * and throws VALIDATION_ERROR on violation.
+   *
+   * @param entityType - Entity domain type.
+   * @param input - Candidate custom fields value (object, JSON string, or undefined).
+   * @param existingJson - Existing serialized custom_fields JSON on update (optional).
+   * @param operatorId - Optional explicit operator context override.
+   * @returns Serialized JSON string ready for persistence.
+   */
+  public static prepareForWrite(
+    entityType: CustomFieldEntityType,
+    input?: any,
+    existingValue?: string | Record<string, any> | null,
+    operatorId?: string
+  ): string {
+    const isUpdate = existingValue !== undefined && existingValue !== null;
+
+    if (input === undefined) {
+      if (isUpdate) {
+        if (typeof existingValue === 'object') {
+          return JSON.stringify(existingValue);
+        }
+        return existingValue || '{}';
+      }
+      // On create, if undefined, validate empty object against required definitions
+      const res = CustomFieldsService.validateAndFormat(entityType, {}, operatorId);
+      if (!res.valid) {
+        const err: any = new Error(res.errors.join('; '));
+        err.code = 'VALIDATION_ERROR';
+        err.details = res.errors;
+        throw err;
+      }
+      return JSON.stringify(res.formatted);
+    }
+
+    if (input === null) {
+      if (isUpdate) {
+        const err: any = new Error('custom_fields cannot be null');
+        err.code = 'VALIDATION_ERROR';
+        throw err;
+      }
+      // On create, treat null as empty object
+      const res = CustomFieldsService.validateAndFormat(entityType, {}, operatorId);
+      if (!res.valid) {
+        const err: any = new Error(res.errors.join('; '));
+        err.code = 'VALIDATION_ERROR';
+        err.details = res.errors;
+        throw err;
+      }
+      return JSON.stringify(res.formatted);
+    }
+
+    let parsedInput: Record<string, any>;
+    if (typeof input === 'string') {
+      try {
+        parsedInput = JSON.parse(input);
+      } catch {
+        const err: any = new Error('custom_fields must be a valid JSON object');
+        err.code = 'VALIDATION_ERROR';
+        throw err;
+      }
+    } else {
+      parsedInput = input;
+    }
+
+    if (typeof parsedInput !== 'object' || parsedInput === null || Array.isArray(parsedInput)) {
+      const err: any = new Error('custom_fields must be a JSON object');
+      err.code = 'VALIDATION_ERROR';
+      throw err;
+    }
+
+    let mergedPayload: Record<string, any> = {};
+    if (isUpdate && existingValue) {
+      if (typeof existingValue === 'string') {
+        try {
+          mergedPayload = JSON.parse(existingValue);
+        } catch {
+          mergedPayload = {};
+        }
+      } else if (typeof existingValue === 'object') {
+        mergedPayload = { ...existingValue };
+      }
+    }
+
+    const finalFields = { ...mergedPayload, ...parsedInput };
+    const res = CustomFieldsService.validateAndFormat(entityType, finalFields, operatorId);
+    if (!res.valid) {
+      const err: any = new Error(res.errors.join('; '));
+      err.code = 'VALIDATION_ERROR';
+      err.details = res.errors;
+      throw err;
+    }
+
+    return JSON.stringify(res.formatted);
+  }
+
+  /**
    * Updates an entity's custom_fields JSON column after strict validation.
    *
    * @param entityType - Entity domain type.
@@ -455,13 +572,10 @@ export class CustomFieldsService {
 
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
-    const tableName = ENTITY_TABLE_MAP[entityType];
+    const sqlSet = ENTITY_SQL[entityType];
 
     // Ensure entity exists and belongs to active operator
-    const entity = db.prepare(`
-      SELECT * FROM ${tableName}
-      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).get(entityId, operatorId) as any;
+    const entity = db.prepare(sqlSet.select).get(entityId, operatorId) as any;
 
     if (!entity) {
       const err: any = new Error(`${entityType} entity not found`);
@@ -469,41 +583,20 @@ export class CustomFieldsService {
       throw err;
     }
 
-    // Merge with existing custom_fields
-    let existingCustomFields: Record<string, any> = {};
-    if (entity.custom_fields) {
-      try {
-        existingCustomFields = typeof entity.custom_fields === 'string'
-          ? JSON.parse(entity.custom_fields)
-          : entity.custom_fields;
-      } catch {
-        existingCustomFields = {};
-      }
-    }
-
-    const merged = { ...existingCustomFields, ...customFieldsPayload };
-    const validation = CustomFieldsService.validateAndFormat(entityType, merged, operatorId);
-
-    if (!validation.valid) {
-      const err: any = new Error(validation.errors.join('; '));
-      err.code = 'VALIDATION_ERROR';
-      err.details = validation.errors;
-      throw err;
-    }
+    const customFieldsJson = CustomFieldsService.prepareForWrite(
+      entityType,
+      customFieldsPayload,
+      entity.custom_fields,
+      operatorId
+    );
 
     const now = Date.now();
-    const customFieldsJson = JSON.stringify(validation.formatted);
+    db.prepare(sqlSet.update).run(customFieldsJson, now, entityId, operatorId);
 
-    db.prepare(`
-      UPDATE ${tableName}
-      SET custom_fields = ?, updated_at = ?
-      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).run(customFieldsJson, now, entityId, operatorId);
-
-    const updatedEntity = db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(entityId) as any;
+    const updatedEntity = db.prepare(sqlSet.select).get(entityId, operatorId) as any;
     return {
       entity: updatedEntity,
-      custom_fields: validation.formatted
+      custom_fields: JSON.parse(customFieldsJson)
     };
   }
 }

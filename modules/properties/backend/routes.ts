@@ -11,7 +11,7 @@ import { validateTemporalParams, parseOrderByClause } from '../../../api/query-p
 export function registerRoutes(router: Router): void {
   // --- Amenities Catalog ---
   router.get('/api/v1/amenities', (req, res) => {
-    const temporal = validateTemporalParams(req.query);
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
     if (temporal.error) {
       return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
     }
@@ -92,7 +92,7 @@ export function registerRoutes(router: Router): void {
 
   // --- Portfolios ---
   router.get('/api/v1/properties/portfolios', (req, res) => {
-    const temporal = validateTemporalParams(req.query);
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
     if (temporal.error) {
       return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
     }
@@ -179,7 +179,7 @@ export function registerRoutes(router: Router): void {
 
   // --- Units ---
   router.get('/api/v1/properties/units', (req, res) => {
-    const temporal = validateTemporalParams(req.query);
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
     if (temporal.error) {
       return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
     }
@@ -282,7 +282,7 @@ export function registerRoutes(router: Router): void {
 
   // --- Properties ---
   router.get('/api/v1/properties', (req, res) => {
-    const temporal = validateTemporalParams(req.query);
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
     if (temporal.error) {
       return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
     }
@@ -362,7 +362,7 @@ export function registerRoutes(router: Router): void {
       return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
     }
 
-    const temporal = validateTemporalParams(req.query);
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
     if (temporal.error) {
       return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
     }

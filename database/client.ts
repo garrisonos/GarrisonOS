@@ -68,26 +68,50 @@ export function closeDatabase(): void {
     }
     globalDb = null;
     currentDbPath = '';
+    transactionDepth = 0;
   }
 }
+
+let transactionDepth = 0;
 
 /**
  * Execute operations within an atomic transaction.
  * Automatically commits on success and rolls back on exception.
+ * Supports re-entrant/nested transactions via SQLite SAVEPOINT.
  */
 export function withTransaction<T>(
   fn: (db: DatabaseSync) => T,
   dbInstance?: DatabaseSync
 ): T {
   const db = dbInstance || getDatabase();
-  db.exec('BEGIN IMMEDIATE;');
+  const isTopLevel = transactionDepth === 0;
+  const savepointName = `sp_${transactionDepth}`;
+
+  if (isTopLevel) {
+    db.exec('BEGIN IMMEDIATE;');
+  } else {
+    db.exec(`SAVEPOINT ${savepointName};`);
+  }
+  transactionDepth++;
+
   try {
     const result = fn(db);
-    db.exec('COMMIT;');
+    transactionDepth--;
+    if (isTopLevel) {
+      db.exec('COMMIT;');
+    } else {
+      db.exec(`RELEASE SAVEPOINT ${savepointName};`);
+    }
     return result;
   } catch (error) {
+    transactionDepth--;
     try {
-      db.exec('ROLLBACK;');
+      if (isTopLevel) {
+        db.exec('ROLLBACK;');
+      } else {
+        db.exec(`ROLLBACK TO SAVEPOINT ${savepointName};`);
+        db.exec(`RELEASE SAVEPOINT ${savepointName};`);
+      }
     } catch {
       // Ignore rollback errors if already rolled back
     }

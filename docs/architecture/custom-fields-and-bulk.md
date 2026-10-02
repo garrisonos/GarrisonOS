@@ -23,29 +23,31 @@ Custom fields can be defined on the following entity types:
 Field definitions are operator-isolated and forward-compatible with PostgreSQL:
 
 ```sql
-CREATE TABLE custom_field_definitions (
-  id TEXT PRIMARY KEY,
-  operator_id TEXT NOT NULL REFERENCES operators(id),
-  entity_type TEXT NOT NULL,
-  field_name TEXT NOT NULL,
-  field_label TEXT NOT NULL,
-  data_type TEXT NOT NULL,
-  options_json TEXT,
-  is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  deleted_at INTEGER,
-  CONSTRAINT uq_custom_field_operator_entity_name UNIQUE (operator_id, entity_type, field_name)
+CREATE TABLE IF NOT EXISTS custom_field_definitions (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'building', 'unit', 'lease', 'contact', 'work_order')),
+    field_name TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    data_type TEXT NOT NULL CHECK (data_type IN ('string', 'number', 'boolean', 'date', 'select')),
+    options_json TEXT,
+    is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
 );
+
+CREATE INDEX IF NOT EXISTS idx_cf_defs_op_entity ON custom_field_definitions(operator_id, entity_type) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cf_defs_op_entity_name ON custom_field_definitions(operator_id, entity_type, field_name) WHERE deleted_at IS NULL;
 ```
 
 ### 1.3 Data Types and Strict Validation Rules
 
 | Data Type | Description | Strict Validation Rules |
 | :--- | :--- | :--- |
-| `string` | Freeform text value | Non-empty string; trimmed; strips null bytes. |
+| `string` | Freeform text value | Must be a valid string value. |
 | `number` | Numeric metric or measurement | Must parse to a finite floating-point or integer number; rejects `NaN` and `Infinity`. |
-| `boolean` | Binary flag | Normalized to boolean `true`/`false`. |
+| `boolean` | Binary flag | Must be a strict boolean (`true` or `false`). |
 | `date` | Strict calendar date | Must strictly conform to Gregorian `YYYY-MM-DD`. Rejects invalid calendar days (e.g. `2026-02-31`, `2026-04-31`), enforces leap year validity (`2024-02-29` allowed; `2025-02-29` and `2100-02-29` rejected). |
 | `select` | Single-choice enum from fixed set | Must match one of the pre-configured options stored in `options_json`. |
 

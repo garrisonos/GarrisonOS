@@ -65,10 +65,16 @@ function validateResourceItem(resource: string, item: any, _index: number): stri
 
   // Validate custom fields if definition entity type matches
   const entityType = RESOURCE_ENTITY_TYPE_MAP[resource];
-  if (entityType && item.custom_fields && typeof item.custom_fields === 'object') {
-    const cfValidation = CustomFieldsService.validateAndFormat(entityType, item.custom_fields);
-    if (!cfValidation.valid) {
-      errors.push(...cfValidation.errors);
+  if (entityType && item.custom_fields !== undefined) {
+    if (typeof item.custom_fields !== 'object' || item.custom_fields === null || Array.isArray(item.custom_fields)) {
+      errors.push('custom_fields must be a JSON object');
+    } else {
+      const cfValidation = CustomFieldsService.validateAndFormat(entityType, item.custom_fields);
+      if (!cfValidation.valid) {
+        errors.push(...cfValidation.errors);
+      } else {
+        item.custom_fields = cfValidation.formatted;
+      }
     }
   }
 

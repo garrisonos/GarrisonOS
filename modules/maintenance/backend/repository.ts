@@ -3,6 +3,7 @@ import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 /**
  * Maintenance work order entity.
@@ -385,9 +386,7 @@ export class MaintenanceRepository {
       data.vendor_contact_id
     );
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : '{}';
+    const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields);
 
     db.prepare(`
       INSERT INTO work_orders (
@@ -465,9 +464,7 @@ export class MaintenanceRepository {
       }
     }
 
-    const customFieldsJson = data.custom_fields !== undefined
-      ? (typeof data.custom_fields === 'string' ? data.custom_fields : JSON.stringify(data.custom_fields))
-      : (typeof existing.custom_fields === 'string' ? existing.custom_fields : JSON.stringify(existing.custom_fields || {}));
+    const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields, existing.custom_fields);
 
     db.prepare(`
       UPDATE work_orders SET

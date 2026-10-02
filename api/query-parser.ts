@@ -155,12 +155,19 @@ export function buildTemporalSqlConditions(
   const prefix = tableAlias ? `${tableAlias}.` : '';
 
   for (const [key, value] of Object.entries(temporalParams)) {
-    if (key.endsWith('_start')) {
-      const column = key.slice(0, -6);
+    const isStart = key.endsWith('_start');
+    const isEnd = key.endsWith('_end');
+    if (!isStart && !isEnd) continue;
+
+    const column = isStart ? key.slice(0, -6) : key.slice(0, -4);
+    if (!/^[a-z_]+$/.test(column)) {
+      throw new Error(`Invalid temporal column "${column}"`);
+    }
+
+    if (isStart) {
       sql += ` AND ${prefix}${column} >= ?`;
       params.push(value);
-    } else if (key.endsWith('_end')) {
-      const column = key.slice(0, -4);
+    } else {
       sql += ` AND ${prefix}${column} <= ?`;
       params.push(value);
     }

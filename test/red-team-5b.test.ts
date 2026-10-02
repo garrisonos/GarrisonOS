@@ -180,7 +180,11 @@ describe('Red Team Security & Invariant Audit - Batch 5B', () => {
             postal_code: '78701'
           },
           {
-            // Missing name, property_type, and address_line1!
+            // Passes pre-validation, but fails foreign key constraint during insertion
+            name: 'Failing FK Prop 5',
+            property_type: 'multi_family',
+            portfolio_id: '018f0000-0000-7000-8000-000000000000',
+            address_line1: '105 Fail St',
             city: 'Austin',
             state: 'TX',
             postal_code: '78701'

@@ -6,6 +6,7 @@ import { executeBulkIngestion } from '../api/bulk.js';
 import { validateTemporalParams, parseOrderByClause, buildTemporalSqlConditions } from '../api/query-parser.js';
 import { PropertiesRepository } from '../modules/properties/backend/repository.js';
 import { ContactsRepository } from '../modules/contacts/backend/repository.js';
+import { LeasesRepository } from '../modules/leases/backend/repository.js';
 import { CustomFieldsService } from '../core/custom-fields.js';
 
 describe('Bulk Ingestion & Temporal Query Conventions', () => {
@@ -119,6 +120,102 @@ describe('Bulk Ingestion & Temporal Query Conventions', () => {
         assert.throws(() => {
           executeBulkIngestion('amenities', oversized);
         }, /between 1 and 100 items/);
+      });
+    });
+
+    it('handles bulk ingestion of leases with nested transactions seamlessly', () => {
+      runInOperatorContext('op-bulk-leases', () => {
+        const prop = PropertiesRepository.createProperty({
+          name: 'Bulk Lease Prop',
+          property_type: 'multi_family',
+          address_line1: '100 Lease St',
+          city: 'Austin',
+          state: 'TX',
+          postal_code: '78701'
+        });
+        const unit1 = PropertiesRepository.createUnit({
+          property_id: prop.id,
+          unit_number: 'L-101',
+          bedrooms: 1,
+          bathrooms: 1,
+          market_rent_cents: 120000
+        });
+        const unit2 = PropertiesRepository.createUnit({
+          property_id: prop.id,
+          unit_number: 'L-102',
+          bedrooms: 2,
+          bathrooms: 2,
+          market_rent_cents: 150000
+        });
+
+        const batch = [
+          {
+            unit_id: unit1.id,
+            start_date: 1700000000000,
+            end_date: 1731536000000,
+            rent_amount_cents: 120000,
+            status: 'active'
+          },
+          {
+            unit_id: unit2.id,
+            start_date: 1700000000000,
+            end_date: 1731536000000,
+            rent_amount_cents: 150000,
+            status: 'draft'
+          }
+        ];
+
+        const result = executeBulkIngestion('leases', batch);
+        assert.equal(result.count, 2);
+        assert.equal(result.ids.length, 2);
+
+        const leases = LeasesRepository.listLeases();
+        assert.equal(leases.length, 2);
+      });
+    });
+
+    it('persists formatted and validated custom fields during bulk ingestion and rejects non-object custom_fields', () => {
+      runInOperatorContext('op-bulk-cf-persist', () => {
+        CustomFieldsService.createDefinition({
+          entity_type: 'property',
+          field_name: 'inspection_date',
+          field_label: 'Inspection Date',
+          data_type: 'date'
+        });
+
+        // 1. Reject non-object custom_fields
+        assert.throws(() => {
+          executeBulkIngestion('properties', [
+            {
+              name: 'Invalid CF Prop',
+              property_type: 'single_family',
+              address_line1: '111 Err St',
+              city: 'Austin',
+              state: 'TX',
+              postal_code: '78701',
+              custom_fields: 'not-an-object'
+            }
+          ]);
+        }, /must be a JSON object/);
+
+        // 2. Persists formatted normalized date value
+        const result = executeBulkIngestion('properties', [
+          {
+            name: 'Valid CF Prop',
+            property_type: 'single_family',
+            address_line1: '222 Good St',
+            city: 'Austin',
+            state: 'TX',
+            postal_code: '78701',
+            custom_fields: { inspection_date: '2026-05-15' }
+          }
+        ]);
+
+        assert.equal(result.count, 1);
+        const prop = PropertiesRepository.getPropertyById(result.ids[0]!);
+        assert.ok(prop);
+        const cf = typeof prop.custom_fields === 'string' ? JSON.parse(prop.custom_fields) : prop.custom_fields;
+        assert.equal(cf.inspection_date, '2026-05-15');
       });
     });
   });
