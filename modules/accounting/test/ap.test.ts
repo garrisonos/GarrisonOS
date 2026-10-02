@@ -1,0 +1,460 @@
+import { describe, it, beforeEach, after } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { createTestDb, runInOperatorContext } from '../../../test/helpers.js';
+import { closeDatabase, getDatabase } from '../../../database/client.js';
+import { generateUUIDv7 } from '../../../core/crypto.js';
+import { AccountsPayableRepository } from '../backend/ap.js';
+import { ChartOfAccountsRepository } from '../backend/chart_of_accounts.js';
+import { JournalService } from '../backend/journal.js';
+
+describe('Accounting Module - Accounts Payable (AP) Core Subsystem', () => {
+  beforeEach(() => {
+    createTestDb();
+  });
+
+  after(() => {
+    closeDatabase();
+  });
+
+  it('creates a draft bill with itemized multi-unit allocations and computes due date', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const propertyId = generateUUIDv7();
+      const unit1Id = generateUUIDv7();
+      const unit2Id = generateUUIDv7();
+      const now = Date.now();
+
+      // Seed vendor and property/units
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Apex', 'Plumber', 'Apex Plumbing Services', 'service@apexplumbing.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'Oakridge Apartments', 'multi_family', '500 Oak St', 'Dallas', 'TX', '75201', ?, ?)
+      `).run(propertyId, now, now);
+
+      db.prepare(`
+        INSERT INTO units (id, operator_id, property_id, unit_number, status, market_rent_cents, created_at, updated_at)
+        VALUES (?, 'ap-test-op', ?, '101', 'vacant', 120000, ?, ?),
+               (?, 'ap-test-op', ?, '102', 'vacant', 125000, ?, ?)
+      `).run(unit1Id, propertyId, now, now, unit2Id, propertyId, now, now);
+
+      // Resolve 5100 Repairs & Maintenance
+      const repairsAccount = ChartOfAccountsRepository.getAccountByAccountNumber('5100') ||
+        ChartOfAccountsRepository.getAccountByAccountNumber('5040') ||
+        ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const invoiceDate = 1759276800000; // 2025-10-01
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'INV-2026-001',
+        invoice_date: invoiceDate,
+        payment_terms: 'net_30',
+        total_amount_cents: 45000, // $450.00
+        tax_cents: 0,
+        allocations: [
+          {
+            property_id: propertyId,
+            unit_id: unit1Id,
+            gl_account_id: repairsAccount.id,
+            amount_cents: 25000, // $250.00
+            description: 'Fix kitchen sink leak'
+          },
+          {
+            property_id: propertyId,
+            unit_id: unit2Id,
+            gl_account_id: repairsAccount.id,
+            amount_cents: 20000, // $200.00
+            description: 'Replace bathroom faucet'
+          }
+        ]
+      });
+
+      assert.ok(bill.id);
+      assert.equal(bill.invoice_number, 'INV-2026-001');
+      assert.equal(bill.status, 'draft');
+      assert.equal(bill.total_amount_cents, 45000);
+      assert.equal(bill.due_date, invoiceDate + 30 * 86400000);
+      assert.equal(bill.allocations?.length, 2);
+    });
+  });
+
+  it('rejects bill creation when allocation sum does not equal total_amount_cents', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'City', 'Cleaners', 'City Cleaners', 'info@cleaners.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      assert.throws(() => {
+        AccountsPayableRepository.createBill({
+          vendor_id: vendorId,
+          invoice_number: 'INV-MISMATCH',
+          invoice_date: now,
+          total_amount_cents: 50000,
+          allocations: [
+            {
+              gl_account_id: expenseAccount.id,
+              amount_cents: 40000
+            }
+          ]
+        });
+      }, /must equal total_amount_cents/);
+    });
+  });
+
+  it('approves a bill and posts balanced double-entry GL accrual (Dr Expense / Cr 2010 AP)', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const propertyId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Summit', 'HVAC', 'Summit HVAC LLC', 'hvac@summit.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'Piedmont Towers', 'commercial', '100 Main St', 'Atlanta', 'GA', '30303', ?, ?)
+      `).run(propertyId, now, now);
+
+      db.prepare(`
+        INSERT INTO users (id, operator_id, email, password_hash, first_name, last_name, role, created_at, updated_at)
+        VALUES ('user-admin-1', 'ap-test-op', 'admin@example.com', 'dummy_hash', 'Admin', 'User', 'manager', ?, ?)
+      `).run(now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'HVAC-7789',
+        invoice_date: now,
+        total_amount_cents: 120000, // $1,200.00
+        allocations: [
+          {
+            property_id: propertyId,
+            gl_account_id: expenseAccount.id,
+            amount_cents: 120000,
+            description: 'Commercial chiller inspection'
+          }
+        ]
+      });
+
+      assert.equal(bill.status, 'draft');
+
+      const approved = AccountsPayableRepository.approveBill(bill.id, 'user-admin-1');
+      assert.equal(approved.status, 'approved');
+      assert.equal(approved.approved_by, 'user-admin-1');
+      assert.ok(approved.approved_at);
+
+      // Verify General Ledger entry
+      const glEntry = JournalService.listEntries({ source_type: 'bill' }).entries[0];
+      assert.ok(glEntry);
+      assert.equal(glEntry.source_id, bill.id);
+      assert.equal(glEntry.lines?.length, 2);
+
+      const expenseLine = glEntry.lines?.find((l) => l.account_id === expenseAccount.id);
+      const apLine = glEntry.lines?.find((l) => l.account_number === '2010');
+
+      assert.ok(expenseLine);
+      assert.equal(expenseLine.debit_cents, 120000);
+      assert.equal(expenseLine.credit_cents, 0);
+      assert.equal(expenseLine.property_id, propertyId);
+
+      assert.ok(apLine);
+      assert.equal(apLine.debit_cents, 0);
+      assert.equal(apLine.credit_cents, 120000);
+    });
+  });
+
+  it('voids an approved bill and reverses the General Ledger accrual', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Pest', 'Defense', 'Pest Defense Co', 'contact@pestdefense.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'PEST-001',
+        invoice_date: now,
+        total_amount_cents: 15000,
+        allocations: [
+          {
+            gl_account_id: expenseAccount.id,
+            amount_cents: 15000,
+            description: 'Quarterly extermination'
+          }
+        ]
+      });
+
+      AccountsPayableRepository.approveBill(bill.id, 'admin-1');
+
+      // Void bill
+      const voided = AccountsPayableRepository.voidBill(bill.id, 'Duplicate invoice');
+      assert.equal(voided.status, 'voided');
+
+      // Verify GL reversal
+      const allEntries = JournalService.listEntries({ source_type: 'bill' }).entries;
+      const originalEntry = allEntries.find((e) => e.source_id === bill.id && e.reversed_by_entry_id !== null);
+      assert.ok(originalEntry);
+      assert.ok(originalEntry.reversed_by_entry_id);
+    });
+  });
+
+  it('creates and runs recurring scheduled bills', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const propertyId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Waste', 'Management', 'Waste Management Corp', 'billing@wm.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'Oakridge Apartments', 'multi_family', '500 Oak St', 'Dallas', 'TX', '75201', ?, ?)
+      `).run(propertyId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const recurring = AccountsPayableRepository.createRecurringBill({
+        vendor_id: vendorId,
+        template_reference: 'Monthly Trash Service',
+        start_date: now - 1000,
+        interval_unit: 'month',
+        interval_count: 1,
+        total_occurrences: 12,
+        invoice_amount_cents: 35000,
+        allocations: [
+          {
+            property_id: propertyId,
+            gl_account_id: expenseAccount.id,
+            amount_cents: 35000,
+            description: 'Dumpster service monthly fee'
+          }
+        ]
+      });
+
+      assert.ok(recurring.id);
+      assert.equal(recurring.remaining_occurrences, 12);
+
+      // Run due recurring bills pass
+      const generated = AccountsPayableRepository.generateDueRecurringBills(now);
+      assert.equal(generated.length, 1);
+      assert.equal(generated[0]!.total_amount_cents, 35000);
+      assert.equal(generated[0]!.vendor_id, vendorId);
+
+      // Verify schedule advanced
+      const updatedRecurring = AccountsPayableRepository.listRecurringBills()[0];
+      assert.ok(updatedRecurring);
+      assert.equal(updatedRecurring.remaining_occurrences, 11);
+      assert.ok(updatedRecurring.next_run_date > now);
+    });
+  });
+
+  it('splits Accounts Payable (2010) credit lines per property allocation to balance property trial balances', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const propAId = generateUUIDv7();
+      const propBId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Citywide', 'Security', 'Citywide Security LLC', 'billing@citywide.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'Property A', 'multi_family', '100 Main St', 'Dallas', 'TX', '75201', ?, ?),
+               (?, 'ap-test-op', 'Property B', 'multi_family', '200 Main St', 'Dallas', 'TX', '75201', ?, ?)
+      `).run(propAId, now, now, propBId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'SPLIT-001',
+        invoice_date: now,
+        total_amount_cents: 35000, // $350.00 split: $200.00 Prop A, $150.00 Prop B
+        allocations: [
+          { property_id: propAId, gl_account_id: expenseAccount.id, amount_cents: 20000, description: 'Prop A Security' },
+          { property_id: propBId, gl_account_id: expenseAccount.id, amount_cents: 15000, description: 'Prop B Security' }
+        ]
+      });
+
+      AccountsPayableRepository.approveBill(bill.id, 'admin-user');
+
+      const entry = JournalService.listEntries({ source_type: 'bill' }).entries.find((e) => e.source_id === bill.id);
+      assert.ok(entry);
+      assert.ok(entry.lines);
+
+      // Verify AP 2010 credit lines are split per property
+      const apCreditLines = entry.lines.filter((l) => l.account_number === '2010' && l.credit_cents > 0);
+      assert.equal(apCreditLines.length, 2);
+
+      const propACredit = apCreditLines.find((l) => l.property_id === propAId);
+      const propBCredit = apCreditLines.find((l) => l.property_id === propBId);
+
+      assert.ok(propACredit);
+      assert.equal(propACredit.credit_cents, 20000);
+
+      assert.ok(propBCredit);
+      assert.equal(propBCredit.credit_cents, 15000);
+    });
+  });
+
+  it('preserves existing due_date on partial bill updates and validates operator ownership', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const foreignVendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO operators (id, name, created_at, updated_at)
+        VALUES ('foreign-op', 'Foreign Operator', ?, ?)
+      `).run(now, now);
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Local', 'HVAC', 'Local HVAC', 'hvac@local.com', ?, ?),
+               (?, 'foreign-op', 'vendor', 'Foreign', 'HVAC', 'Foreign HVAC', 'hvac@foreign.com', ?, ?)
+      `).run(vendorId, now, now, foreignVendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'HVAC-100',
+        invoice_date: now,
+        payment_terms: 'net_60',
+        total_amount_cents: 50000,
+        allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 50000 }]
+      });
+
+      const originalDueDate = bill.due_date;
+      assert.equal(originalDueDate, now + 60 * 86400000);
+
+      // Update only notes (no invoice_date or payment_terms change)
+      const updated = AccountsPayableRepository.updateBill(bill.id, {
+        notes: 'Updated invoice notes'
+      });
+      assert.equal(updated.due_date, originalDueDate);
+      assert.equal(updated.notes, 'Updated invoice notes');
+
+      // Attempting to update vendor_id to a foreign operator's vendor must be rejected
+      assert.throws(() => {
+        AccountsPayableRepository.updateBill(bill.id, {
+          vendor_id: foreignVendorId
+        });
+      }, /not found or unauthorized/i);
+    });
+  });
+
+  it('validates recurring bill intervals and isolates failures during scheduled batch execution', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Safe', 'Pest', 'Safe Pest Control', 'billing@safepest.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      // Invalid interval_count <= 0
+      assert.throws(() => {
+        AccountsPayableRepository.createRecurringBill({
+          vendor_id: vendorId,
+          template_reference: 'Invalid recurring',
+          start_date: now,
+          interval_unit: 'month',
+          interval_count: 0,
+          invoice_amount_cents: 10000,
+          allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 10000 }]
+        });
+      }, /interval_count must be a positive integer/i);
+
+      // Create a valid recurring schedule
+      const recurring = AccountsPayableRepository.createRecurringBill({
+        vendor_id: vendorId,
+        template_reference: 'Pest Control',
+        start_date: now - 5000,
+        interval_unit: 'month',
+        interval_count: 1,
+        total_occurrences: 6,
+        invoice_amount_cents: 12000,
+        allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 12000 }]
+      });
+
+      // Create a second recurring schedule whose vendor will be soft-deleted before execution
+      const failingVendorId = generateUUIDv7();
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Deactivated', 'Vendor', 'Deactivated Vendor Inc', 'deact@vendor.com', ?, ?)
+      `).run(failingVendorId, now, now);
+
+      const corruptedId = generateUUIDv7();
+      db.prepare(`
+        INSERT INTO recurring_bills (
+          id, operator_id, vendor_id, template_reference, start_date, next_run_date,
+          interval_unit, interval_count, total_occurrences, remaining_occurrences,
+          allocations_template_json, created_at, deleted_at
+        ) VALUES (
+          ?, 'ap-test-op', ?, 'Broken Schedule', ?, ?,
+          'month', 1, 6, 6,
+          ?, ?, NULL
+        )
+      `).run(
+        corruptedId,
+        failingVendorId,
+        now - 5000,
+        now - 5000,
+        JSON.stringify([{ gl_account_id: expenseAccount.id, amount_cents: 10000 }]),
+        now
+      );
+
+      // Soft delete the second vendor so createBill fails during the batch run
+      db.prepare(`
+        UPDATE contacts SET deleted_at = ? WHERE id = ?
+      `).run(now, failingVendorId);
+
+      // Execute generation run
+      const generated = AccountsPayableRepository.generateDueRecurringBills(now);
+
+      // The valid schedule should succeed
+      assert.equal(generated.length, 1);
+      assert.equal(generated[0]!.vendor_id, vendorId);
+
+      // The failures property should record the broken schedule
+      assert.ok(generated.failures);
+      assert.equal(generated.failures.length, 1);
+      assert.equal(generated.failures[0]!.recurring_id, corruptedId);
+    });
+  });
+});

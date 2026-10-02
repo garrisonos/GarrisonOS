@@ -1,4 +1,5 @@
 import { ServerResponse } from 'node:http';
+import { getDatabase } from '../../../database/client.js';
 import { Router, ApiRequest } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
 import { requirePermission, requirePortfolioAccess } from '../../../api/middleware.js';
@@ -10,6 +11,11 @@ import { JournalService } from './journal.js';
 import { RequestContext } from '../../../core/context.js';
 import { canAccessPortfolio } from '../../../core/rbac.js';
 import { ClientAccountingRepository } from './client_accounting.js';
+import { AccountsPayableRepository } from './ap.js';
+import { VendorCreditsRepository } from './vendor_credits.js';
+import { VendorChecksRepository } from './checks.js';
+import { BankDepositsRepository } from './bank_deposits.js';
+import { generateCheckPdf } from '../../../web/lib/pdf.js';
 
 /**
  * Strict integer query parameter parser that validates bounds and rejects NaN.
@@ -837,4 +843,557 @@ export function registerRoutes(router: Router): void {
       errorResponse(res, 'POSTING_FAILED', err.message, 400);
     }
   });
+
+  /**
+   * Verifies whether a subuser is authorized to access all portfolios allocated to a bill.
+   */
+  function canAccessBillPortfolios(bill: any, userId: string, operatorId: string): boolean {
+    if (!bill || !bill.allocations || !Array.isArray(bill.allocations) || bill.allocations.length === 0) {
+      return true;
+    }
+    for (const alloc of bill.allocations) {
+      if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Verifies whether a subuser is authorized to access all portfolios linked to a vendor check.
+   */
+  function canAccessCheckPortfolios(check: any, userId: string, operatorId: string): boolean {
+    if (!check || !check.allocations || !Array.isArray(check.allocations) || check.allocations.length === 0) {
+      return true;
+    }
+    for (const alloc of check.allocations) {
+      const bill = AccountsPayableRepository.getBillById(alloc.bill_id);
+      if (bill && !canAccessBillPortfolios(bill, userId, operatorId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // ==========================================
+  // Accounts Payable (AP): Vendor Bills
+  // ==========================================
+
+  router.getBatchSafe('/api/v1/accounting/bills', requirePermission('accounting:view'), (req, res) => {
+    let dueStart: number | undefined;
+    let dueEnd: number | undefined;
+    let invStart: number | undefined;
+    let invEnd: number | undefined;
+
+    if (req.query.due_date_start !== undefined) {
+      const p = parseIntegerParam(req, res, 'due_date_start', { min: 1 });
+      if (p.hasError) return;
+      dueStart = p.value;
+    }
+    if (req.query.due_date_end !== undefined) {
+      const p = parseIntegerParam(req, res, 'due_date_end', { min: 1 });
+      if (p.hasError) return;
+      dueEnd = p.value;
+    }
+    if (req.query.invoice_date_start !== undefined) {
+      const p = parseIntegerParam(req, res, 'invoice_date_start', { min: 1 });
+      if (p.hasError) return;
+      invStart = p.value;
+    }
+    if (req.query.invoice_date_end !== undefined) {
+      const p = parseIntegerParam(req, res, 'invoice_date_end', { min: 1 });
+      if (p.hasError) return;
+      invEnd = p.value;
+    }
+
+    const limitParsed = parseIntegerParam(req, res, 'limit', { defaultValue: 50, min: 1, max: 200 });
+    if (limitParsed.hasError) return;
+    const offsetParsed = parseIntegerParam(req, res, 'offset', { defaultValue: 0, min: 0 });
+    if (offsetParsed.hasError) return;
+
+    try {
+      const result = AccountsPayableRepository.listBills({
+        status: req.query.status as any,
+        vendor_id: req.query.vendor_id,
+        property_id: req.query.property_id,
+        portfolio_id: req.query.portfolio_id,
+        due_date_start: dueStart,
+        due_date_end: dueEnd,
+        invoice_date_start: invStart,
+        invoice_date_end: invEnd,
+        limit: limitParsed.value,
+        offset: offsetParsed.value
+      });
+
+      let bills = result.bills;
+      const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+      const operatorId = RequestContext.getOperatorId();
+      if (userId && userId !== 'system') {
+        bills = bills.filter((b) => canAccessBillPortfolios(b, userId, operatorId));
+      }
+
+      successResponse(res, bills, 200, {
+        total: userId && userId !== 'system' ? bills.length : result.total,
+        page: Math.floor((offsetParsed.value || 0) / (limitParsed.value || 50)) + 1,
+        limit: limitParsed.value || 50
+      });
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/bills', requirePermission('accounting:transact'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.allocations)) {
+      for (const alloc of req.body.allocations) {
+        if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
+    try {
+      const bill = AccountsPayableRepository.createBill(req.body);
+      successResponse(res, bill, 201);
+    } catch (err: any) {
+      errorResponse(res, 'VALIDATION_ERROR', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/bills/:id', requirePermission('accounting:view'), (req, res) => {
+    const bill = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!bill) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    successResponse(res, bill);
+  });
+
+  router.put('/api/v1/accounting/bills/:id', requirePermission('accounting:transact'), (req, res) => {
+    const existing = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!existing) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system') {
+      if (!canAccessBillPortfolios(existing, userId, operatorId)) {
+        return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+      }
+      if (Array.isArray(req.body?.allocations)) {
+        for (const alloc of req.body.allocations) {
+          if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+            return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+          }
+        }
+      }
+    }
+    try {
+      const updated = AccountsPayableRepository.updateBill(req.params.id!, req.body);
+      successResponse(res, updated);
+    } catch (err: any) {
+      errorResponse(res, 'UPDATE_FAILED', err.message, 400);
+    }
+  });
+
+  router.post('/api/v1/accounting/bills/:id/approve', requirePermission('accounting:disburse'), (req, res) => {
+    const bill = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!bill) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId || 'system';
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    try {
+      const approved = AccountsPayableRepository.approveBill(req.params.id!, userId);
+      successResponse(res, approved);
+    } catch (err: any) {
+      errorResponse(res, 'APPROVAL_FAILED', err.message, 400);
+    }
+  });
+
+  router.post('/api/v1/accounting/bills/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    const bill = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!bill) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    try {
+      const voided = AccountsPayableRepository.voidBill(req.params.id!, req.body?.reason);
+      successResponse(res, voided);
+    } catch (err: any) {
+      errorResponse(res, 'VOID_FAILED', err.message, 400);
+    }
+  });
+
+  // Recurring Bills
+  router.get('/api/v1/accounting/recurring_bills', requirePermission('accounting:view'), (_req, res) => {
+    try {
+      const list = AccountsPayableRepository.listRecurringBills();
+      successResponse(res, list);
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/recurring_bills', requirePermission('accounting:manage'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.allocations)) {
+      for (const alloc of req.body.allocations) {
+        if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
+    try {
+      const created = AccountsPayableRepository.createRecurringBill(req.body);
+      successResponse(res, created, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.post('/api/v1/accounting/recurring_bills/run', requirePermission('accounting:manage'), (req, res) => {
+    let asOf: number | undefined;
+    if (req.body?.as_of !== undefined) {
+      const parsed = Number(req.body.as_of);
+      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        return errorResponse(res, 'VALIDATION_ERROR', 'as_of must be a positive integer millisecond timestamp', 400);
+      }
+      asOf = parsed;
+    }
+    try {
+      const generated = AccountsPayableRepository.generateDueRecurringBills(asOf);
+      const failures = (generated as any).failures || [];
+      successResponse(res, { count: generated.length, bills: generated, failures });
+    } catch (err: any) {
+      errorResponse(res, 'EXECUTION_FAILED', err.message, 500);
+    }
+  });
+
+  // ==========================================
+  // Vendor Credit Memos & Bill Offsets
+  // ==========================================
+
+  router.getBatchSafe('/api/v1/accounting/vendor_credits', requirePermission('accounting:view'), (req, res) => {
+    const limitParsed = parseIntegerParam(req, res, 'limit', { defaultValue: 50, min: 1, max: 200 });
+    if (limitParsed.hasError) return;
+    const offsetParsed = parseIntegerParam(req, res, 'offset', { defaultValue: 0, min: 0 });
+    if (offsetParsed.hasError) return;
+
+    try {
+      const result = VendorCreditsRepository.listCredits({
+        vendor_id: req.query.vendor_id,
+        status: req.query.status as any,
+        limit: limitParsed.value,
+        offset: offsetParsed.value
+      });
+
+      successResponse(res, result.credits, 200, {
+        total: result.total,
+        page: Math.floor((offsetParsed.value || 0) / (limitParsed.value || 50)) + 1,
+        limit: limitParsed.value || 50
+      });
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/vendor_credits', requirePermission('accounting:transact'), (req, res) => {
+    try {
+      const credit = VendorCreditsRepository.createCredit(req.body);
+      successResponse(res, credit, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/vendor_credits/:id', requirePermission('accounting:view'), (req, res) => {
+    const credit = VendorCreditsRepository.getCreditById(req.params.id!);
+    if (!credit) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor credit not found', 404);
+    }
+    successResponse(res, credit);
+  });
+
+  router.post('/api/v1/accounting/vendor_credits/:id/apply', requirePermission('accounting:transact'), (req, res) => {
+    const { bill_id, amount_cents } = req.body || {};
+    if (!bill_id || !Number.isSafeInteger(amount_cents) || amount_cents <= 0) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'bill_id and a positive integer amount_cents are required', 400);
+    }
+    const targetBill = AccountsPayableRepository.getBillById(bill_id);
+    if (!targetBill) {
+      return errorResponse(res, 'NOT_FOUND', 'Target bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(targetBill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    try {
+      const updated = VendorCreditsRepository.applyCredit(req.params.id!, bill_id, amount_cents);
+      successResponse(res, updated);
+    } catch (err: any) {
+      errorResponse(res, 'APPLY_FAILED', err.message, 400);
+    }
+  });
+
+  router.post('/api/v1/accounting/vendor_credits/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    try {
+      const voided = VendorCreditsRepository.voidCredit(req.params.id!, req.body?.reason);
+      successResponse(res, voided);
+    } catch (err: any) {
+      errorResponse(res, 'VOID_FAILED', err.message, 400);
+    }
+  });
+
+  // ==========================================
+  // Vendor Check Register & PDF Check Printing
+  // ==========================================
+
+  router.getBatchSafe('/api/v1/accounting/checks', requirePermission('accounting:view'), (req, res) => {
+    let start: number | undefined;
+    let end: number | undefined;
+    if (req.query.check_date_start !== undefined) {
+      const p = parseIntegerParam(req, res, 'check_date_start', { min: 1 });
+      if (p.hasError) return;
+      start = p.value;
+    }
+    if (req.query.check_date_end !== undefined) {
+      const p = parseIntegerParam(req, res, 'check_date_end', { min: 1 });
+      if (p.hasError) return;
+      end = p.value;
+    }
+
+    const limitParsed = parseIntegerParam(req, res, 'limit', { defaultValue: 50, min: 1, max: 200 });
+    if (limitParsed.hasError) return;
+    const offsetParsed = parseIntegerParam(req, res, 'offset', { defaultValue: 0, min: 0 });
+    if (offsetParsed.hasError) return;
+
+    try {
+      const result = VendorChecksRepository.listChecks({
+        bank_account_id: req.query.bank_account_id,
+        vendor_id: req.query.vendor_id,
+        status: req.query.status as any,
+        check_date_start: start,
+        check_date_end: end,
+        limit: limitParsed.value,
+        offset: offsetParsed.value
+      });
+
+      successResponse(res, result.checks, 200, {
+        total: result.total,
+        page: Math.floor((offsetParsed.value || 0) / (limitParsed.value || 50)) + 1,
+        limit: limitParsed.value || 50
+      });
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/checks', requirePermission('accounting:disburse'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.bill_allocations)) {
+      for (const item of req.body.bill_allocations) {
+        const b = AccountsPayableRepository.getBillById(item.bill_id);
+        if (b && !canAccessBillPortfolios(b, userId, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
+    try {
+      const check = VendorChecksRepository.issueCheck(req.body);
+      successResponse(res, check, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/checks/:id', requirePermission('accounting:view'), (req, res) => {
+    const check = VendorChecksRepository.getCheckById(req.params.id!);
+    if (!check) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    successResponse(res, check);
+  });
+
+  router.get('/api/v1/accounting/checks/:id/pdf', requirePermission('accounting:view'), (req, res) => {
+    const check = VendorChecksRepository.getCheckById(req.params.id!);
+    if (!check) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+
+    const db = getDatabase();
+    const opRow = db.prepare('SELECT name FROM operators WHERE id = ? AND deleted_at IS NULL').get(operatorId) as { name: string } | undefined;
+
+    const payerName = (typeof req.query['payer_name'] === 'string' && req.query['payer_name'].trim()) || opRow?.name;
+    const payerAddress = typeof req.query['payer_address'] === 'string' && req.query['payer_address'].trim();
+    const bankRouting = (typeof req.query['bank_routing'] === 'string' && req.query['bank_routing'].trim()) ||
+                        (typeof req.query['routing_number'] === 'string' && req.query['routing_number'].trim());
+    const bankAccountNumber = (typeof req.query['bank_account_number'] === 'string' && req.query['bank_account_number'].trim()) ||
+                              (typeof req.query['account_number'] === 'string' && req.query['account_number'].trim());
+
+    if (!payerName || !payerAddress || !bankRouting || !bankAccountNumber) {
+      return errorResponse(
+        res,
+        'VALIDATION_ERROR',
+        'Check printing requires payer_address, bank_routing, and bank_account_number query parameters',
+        400
+      );
+    }
+
+    try {
+      const checkDateStr = new Date(check.check_date).toISOString().slice(0, 10);
+      const billsData = (check.allocations || []).map((a) => ({
+        invoice_number: a.invoice_number || 'N/A',
+        invoice_date: a.invoice_date ? new Date(a.invoice_date).toISOString().slice(0, 10) : checkDateStr,
+        amount_cents: a.total_amount_cents || a.allocated_amount_cents,
+        allocated_cents: a.allocated_amount_cents,
+        description: `Bill ${a.invoice_number || ''}`
+      }));
+
+      const pdfBuffer = generateCheckPdf({
+        check_number: check.check_number,
+        check_date: checkDateStr,
+        amount_cents: check.amount_cents,
+        payee_name: check.payee_name,
+        memo: check.memo,
+        bank_name: check.bank_account_name || 'Operating Checking',
+        bank_routing: bankRouting,
+        bank_account_number: bankAccountNumber,
+        payer_name: payerName,
+        payer_address: payerAddress,
+        bills: billsData
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="check-${check.check_number}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_GENERATION_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/checks/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    const check = VendorChecksRepository.getCheckById(req.params.id!);
+    if (!check) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+    try {
+      const voided = VendorChecksRepository.voidCheck(req.params.id!, req.body?.reason);
+      successResponse(res, voided);
+    } catch (err: any) {
+      errorResponse(res, 'VOID_FAILED', err.message, 400);
+    }
+  });
+
+  // ==========================================
+  // Bank Deposits & Batched Clearing
+  // ==========================================
+
+  router.get('/api/v1/accounting/deposits/undeposited', requirePermission('accounting:view'), (_req, res) => {
+    try {
+      const items = BankDepositsRepository.listUndepositedReceipts();
+      successResponse(res, { items, count: items.length });
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.getBatchSafe('/api/v1/accounting/deposits', requirePermission('accounting:view'), (req, res) => {
+    let start: number | undefined;
+    let end: number | undefined;
+    if (req.query.deposit_date_start !== undefined) {
+      const p = parseIntegerParam(req, res, 'deposit_date_start', { min: 1 });
+      if (p.hasError) return;
+      start = p.value;
+    }
+    if (req.query.deposit_date_end !== undefined) {
+      const p = parseIntegerParam(req, res, 'deposit_date_end', { min: 1 });
+      if (p.hasError) return;
+      end = p.value;
+    }
+
+    const limitParsed = parseIntegerParam(req, res, 'limit', { defaultValue: 50, min: 1, max: 200 });
+    if (limitParsed.hasError) return;
+    const offsetParsed = parseIntegerParam(req, res, 'offset', { defaultValue: 0, min: 0 });
+    if (offsetParsed.hasError) return;
+
+    try {
+      const result = BankDepositsRepository.listDeposits({
+        bank_account_id: req.query.bank_account_id,
+        status: req.query.status as any,
+        deposit_date_start: start,
+        deposit_date_end: end,
+        limit: limitParsed.value,
+        offset: offsetParsed.value
+      });
+
+      successResponse(res, result.deposits, 200, {
+        total: result.total,
+        page: Math.floor((offsetParsed.value || 0) / (limitParsed.value || 50)) + 1,
+        limit: limitParsed.value || 50
+      });
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  });
+
+  router.post('/api/v1/accounting/deposits', requirePermission('accounting:reconcile'), (req, res) => {
+    try {
+      const deposit = BankDepositsRepository.createDeposit(req.body);
+      successResponse(res, deposit, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/accounting/deposits/:id', requirePermission('accounting:view'), (req, res) => {
+    const deposit = BankDepositsRepository.getDepositById(req.params.id!);
+    if (!deposit) {
+      return errorResponse(res, 'NOT_FOUND', 'Bank deposit not found', 404);
+    }
+    successResponse(res, deposit);
+  });
+
+  router.post('/api/v1/accounting/deposits/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    try {
+      const voided = BankDepositsRepository.voidDeposit(req.params.id!, req.body?.reason);
+      successResponse(res, voided);
+    } catch (err: any) {
+      errorResponse(res, 'VOID_FAILED', err.message, 400);
+    }
+  });
 }
+

@@ -188,19 +188,26 @@ All JSON responses conform to standardized envelopes:
 * `POST /api/v1/accounting/bills`: Create vendor bill with split property/unit allocations
 * `GET /api/v1/accounting/bills/:id`: Get bill details and allocation line items
 * `PUT /api/v1/accounting/bills/:id`: Update draft bill
-* `POST /api/v1/accounting/bills/:id/approve`: Approve bill for disbursement
+* `POST /api/v1/accounting/bills/:id/approve`: Approve bill for disbursement and post GL accrual
 * `POST /api/v1/accounting/bills/:id/void`: Void bill and reverse journal allocations
-* `GET /api/v1/accounting/bills/recurring`: List scheduled recurring bill templates
-* `POST /api/v1/accounting/bills/recurring`: Create recurring bill template
-* `GET /api/v1/accounting/vendor_checks`: List printed and draft vendor checks from register
-* `POST /api/v1/accounting/vendor_checks`: Record paper check payment settling one or more bills
-* `GET /api/v1/accounting/vendor_checks/:id`: Get check details and bill settlements
-* `POST /api/v1/accounting/vendor_checks/:id/void`: Void check and restore unpaid bill balances
+* `GET /api/v1/accounting/recurring_bills`: List scheduled recurring bill templates
+* `POST /api/v1/accounting/recurring_bills`: Create recurring bill template
+* `POST /api/v1/accounting/recurring_bills/run`: Trigger generation pass for due recurring bills
+* `GET /api/v1/accounting/checks`: List printed and draft vendor checks from register
+* `POST /api/v1/accounting/checks`: Record paper check payment settling one or more bills
+* `GET /api/v1/accounting/checks/:id`: Get check details and bill settlements
+* `GET /api/v1/accounting/checks/:id/pdf`: Generate zero-dependency ANSI X9.100-140 check PDF with MICR line and remittance vouchers
+* `POST /api/v1/accounting/checks/:id/void`: Void check, reopen bills, and reverse GL payment
 * `GET /api/v1/accounting/vendor_credits`: List vendor credit memos
 * `POST /api/v1/accounting/vendor_credits`: Record vendor credit memo / refund
+* `GET /api/v1/accounting/vendor_credits/:id`: Get credit memo details and applied bill allocations
 * `POST /api/v1/accounting/vendor_credits/:id/apply`: Apply credit memo balance against open vendor bills
-* `GET /api/v1/accounting/bank_deposits`: List bank deposit batches
-* `POST /api/v1/accounting/bank_deposits`: Create bank deposit grouping payments into bank clearing account
+* `POST /api/v1/accounting/vendor_credits/:id/void`: Void unapplied credit memo and reverse GL adjustment
+* `GET /api/v1/accounting/deposits/undeposited`: List receipts in Account 1030 Undeposited Funds awaiting batch clearing
+* `GET /api/v1/accounting/deposits`: List batched bank deposits
+* `POST /api/v1/accounting/deposits`: Create bank deposit grouping payments into bank clearing account
+* `GET /api/v1/accounting/deposits/:id`: Get bank deposit details and itemized receipts
+* `POST /api/v1/accounting/deposits/:id/void`: Void deposit slip, return receipts to undeposited pool, and reverse GL clearing
 * `GET /api/v1/accounting/client_contributions`: List client owner capital contributions
 * `POST /api/v1/accounting/client_contributions`: Record investor/owner capital infusion
 * `GET /api/v1/accounting/client_distributions`: List client owner draw disbursements
