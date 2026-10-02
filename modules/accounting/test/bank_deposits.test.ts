@@ -129,4 +129,54 @@ describe('Accounting Module - Bank Deposits & Batched Clearing', () => {
       assert.ok(originalEntry!.reversed_by_entry_id);
     });
   });
+
+  it('excludes reversal entries from undeposited receipts pool and enforces non-empty receipts', () => {
+    runInOperatorContext('deposit-test-op', () => {
+      const now = Date.now();
+      const bankAccount = ChartOfAccountsRepository.getAccountByAccountNumber('1010')!;
+      const undepositedAccount = ChartOfAccountsRepository.getAccountByAccountNumber('1030')!;
+      const rentIncomeAccount = ChartOfAccountsRepository.getAccountByAccountNumber('4010')!;
+
+      // Enforce non-empty receipt_entry_ids
+      assert.throws(() => {
+        BankDepositsRepository.createDeposit({
+          bank_account_id: bankAccount.id,
+          deposit_date: now,
+          deposit_reference: 'DEP-EMPTY',
+          receipt_entry_ids: []
+        });
+      }, /receipt_entry_ids must include at least one undeposited receipt/i);
+
+      // Post a journal entry with source_type 'reversal' affecting account 1030
+      JournalService.postEntry({
+        date_ms: now,
+        memo: 'Reversal Entry',
+        source_type: 'reversal',
+        lines: [
+          { account_id: undepositedAccount.id, debit_cents: 50000, credit_cents: 0 },
+          { account_id: rentIncomeAccount.id, debit_cents: 0, credit_cents: 50000 }
+        ]
+      });
+
+      // Post a legitimate tenant payment
+      const legitimateEntry = JournalService.postEntry({
+        date_ms: now,
+        memo: 'Legitimate Payment',
+        source_type: 'tenant_payment',
+        lines: [
+          { account_id: undepositedAccount.id, debit_cents: 75000, credit_cents: 0 },
+          { account_id: rentIncomeAccount.id, debit_cents: 0, credit_cents: 75000 }
+        ]
+      });
+
+      // listUndepositedReceipts must include only the legitimate payment, not the reversal
+      const receipts = BankDepositsRepository.listUndepositedReceipts();
+      const reversalInReceipts = receipts.some((r) => r.source_type === 'reversal');
+      assert.equal(reversalInReceipts, false);
+
+      const foundLegitimate = receipts.find((r) => r.journal_entry_id === legitimateEntry.id);
+      assert.ok(foundLegitimate);
+      assert.equal(foundLegitimate.amount_cents, 75000);
+    });
+  });
 });

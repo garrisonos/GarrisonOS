@@ -10,14 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sprint 5 Foundational MVP — Batch 5A: Accounts Payable, Check Printing, Vendor Credits & Bank Deposits**:
   - **Task 28 (Accounts Payable Core Subsystem)**:
     - Added database migration `0006_accounts_payable_and_banking.sql` establishing schema for `bills`, `bill_allocations`, and `recurring_bills`.
-    - Implemented `AccountsPayableRepository` with full lifecycle management: draft creation, multi-unit split allocations, approval workflow, balanced double-entry accrual GL posting (Dr Expense / Cr 2010 Accounts Payable), voiding with automatic GL reversal, and recurring bill interval scheduling (`computeNextIntervalDate`, `runRecurringBills`).
+    - Implemented `AccountsPayableRepository` with full lifecycle management: draft creation, multi-unit split allocations, approval workflow, balanced double-entry accrual GL posting (Dr Expense / Cr 2010 Accounts Payable), voiding with automatic GL reversal, and recurring bill interval scheduling (`computeNextIntervalDate`, `generateDueRecurringBills`).
   - **Task 29 (Vendor Credit Memos & Bill Offsets)**:
     - Added schema for `vendor_credits` and `vendor_credit_allocations`.
     - Implemented `VendorCreditsRepository` supporting credit memo issuance with GL adjusting entries (Dr 2010 Accounts Payable / Cr Expense), atomic application to offset approved open bills, cross-vendor validation invariants, and voiding with GL entry reversal.
   - **Task 30 (Check Register & Zero-Dependency PDF Check Printing)**:
     - Added schema for `vendor_checks` and `vendor_check_allocations`.
-    - Implemented `VendorChecksRepository` managing check issuance with sequential check number uniqueness per bank account, multi-bill settlement, GL disbursement posting (Dr 2010 AP / Cr 1010 Bank), and voiding with automatic bill balance restoration and GL reversal.
-    - Created `web/lib/pdf.ts`: zero-dependency pure Node.js PDF 1.4 document generator rendering ANSI X9.100-140 standard 3-up check stock with top check, middle voucher, bottom remittance stub, MICR E-13B transit line, legal English amount words formatting, and micro-border styling.
+    - Implemented `VendorChecksRepository` managing check issuance with check number uniqueness per bank account, multi-bill settlement, GL disbursement posting (Dr 2010 AP / Cr 1010 Bank), and voiding with automatic bill balance restoration and GL reversal.
+    - Created `web/lib/pdf.ts`: zero-dependency pure Node.js PDF 1.4 document generator rendering ANSI X9.100-140 standard 3-up check stock with top check, middle voucher, bottom remittance stub, MICR transit line formatted in Courier-Bold, legal English amount words formatting, and micro-border styling.
   - **Task 31 (Bank Deposits & Batched Clearing for Three-Way Reconciliation)**:
     - Added Chart of Accounts entry `1030 Undeposited Funds` and schemas for `bank_deposits` and `bank_deposit_lines`.
     - Implemented `BankDepositsRepository` enabling querying undeposited receipts, grouping multiple checks and payments into single bank deposit batches, consolidated GL clearing entry posting (Dr Bank Account / Cr 1030 Undeposited Funds), and deposit voiding returning receipts to the undeposited pool.

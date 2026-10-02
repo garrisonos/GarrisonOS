@@ -69,7 +69,6 @@ export interface CreateBankDepositInput {
   deposit_reference?: string | null;
   memo?: string | null;
   receipt_entry_ids: string[];
-  custom_amount_cents?: number;
 }
 
 /**
@@ -158,49 +157,48 @@ export class BankDepositsRepository {
     let totalCents = 0;
     const validatedReceipts: { entry_id: string; amount_cents: number; property_id?: string | null }[] = [];
 
-    if (input.receipt_entry_ids && input.receipt_entry_ids.length > 0) {
-      const seenReceiptIds = new Set<string>();
-      for (const entryId of input.receipt_entry_ids) {
-        if (seenReceiptIds.has(entryId)) {
-          throw new Error(`Duplicate receipt entry "${entryId}" in deposit batch.`);
-        }
-        seenReceiptIds.add(entryId);
-        // Fetch debit amount to 1030
-        const lineRow = db.prepare(`
-          SELECT jl.debit_cents, jl.property_id
-          FROM journal_lines jl
-          JOIN journal_entries je ON jl.journal_entry_id = je.id
-          WHERE jl.operator_id = ? AND jl.journal_entry_id = ? AND jl.account_id = ?
-            AND je.reversed_by_entry_id IS NULL AND je.deleted_at IS NULL
-        `).get(operatorId, entryId, undepositedAccount.id) as { debit_cents: number; property_id?: string | null } | undefined;
+    if (!input.receipt_entry_ids || !Array.isArray(input.receipt_entry_ids) || input.receipt_entry_ids.length === 0) {
+      throw new Error('receipt_entry_ids must include at least one undeposited receipt.');
+    }
 
-        if (!lineRow || lineRow.debit_cents <= 0) {
-          throw new Error(`Receipt entry "${entryId}" does not have an active undeposited balance.`);
-        }
-
-        // Check if already deposited
-        const existingDeposit = db.prepare(`
-          SELECT bdl.id FROM bank_deposit_lines bdl
-          JOIN bank_deposits bd ON bdl.bank_deposit_id = bd.id
-          WHERE bdl.operator_id = ? AND bdl.source_entry_id = ? AND bd.status = 'cleared' AND bd.deleted_at IS NULL
-        `).get(operatorId, entryId);
-
-        if (existingDeposit) {
-          throw new Error(`Receipt entry "${entryId}" is already included in an active bank deposit.`);
-        }
-
-        totalCents += lineRow.debit_cents;
-        validatedReceipts.push({
-          entry_id: entryId,
-          amount_cents: lineRow.debit_cents,
-          property_id: lineRow.property_id
-        });
+    const seenReceiptIds = new Set<string>();
+    for (const entryId of input.receipt_entry_ids) {
+      if (seenReceiptIds.has(entryId)) {
+        throw new Error(`Duplicate receipt entry "${entryId}" in deposit batch.`);
       }
-    } else if (input.custom_amount_cents && Number.isSafeInteger(input.custom_amount_cents) && input.custom_amount_cents > 0) {
-      // Manual bulk batch without tracking discrete entry IDs
-      totalCents = input.custom_amount_cents;
-    } else {
-      throw new Error('Either receipt_entry_ids or a positive custom_amount_cents must be provided.');
+      seenReceiptIds.add(entryId);
+      // Fetch debit amount to 1030
+      const lineRow = db.prepare(`
+        SELECT jl.debit_cents, jl.property_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON jl.journal_entry_id = je.id
+        WHERE jl.operator_id = ? AND jl.journal_entry_id = ? AND jl.account_id = ?
+          AND jl.debit_cents > 0
+          AND je.reversed_by_entry_id IS NULL AND je.deleted_at IS NULL
+          AND je.source_type NOT IN ('bank_deposit', 'reversal')
+      `).get(operatorId, entryId, undepositedAccount.id) as { debit_cents: number; property_id?: string | null } | undefined;
+
+      if (!lineRow || lineRow.debit_cents <= 0) {
+        throw new Error(`Receipt entry "${entryId}" does not have an active undeposited balance.`);
+      }
+
+      // Check if already deposited
+      const existingDeposit = db.prepare(`
+        SELECT bdl.id FROM bank_deposit_lines bdl
+        JOIN bank_deposits bd ON bdl.bank_deposit_id = bd.id
+        WHERE bdl.operator_id = ? AND bdl.source_entry_id = ? AND bd.status = 'cleared' AND bd.deleted_at IS NULL
+      `).get(operatorId, entryId);
+
+      if (existingDeposit) {
+        throw new Error(`Receipt entry "${entryId}" is already included in an active bank deposit.`);
+      }
+
+      totalCents += lineRow.debit_cents;
+      validatedReceipts.push({
+        entry_id: entryId,
+        amount_cents: lineRow.debit_cents,
+        property_id: lineRow.property_id
+      });
     }
 
     const depositId = generateUUIDv7();

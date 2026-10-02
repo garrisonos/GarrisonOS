@@ -200,4 +200,40 @@ describe('Accounting Module - Vendor Check Register & Disbursements', () => {
       assert.ok(originalEntry!.reversed_by_entry_id);
     });
   });
+
+  it('prohibits issuing vendor checks from the Security Deposit Trust bank account (1020)', () => {
+    runInOperatorContext('checks-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'checks-test-op', 'vendor', 'Roofing', 'Specialists', 'Roofing Specialists', 'roof@spec.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      const trustAccount = ChartOfAccountsRepository.getAccountByAccountNumber('1020')!;
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'ROOF-1',
+        invoice_date: now,
+        total_amount_cents: 40000,
+        allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 40000 }]
+      });
+      AccountsPayableRepository.approveBill(bill.id, 'admin');
+
+      assert.throws(() => {
+        VendorChecksRepository.issueCheck({
+          bank_account_id: trustAccount.id,
+          vendor_id: vendorId,
+          check_number: '9901',
+          check_date: now,
+          amount_cents: 40000,
+          bill_allocations: [{ bill_id: bill.id, amount_cents: 40000 }]
+        });
+      }, /Vendor bills cannot be paid from the Security Deposit Trust account/);
+    });
+  });
 });

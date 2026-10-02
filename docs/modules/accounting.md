@@ -118,36 +118,7 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 * `GET /api/v1/accounting/export/quickbooks/desktop.iif`: Export QuickBooks Desktop IIF format
 * `GET /api/v1/accounting/export/quickbooks/bank-feed.qbo`: Export Web Connect (.QBO) bank feed
 
-### 4.5. Accounts Payable: Vendor Bills & Recurring Templates
-
-* `GET /api/v1/accounting/bills`: List vendor bills with status, approval, and vendor filters
-* `POST /api/v1/accounting/bills`: Create vendor bill with split property/unit allocations
-* `GET /api/v1/accounting/bills/:id`: Get bill details and allocation line items
-* `PUT /api/v1/accounting/bills/:id`: Update draft bill
-* `POST /api/v1/accounting/bills/:id/approve`: Approve bill for disbursement
-* `POST /api/v1/accounting/bills/:id/void`: Void bill and reverse journal allocations
-* `GET /api/v1/accounting/bills/recurring`: List scheduled recurring bill templates
-* `POST /api/v1/accounting/bills/recurring`: Create recurring bill template
-
-### 4.6. Vendor Check Register & Check Printing
-
-* `GET /api/v1/accounting/vendor_checks`: List printed and draft vendor checks from register
-* `POST /api/v1/accounting/vendor_checks`: Record paper check payment settling one or more bills
-* `GET /api/v1/accounting/vendor_checks/:id`: Get check details and bill settlements
-* `POST /api/v1/accounting/vendor_checks/:id/void`: Void check and restore unpaid bill balances
-
-### 4.7. Vendor Credit Memos & Bill Applications
-
-* `GET /api/v1/accounting/vendor_credits`: List vendor credit memos
-* `POST /api/v1/accounting/vendor_credits`: Record vendor credit memo / refund
-* `POST /api/v1/accounting/vendor_credits/:id/apply`: Apply credit memo balance against open vendor bills
-
-### 4.8. Bank Deposits & Undeposited Funds Clearing
-
-* `GET /api/v1/accounting/bank_deposits`: List bank deposit batches
-* `POST /api/v1/accounting/bank_deposits`: Create bank deposit grouping payments into bank clearing account
-
-### 4.9. Client Accounting & Management Fee Automation
+### 4.5. Client Accounting & Management Fee Automation
 
 * `GET /api/v1/accounting/portfolios/:portfolio_id/cash_summary`: Retrieve gross operating receipts and disbursements, net operating cash, and client cash balance (`?as_of=<ms>&basis=cash|accrual`, default `cash`)
 * `POST /api/v1/accounting/capital_contributions`: Record investor/owner capital infusion (debit `1010 Operating Checking`, credit `3010 Owner Capital Contributions`)
@@ -162,7 +133,7 @@ $$\text{NOI} = \text{Operating Income (Rent, Fees)} - \text{Operating Expenses (
 * `POST /api/v1/accounting/management_fee_agreements/:id/calculate`: Preview calculated fee for target month (`YYYY-MM`)
 * `POST /api/v1/accounting/management_fee_agreements/:id/post`: Post calculated monthly fee accrual (debit `5070 Management Fees Expense`, credit `2010 Accounts Payable`)
 
-### 4.10. Accounts Payable, Vendor Credits, Check Printing & Bank Deposits
+### 4.6. Accounts Payable, Vendor Credits, Check Printing & Bank Deposits
 
 * `GET /api/v1/accounting/bills`: List vendor bills with pagination and status/date filtering
 * `POST /api/v1/accounting/bills`: Create draft bill with multi-unit, multi-property split allocations

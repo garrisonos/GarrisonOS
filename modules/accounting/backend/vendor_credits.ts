@@ -185,7 +185,7 @@ export class VendorCreditsRepository {
       SELECT vc.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name, c.company_name as vendor_company,
              coa.account_name, coa.account_number
       FROM vendor_credits vc
-      LEFT JOIN contacts c ON vc.vendor_id = c.id
+      LEFT JOIN contacts c ON vc.vendor_id = c.id AND c.operator_id = vc.operator_id AND c.deleted_at IS NULL
       LEFT JOIN chart_of_accounts coa ON vc.gl_account_id = coa.id
       WHERE vc.id = ? AND vc.operator_id = ? AND vc.deleted_at IS NULL
     `).get(id, operatorId) as unknown as (VendorCreditRecord & {
@@ -253,7 +253,7 @@ export class VendorCreditsRepository {
       SELECT vc.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name, c.company_name as vendor_company,
              coa.account_name, coa.account_number
       FROM vendor_credits vc
-      LEFT JOIN contacts c ON vc.vendor_id = c.id
+      LEFT JOIN contacts c ON vc.vendor_id = c.id AND c.operator_id = vc.operator_id AND c.deleted_at IS NULL
       LEFT JOIN chart_of_accounts coa ON vc.gl_account_id = coa.id
       WHERE ${whereSql}
       ORDER BY vc.credit_date DESC, vc.created_at DESC

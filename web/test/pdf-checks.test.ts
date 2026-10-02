@@ -73,4 +73,50 @@ describe('PDF Generation - ANSI Check Stock & Formatting', () => {
     assert.ok(pdfString.includes('startxref'));
     assert.ok(pdfString.trimEnd().endsWith('%%EOF'));
   });
+
+  it('handles accented payee names and ensures declared stream length matches stream byte length', () => {
+    const pdfBuffer = generateCheckPdf({
+      check_number: '005501',
+      check_date: '2026-10-02',
+      amount_cents: 84000,
+      payee_name: 'José & Niño Contractors — Specialty Café',
+      memo: 'HVAC repair & café maintenance',
+      bank_name: 'Guaranty Trust Bank',
+      bank_routing: '111000025',
+      bank_account_number: '554433221',
+      payer_name: 'Garrison Operators LLC',
+      payer_address: '450 Oak Blvd, Suite 200',
+      bills: [
+        {
+          invoice_number: 'INV-9099',
+          invoice_date: '2026-10-01',
+          amount_cents: 84000,
+          allocated_cents: 84000,
+          description: 'Café ductwork replacement'
+        }
+      ]
+    });
+
+    assert.ok(Buffer.isBuffer(pdfBuffer));
+    const pdfString = pdfBuffer.toString('latin1');
+
+    // Extract stream and verify /Length
+    const lengthMatch = pdfString.match(/\/Length (\d+)/);
+    assert.ok(lengthMatch);
+    const declaredLength = parseInt(lengthMatch[1]!, 10);
+
+    const streamStartMarker = 'stream\n';
+    const streamEndMarker = '\nendstream';
+    const streamStartIndex = pdfString.indexOf(streamStartMarker) + streamStartMarker.length;
+    const streamEndIndex = pdfString.indexOf(streamEndMarker, streamStartIndex);
+    assert.ok(streamStartIndex > streamStartMarker.length);
+    assert.ok(streamEndIndex > streamStartIndex);
+
+    const actualStreamString = pdfString.substring(streamStartIndex, streamEndIndex);
+    const actualStreamLength = Buffer.byteLength(actualStreamString, 'latin1');
+
+    assert.equal(declaredLength, actualStreamLength);
+    // Em dash was replaced with - and accented latin-1 letters preserved
+    assert.ok(pdfString.includes('Jos\xe9 & Ni\xf1o Contractors - Specialty Caf\xe9'));
+  });
 });

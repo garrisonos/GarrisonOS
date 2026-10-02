@@ -1,3 +1,4 @@
+import type { DatabaseSync } from 'node:sqlite';
 import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
@@ -144,6 +145,13 @@ export interface CreateRecurringBillInput {
 }
 
 /**
+ * Result returned by generateDueRecurringBills, extending array of BillRecord with failure tracking.
+ */
+export interface GenerateRecurringBillsResult extends Array<BillRecord> {
+  failures?: Array<{ recurring_id: string; error: string }>;
+}
+
+/**
  * Accounts Payable Repository managing vendor bills, allocations, and recurring bills.
  */
 export class AccountsPayableRepository {
@@ -173,11 +181,12 @@ export class AccountsPayableRepository {
    * Create a new vendor bill with atomic expense allocations.
    *
    * @param input - Creation payload.
+   * @param existingTx - Optional shared transaction instance.
    * @returns Newly created BillRecord with allocations.
    */
-  public static createBill(input: CreateBillInput): BillRecord {
+  public static createBill(input: CreateBillInput, existingTx?: DatabaseSync): BillRecord {
     const operatorId = RequestContext.getOperatorId();
-    const db = getDatabase();
+    const db = existingTx || getDatabase();
 
     if (!input.vendor_id) {
       throw new Error('vendor_id is required.');
@@ -283,7 +292,7 @@ export class AccountsPayableRepository {
     const now = Date.now();
     const status: BillStatus = input.status === 'pending_approval' ? 'pending_approval' : 'draft';
 
-    return withTransaction((tx) => {
+    const runInserts = (tx: DatabaseSync) => {
       tx.prepare(`
         INSERT INTO bills (
           id, operator_id, vendor_id, invoice_number, invoice_date, due_date,
@@ -339,7 +348,12 @@ export class AccountsPayableRepository {
       }
 
       return this.getBillById(billId)!;
-    });
+    };
+
+    if (existingTx) {
+      return runInserts(existingTx);
+    }
+    return withTransaction(runInserts);
   }
 
   /**
@@ -355,7 +369,7 @@ export class AccountsPayableRepository {
     const row = db.prepare(`
       SELECT b.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name, c.company_name as vendor_company
       FROM bills b
-      LEFT JOIN contacts c ON b.vendor_id = c.id
+      LEFT JOIN contacts c ON b.vendor_id = c.id AND c.operator_id = b.operator_id AND c.deleted_at IS NULL
       WHERE b.id = ? AND b.operator_id = ? AND b.deleted_at IS NULL
     `).get(id, operatorId) as unknown as (BillRecord & { vendor_name?: string; vendor_company?: string }) | undefined;
 
@@ -459,14 +473,29 @@ export class AccountsPayableRepository {
     const rows = db.prepare(`
       SELECT b.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name, c.company_name as vendor_company
       FROM bills b
-      LEFT JOIN contacts c ON b.vendor_id = c.id
+      LEFT JOIN contacts c ON b.vendor_id = c.id AND c.operator_id = b.operator_id AND c.deleted_at IS NULL
       WHERE ${whereSql}
       ORDER BY b.due_date ASC, b.created_at DESC
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset) as unknown as BillRecord[];
 
+    const billsWithAllocations = rows.map((b) => {
+      const allocRows = db.prepare(`
+        SELECT ba.*, coa.account_number, coa.account_name, p.name as property_name
+        FROM bill_allocations ba
+        JOIN chart_of_accounts coa ON ba.gl_account_id = coa.id
+        LEFT JOIN properties p ON ba.property_id = p.id
+        WHERE ba.bill_id = ? AND ba.operator_id = ? AND ba.deleted_at IS NULL
+        ORDER BY ba.created_at ASC
+      `).all(b.id, operatorId) as unknown as BillAllocationRecord[];
+      return {
+        ...b,
+        allocations: allocRows
+      };
+    });
+
     return {
-      bills: rows,
+      bills: billsWithAllocations,
       total: countRow?.total || 0
     };
   }
@@ -493,10 +522,23 @@ export class AccountsPayableRepository {
 
     const now = Date.now();
     const vendorId = input.vendor_id || existing.vendor_id;
+    if (input.vendor_id && input.vendor_id !== existing.vendor_id) {
+      const vendorRow = db.prepare(`
+        SELECT id FROM contacts
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(input.vendor_id, operatorId);
+      if (!vendorRow) {
+        throw new Error(`Vendor contact "${input.vendor_id}" not found or unauthorized.`);
+      }
+    }
+
     const invoiceNumber = input.invoice_number ? input.invoice_number.trim() : existing.invoice_number;
     const invoiceDate = input.invoice_date || existing.invoice_date;
     const paymentTerms = input.payment_terms || existing.payment_terms;
-    const dueDate = input.due_date || this.calculateDueDate(invoiceDate, paymentTerms);
+    const termsOrDateChanged = input.invoice_date !== undefined || input.payment_terms !== undefined;
+    const dueDate = input.due_date
+      ?? (termsOrDateChanged ? this.calculateDueDate(invoiceDate, paymentTerms) : existing.due_date);
+
     const totalAmount = input.total_amount_cents !== undefined ? input.total_amount_cents : existing.total_amount_cents;
     const taxCents = input.tax_cents !== undefined ? input.tax_cents : existing.tax_cents;
     const subtotalCents = input.subtotal_cents !== undefined ? input.subtotal_cents : totalAmount - taxCents;
@@ -506,6 +548,42 @@ export class AccountsPayableRepository {
     }
     if (subtotalCents + taxCents !== totalAmount) {
       throw new Error('subtotal_cents + tax_cents must equal total_amount_cents.');
+    }
+
+    if (input.allocations) {
+      for (const alloc of input.allocations) {
+        const glAccount = ChartOfAccountsRepository.getAccountById(alloc.gl_account_id);
+        if (!glAccount || glAccount.is_active === 0) {
+          throw new Error(`GL Account "${alloc.gl_account_id}" not found or inactive.`);
+        }
+        if (alloc.property_id) {
+          const propRow = db.prepare(`
+            SELECT id FROM properties
+            WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+          `).get(alloc.property_id, operatorId);
+          if (!propRow) {
+            throw new Error(`Property "${alloc.property_id}" not found or unauthorized.`);
+          }
+        }
+        if (alloc.portfolio_id) {
+          const portRow = db.prepare(`
+            SELECT id FROM portfolios
+            WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+          `).get(alloc.portfolio_id, operatorId);
+          if (!portRow) {
+            throw new Error(`Portfolio "${alloc.portfolio_id}" not found or unauthorized.`);
+          }
+        }
+        if (alloc.unit_id) {
+          const unitRow = db.prepare(`
+            SELECT id FROM units
+            WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+          `).get(alloc.unit_id, operatorId);
+          if (!unitRow) {
+            throw new Error(`Unit "${alloc.unit_id}" not found or unauthorized.`);
+          }
+        }
+      }
     }
 
     const allocations = input.allocations || existing.allocations?.map((a) => ({
@@ -653,15 +731,17 @@ export class AccountsPayableRepository {
         description: alloc.description || `Bill: ${bill.invoice_number}`
       }));
 
-      // Credit 2010 Accounts Payable for full bill total
-      journalLines.push({
-        account_id: apAccount.id,
-        debit_cents: 0,
-        credit_cents: bill.total_amount_cents,
-        property_id: allocations[0]?.property_id || null,
-        unit_id: null,
-        description: `Bill Accrual: ${bill.vendor_name || 'Vendor'} Inv# ${bill.invoice_number}`
-      });
+      // Credit 2010 Accounts Payable per allocation so property-level balances stay balanced
+      for (const alloc of allocations) {
+        journalLines.push({
+          account_id: apAccount.id,
+          debit_cents: 0,
+          credit_cents: alloc.amount_cents,
+          property_id: alloc.property_id || null,
+          unit_id: alloc.unit_id || null,
+          description: `Bill Accrual: ${bill.vendor_name || 'Vendor'} Inv# ${bill.invoice_number}`
+        });
+      }
 
       // Post General Ledger accrual
       JournalService.postEntry({
@@ -745,17 +825,77 @@ export class AccountsPayableRepository {
     if (!input.vendor_id) {
       throw new Error('vendor_id is required.');
     }
+    const vendorRow = db.prepare(`
+      SELECT id FROM contacts
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).get(input.vendor_id, operatorId);
+    if (!vendorRow) {
+      throw new Error(`Vendor contact "${input.vendor_id}" not found or unauthorized.`);
+    }
+
     if (!Number.isSafeInteger(input.start_date) || input.start_date <= 0) {
       throw new Error('start_date must be a positive integer millisecond timestamp.');
     }
-    if (!input.allocations || input.allocations.length === 0) {
+    if (input.end_date !== undefined && input.end_date !== null) {
+      if (!Number.isSafeInteger(input.end_date) || input.end_date <= input.start_date) {
+        throw new Error('end_date must be a positive integer millisecond timestamp after start_date.');
+      }
+    }
+    if (!input.allocations || !Array.isArray(input.allocations) || input.allocations.length === 0) {
       throw new Error('allocations array is required.');
+    }
+
+    const intervalCount = input.interval_count ?? 1;
+    if (!Number.isSafeInteger(intervalCount) || intervalCount <= 0) {
+      throw new Error('interval_count must be a positive integer.');
+    }
+
+    if (input.total_occurrences !== undefined && input.total_occurrences !== null) {
+      if (!Number.isSafeInteger(input.total_occurrences) || input.total_occurrences <= 0) {
+        throw new Error('total_occurrences must be a positive integer.');
+      }
+    }
+
+    for (const alloc of input.allocations) {
+      if (!Number.isSafeInteger(alloc.amount_cents) || alloc.amount_cents <= 0) {
+        throw new Error('Allocation amount_cents must be a positive integer in cents.');
+      }
+      const glAccount = ChartOfAccountsRepository.getAccountById(alloc.gl_account_id);
+      if (!glAccount || glAccount.is_active === 0) {
+        throw new Error(`GL Account "${alloc.gl_account_id}" not found or inactive.`);
+      }
+      if (alloc.property_id) {
+        const propRow = db.prepare(`
+          SELECT id FROM properties
+          WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).get(alloc.property_id, operatorId);
+        if (!propRow) {
+          throw new Error(`Property "${alloc.property_id}" not found or unauthorized.`);
+        }
+      }
+      if (alloc.portfolio_id) {
+        const portRow = db.prepare(`
+          SELECT id FROM portfolios
+          WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).get(alloc.portfolio_id, operatorId);
+        if (!portRow) {
+          throw new Error(`Portfolio "${alloc.portfolio_id}" not found or unauthorized.`);
+        }
+      }
+      if (alloc.unit_id) {
+        const unitRow = db.prepare(`
+          SELECT id FROM units
+          WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).get(alloc.unit_id, operatorId);
+        if (!unitRow) {
+          throw new Error(`Unit "${alloc.unit_id}" not found or unauthorized.`);
+        }
+      }
     }
 
     const recurringId = generateUUIDv7();
     const now = Date.now();
     const nextRunDate = input.start_date;
-    const intervalCount = input.interval_count || 1;
     const occurrences = input.total_occurrences || null;
 
     db.prepare(`
@@ -786,7 +926,7 @@ export class AccountsPayableRepository {
     return db.prepare(`
       SELECT rb.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name
       FROM recurring_bills rb
-      JOIN contacts c ON rb.vendor_id = c.id
+      JOIN contacts c ON rb.vendor_id = c.id AND c.operator_id = rb.operator_id AND c.deleted_at IS NULL
       WHERE rb.id = ? AND rb.operator_id = ?
     `).get(recurringId, operatorId) as unknown as RecurringBillRecord;
   }
@@ -803,7 +943,7 @@ export class AccountsPayableRepository {
     return db.prepare(`
       SELECT rb.*, COALESCE(c.company_name, c.first_name || ' ' || c.last_name) as vendor_name
       FROM recurring_bills rb
-      JOIN contacts c ON rb.vendor_id = c.id
+      JOIN contacts c ON rb.vendor_id = c.id AND c.operator_id = rb.operator_id AND c.deleted_at IS NULL
       WHERE rb.operator_id = ? AND rb.deleted_at IS NULL
       ORDER BY rb.next_run_date ASC
     `).all(operatorId) as unknown as RecurringBillRecord[];
@@ -853,9 +993,9 @@ export class AccountsPayableRepository {
    * Run due recurring bills pass, creating scheduled bills and advancing run dates.
    *
    * @param asOfDateMs - Cutoff timestamp (defaults to current time).
-   * @returns Array of newly generated BillRecord items.
+   * @returns Array of newly generated BillRecord items with failure details.
    */
-  public static generateDueRecurringBills(asOfDateMs: number = Date.now()): BillRecord[] {
+  public static generateDueRecurringBills(asOfDateMs: number = Date.now()): GenerateRecurringBillsResult {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
 
@@ -867,37 +1007,47 @@ export class AccountsPayableRepository {
     `).all(operatorId, asOfDateMs) as unknown as RecurringBillRecord[];
 
     const generatedBills: BillRecord[] = [];
+    const failures: Array<{ recurring_id: string; error: string }> = [];
 
     for (const rec of dueList) {
-      const allocations: CreateBillAllocationInput[] = JSON.parse(rec.allocations_template_json);
-      const totalAmount = allocations.reduce((sum, a) => sum + a.amount_cents, 0);
+      try {
+        const allocations: CreateBillAllocationInput[] = JSON.parse(rec.allocations_template_json);
+        const totalAmount = allocations.reduce((sum, a) => sum + a.amount_cents, 0);
 
-      const d = new Date(rec.next_run_date);
-      const invoiceNum = `REC-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}-${rec.id.slice(0, 6)}`;
+        const d = new Date(rec.next_run_date);
+        const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+        const invoiceNum = `REC-${dateStr}-${rec.id}`;
 
-      const newBill = this.createBill({
-        vendor_id: rec.vendor_id,
-        invoice_number: invoiceNum,
-        invoice_date: rec.next_run_date,
-        total_amount_cents: totalAmount,
-        notes: `Automatically generated from recurring bill ${rec.id}`,
-        allocations
-      });
+        const nextDate = this.computeNextIntervalDate(rec.next_run_date, rec.interval_unit, rec.interval_count);
+        const newRemaining = rec.remaining_occurrences !== null ? rec.remaining_occurrences - 1 : null;
 
-      generatedBills.push(newBill);
+        const newBill = withTransaction((tx) => {
+          const bill = this.createBill({
+            vendor_id: rec.vendor_id,
+            invoice_number: invoiceNum,
+            invoice_date: rec.next_run_date,
+            total_amount_cents: totalAmount,
+            notes: `Automatically generated from recurring bill ${rec.id}`,
+            allocations
+          }, tx);
 
-      // Advance schedule
-      const nextDate = this.computeNextIntervalDate(rec.next_run_date, rec.interval_unit, rec.interval_count);
-      const newRemaining = rec.remaining_occurrences !== null ? rec.remaining_occurrences - 1 : null;
+          tx.prepare(`
+            UPDATE recurring_bills SET
+              next_run_date = ?,
+              remaining_occurrences = ?
+            WHERE id = ? AND operator_id = ?
+          `).run(nextDate, newRemaining, rec.id, operatorId);
 
-      db.prepare(`
-        UPDATE recurring_bills SET
-          next_run_date = ?,
-          remaining_occurrences = ?
-        WHERE id = ? AND operator_id = ?
-      `).run(nextDate, newRemaining, rec.id, operatorId);
+          return bill;
+        });
+
+        generatedBills.push(newBill);
+      } catch (err: any) {
+        failures.push({ recurring_id: rec.id, error: err.message });
+      }
     }
 
+    (generatedBills as any).failures = failures;
     return generatedBills;
   }
 }

@@ -272,4 +272,189 @@ describe('Accounting Module - Accounts Payable (AP) Core Subsystem', () => {
       assert.ok(updatedRecurring.next_run_date > now);
     });
   });
+
+  it('splits Accounts Payable (2010) credit lines per property allocation to balance property trial balances', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const propAId = generateUUIDv7();
+      const propBId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Citywide', 'Security', 'Citywide Security LLC', 'billing@citywide.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      db.prepare(`
+        INSERT INTO properties (id, operator_id, name, property_type, address_line1, city, state, postal_code, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'Property A', 'multi_family', '100 Main St', 'Dallas', 'TX', '75201', ?, ?),
+               (?, 'ap-test-op', 'Property B', 'multi_family', '200 Main St', 'Dallas', 'TX', '75201', ?, ?)
+      `).run(propAId, now, now, propBId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'SPLIT-001',
+        invoice_date: now,
+        total_amount_cents: 35000, // $350.00 split: $200.00 Prop A, $150.00 Prop B
+        allocations: [
+          { property_id: propAId, gl_account_id: expenseAccount.id, amount_cents: 20000, description: 'Prop A Security' },
+          { property_id: propBId, gl_account_id: expenseAccount.id, amount_cents: 15000, description: 'Prop B Security' }
+        ]
+      });
+
+      AccountsPayableRepository.approveBill(bill.id, 'admin-user');
+
+      const entry = JournalService.listEntries({ source_type: 'bill' }).entries.find((e) => e.source_id === bill.id);
+      assert.ok(entry);
+      assert.ok(entry.lines);
+
+      // Verify AP 2010 credit lines are split per property
+      const apCreditLines = entry.lines.filter((l) => l.account_number === '2010' && l.credit_cents > 0);
+      assert.equal(apCreditLines.length, 2);
+
+      const propACredit = apCreditLines.find((l) => l.property_id === propAId);
+      const propBCredit = apCreditLines.find((l) => l.property_id === propBId);
+
+      assert.ok(propACredit);
+      assert.equal(propACredit.credit_cents, 20000);
+
+      assert.ok(propBCredit);
+      assert.equal(propBCredit.credit_cents, 15000);
+    });
+  });
+
+  it('preserves existing due_date on partial bill updates and validates operator ownership', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const foreignVendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO operators (id, name, created_at, updated_at)
+        VALUES ('foreign-op', 'Foreign Operator', ?, ?)
+      `).run(now, now);
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Local', 'HVAC', 'Local HVAC', 'hvac@local.com', ?, ?),
+               (?, 'foreign-op', 'vendor', 'Foreign', 'HVAC', 'Foreign HVAC', 'hvac@foreign.com', ?, ?)
+      `).run(vendorId, now, now, foreignVendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      const bill = AccountsPayableRepository.createBill({
+        vendor_id: vendorId,
+        invoice_number: 'HVAC-100',
+        invoice_date: now,
+        payment_terms: 'net_60',
+        total_amount_cents: 50000,
+        allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 50000 }]
+      });
+
+      const originalDueDate = bill.due_date;
+      assert.equal(originalDueDate, now + 60 * 86400000);
+
+      // Update only notes (no invoice_date or payment_terms change)
+      const updated = AccountsPayableRepository.updateBill(bill.id, {
+        notes: 'Updated invoice notes'
+      });
+      assert.equal(updated.due_date, originalDueDate);
+      assert.equal(updated.notes, 'Updated invoice notes');
+
+      // Attempting to update vendor_id to a foreign operator's vendor must be rejected
+      assert.throws(() => {
+        AccountsPayableRepository.updateBill(bill.id, {
+          vendor_id: foreignVendorId
+        });
+      }, /not found or unauthorized/i);
+    });
+  });
+
+  it('validates recurring bill intervals and isolates failures during scheduled batch execution', () => {
+    runInOperatorContext('ap-test-op', () => {
+      const db = getDatabase();
+      const vendorId = generateUUIDv7();
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Safe', 'Pest', 'Safe Pest Control', 'billing@safepest.com', ?, ?)
+      `).run(vendorId, now, now);
+
+      const expenseAccount = ChartOfAccountsRepository.listAccounts().find((a) => a.account_type === 'Expense')!;
+
+      // Invalid interval_count <= 0
+      assert.throws(() => {
+        AccountsPayableRepository.createRecurringBill({
+          vendor_id: vendorId,
+          template_reference: 'Invalid recurring',
+          start_date: now,
+          interval_unit: 'month',
+          interval_count: 0,
+          invoice_amount_cents: 10000,
+          allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 10000 }]
+        });
+      }, /interval_count must be a positive integer/i);
+
+      // Create a valid recurring schedule
+      const recurring = AccountsPayableRepository.createRecurringBill({
+        vendor_id: vendorId,
+        template_reference: 'Pest Control',
+        start_date: now - 5000,
+        interval_unit: 'month',
+        interval_count: 1,
+        total_occurrences: 6,
+        invoice_amount_cents: 12000,
+        allocations: [{ gl_account_id: expenseAccount.id, amount_cents: 12000 }]
+      });
+
+      // Create a second recurring schedule whose vendor will be soft-deleted before execution
+      const failingVendorId = generateUUIDv7();
+      db.prepare(`
+        INSERT INTO contacts (id, operator_id, contact_type, first_name, last_name, company_name, email, created_at, updated_at)
+        VALUES (?, 'ap-test-op', 'vendor', 'Deactivated', 'Vendor', 'Deactivated Vendor Inc', 'deact@vendor.com', ?, ?)
+      `).run(failingVendorId, now, now);
+
+      const corruptedId = generateUUIDv7();
+      db.prepare(`
+        INSERT INTO recurring_bills (
+          id, operator_id, vendor_id, template_reference, start_date, next_run_date,
+          interval_unit, interval_count, total_occurrences, remaining_occurrences,
+          allocations_template_json, created_at, deleted_at
+        ) VALUES (
+          ?, 'ap-test-op', ?, 'Broken Schedule', ?, ?,
+          'month', 1, 6, 6,
+          ?, ?, NULL
+        )
+      `).run(
+        corruptedId,
+        failingVendorId,
+        now - 5000,
+        now - 5000,
+        JSON.stringify([{ gl_account_id: expenseAccount.id, amount_cents: 10000 }]),
+        now
+      );
+
+      // Soft delete the second vendor so createBill fails during the batch run
+      db.prepare(`
+        UPDATE contacts SET deleted_at = ? WHERE id = ?
+      `).run(now, failingVendorId);
+
+      // Execute generation run
+      const generated = AccountsPayableRepository.generateDueRecurringBills(now);
+
+      // The valid schedule should succeed
+      assert.equal(generated.length, 1);
+      assert.equal(generated[0]!.vendor_id, vendorId);
+
+      // The failures property should record the broken schedule
+      assert.ok(generated.failures);
+      assert.equal(generated.failures.length, 1);
+      assert.equal(generated.failures[0]!.recurring_id, corruptedId);
+    });
+  });
 });

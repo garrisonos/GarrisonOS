@@ -88,6 +88,7 @@ function escapePdfString(str: string): string {
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
     .replace(/[\u2013\u2014]/g, '-')
+    .replace(/[^\x20-\xFF]/g, '?')
     .replace(/\r\n/g, ' ')
     .replace(/[\r\n]/g, ' ')
     .replace(/\\/g, '\\\\')
@@ -227,7 +228,7 @@ export function generateCheckPdf(check: CheckPdfData): Buffer {
   }
 
   const streamContent = ops.join('\n');
-  const streamLength = Buffer.byteLength(streamContent, 'utf-8');
+  const streamLength = Buffer.byteLength(streamContent, 'latin1');
 
   // Build PDF 1.4 objects
   const objects: string[] = [];

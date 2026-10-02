@@ -1,4 +1,5 @@
 import { ServerResponse } from 'node:http';
+import { getDatabase } from '../../../database/client.js';
 import { Router, ApiRequest } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
 import { requirePermission, requirePortfolioAccess } from '../../../api/middleware.js';
@@ -843,6 +844,37 @@ export function registerRoutes(router: Router): void {
     }
   });
 
+  /**
+   * Verifies whether a subuser is authorized to access all portfolios allocated to a bill.
+   */
+  function canAccessBillPortfolios(bill: any, userId: string, operatorId: string): boolean {
+    if (!bill || !bill.allocations || !Array.isArray(bill.allocations) || bill.allocations.length === 0) {
+      return true;
+    }
+    for (const alloc of bill.allocations) {
+      if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Verifies whether a subuser is authorized to access all portfolios linked to a vendor check.
+   */
+  function canAccessCheckPortfolios(check: any, userId: string, operatorId: string): boolean {
+    if (!check || !check.allocations || !Array.isArray(check.allocations) || check.allocations.length === 0) {
+      return true;
+    }
+    for (const alloc of check.allocations) {
+      const bill = AccountsPayableRepository.getBillById(alloc.bill_id);
+      if (bill && !canAccessBillPortfolios(bill, userId, operatorId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // ==========================================
   // Accounts Payable (AP): Vendor Bills
   // ==========================================
@@ -893,8 +925,15 @@ export function registerRoutes(router: Router): void {
         offset: offsetParsed.value
       });
 
-      successResponse(res, result.bills, 200, {
-        total: result.total,
+      let bills = result.bills;
+      const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+      const operatorId = RequestContext.getOperatorId();
+      if (userId && userId !== 'system') {
+        bills = bills.filter((b) => canAccessBillPortfolios(b, userId, operatorId));
+      }
+
+      successResponse(res, bills, 200, {
+        total: userId && userId !== 'system' ? bills.length : result.total,
         page: Math.floor((offsetParsed.value || 0) / (limitParsed.value || 50)) + 1,
         limit: limitParsed.value || 50
       });
@@ -904,6 +943,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/bills', requirePermission('accounting:transact'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.allocations)) {
+      for (const alloc of req.body.allocations) {
+        if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
     try {
       const bill = AccountsPayableRepository.createBill(req.body);
       successResponse(res, bill, 201);
@@ -917,10 +965,33 @@ export function registerRoutes(router: Router): void {
     if (!bill) {
       return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
     }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     successResponse(res, bill);
   });
 
   router.put('/api/v1/accounting/bills/:id', requirePermission('accounting:transact'), (req, res) => {
+    const existing = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!existing) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system') {
+      if (!canAccessBillPortfolios(existing, userId, operatorId)) {
+        return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+      }
+      if (Array.isArray(req.body?.allocations)) {
+        for (const alloc of req.body.allocations) {
+          if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+            return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+          }
+        }
+      }
+    }
     try {
       const updated = AccountsPayableRepository.updateBill(req.params.id!, req.body);
       successResponse(res, updated);
@@ -930,7 +1001,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/bills/:id/approve', requirePermission('accounting:disburse'), (req, res) => {
+    const bill = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!bill) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
     const userId = RequestContext.tryGet()?.userId || (req as any).userId || 'system';
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const approved = AccountsPayableRepository.approveBill(req.params.id!, userId);
       successResponse(res, approved);
@@ -940,6 +1019,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/bills/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    const bill = AccountsPayableRepository.getBillById(req.params.id!);
+    if (!bill) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(bill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const voided = AccountsPayableRepository.voidBill(req.params.id!, req.body?.reason);
       successResponse(res, voided);
@@ -959,6 +1047,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/recurring_bills', requirePermission('accounting:manage'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.allocations)) {
+      for (const alloc of req.body.allocations) {
+        if (alloc.portfolio_id && !canAccessPortfolio(userId, alloc.portfolio_id, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
     try {
       const created = AccountsPayableRepository.createRecurringBill(req.body);
       successResponse(res, created, 201);
@@ -978,7 +1075,8 @@ export function registerRoutes(router: Router): void {
     }
     try {
       const generated = AccountsPayableRepository.generateDueRecurringBills(asOf);
-      successResponse(res, { count: generated.length, bills: generated });
+      const failures = (generated as any).failures || [];
+      successResponse(res, { count: generated.length, bills: generated, failures });
     } catch (err: any) {
       errorResponse(res, 'EXECUTION_FAILED', err.message, 500);
     }
@@ -1033,6 +1131,15 @@ export function registerRoutes(router: Router): void {
     const { bill_id, amount_cents } = req.body || {};
     if (!bill_id || !Number.isSafeInteger(amount_cents) || amount_cents <= 0) {
       return errorResponse(res, 'VALIDATION_ERROR', 'bill_id and a positive integer amount_cents are required', 400);
+    }
+    const targetBill = AccountsPayableRepository.getBillById(bill_id);
+    if (!targetBill) {
+      return errorResponse(res, 'NOT_FOUND', 'Target bill not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessBillPortfolios(targetBill, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
     }
     try {
       const updated = VendorCreditsRepository.applyCredit(req.params.id!, bill_id, amount_cents);
@@ -1096,6 +1203,16 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/checks', requirePermission('accounting:disburse'), (req, res) => {
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && Array.isArray(req.body?.bill_allocations)) {
+      for (const item of req.body.bill_allocations) {
+        const b = AccountsPayableRepository.getBillById(item.bill_id);
+        if (b && !canAccessBillPortfolios(b, userId, operatorId)) {
+          return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+        }
+      }
+    }
     try {
       const check = VendorChecksRepository.issueCheck(req.body);
       successResponse(res, check, 201);
@@ -1109,6 +1226,11 @@ export function registerRoutes(router: Router): void {
     if (!check) {
       return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
     }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     successResponse(res, check);
   });
 
@@ -1116,6 +1238,31 @@ export function registerRoutes(router: Router): void {
     const check = VendorChecksRepository.getCheckById(req.params.id!);
     if (!check) {
       return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
+
+    const db = getDatabase();
+    const opRow = db.prepare('SELECT name FROM operators WHERE id = ? AND deleted_at IS NULL').get(operatorId) as { name: string } | undefined;
+
+    const payerName = (typeof req.query['payer_name'] === 'string' && req.query['payer_name'].trim()) || opRow?.name;
+    const payerAddress = typeof req.query['payer_address'] === 'string' && req.query['payer_address'].trim();
+    const bankRouting = (typeof req.query['bank_routing'] === 'string' && req.query['bank_routing'].trim()) ||
+                        (typeof req.query['routing_number'] === 'string' && req.query['routing_number'].trim());
+    const bankAccountNumber = (typeof req.query['bank_account_number'] === 'string' && req.query['bank_account_number'].trim()) ||
+                              (typeof req.query['account_number'] === 'string' && req.query['account_number'].trim());
+
+    if (!payerName || !payerAddress || !bankRouting || !bankAccountNumber) {
+      return errorResponse(
+        res,
+        'VALIDATION_ERROR',
+        'Check printing requires payer_address, bank_routing, and bank_account_number query parameters',
+        400
+      );
     }
 
     try {
@@ -1135,10 +1282,10 @@ export function registerRoutes(router: Router): void {
         payee_name: check.payee_name,
         memo: check.memo,
         bank_name: check.bank_account_name || 'Operating Checking',
-        bank_routing: '123456789',
-        bank_account_number: check.bank_account_number || '987654321',
-        payer_name: 'Garrison Management Co.',
-        payer_address: '100 Main Street, Suite 500',
+        bank_routing: bankRouting,
+        bank_account_number: bankAccountNumber,
+        payer_name: payerName,
+        payer_address: payerAddress,
         bills: billsData
       });
 
@@ -1154,6 +1301,15 @@ export function registerRoutes(router: Router): void {
   });
 
   router.post('/api/v1/accounting/checks/:id/void', requirePermission('accounting:manage'), (req, res) => {
+    const check = VendorChecksRepository.getCheckById(req.params.id!);
+    if (!check) {
+      return errorResponse(res, 'NOT_FOUND', 'Vendor check not found', 404);
+    }
+    const userId = RequestContext.tryGet()?.userId || (req as any).userId;
+    const operatorId = RequestContext.getOperatorId();
+    if (userId && userId !== 'system' && !canAccessCheckPortfolios(check, userId, operatorId)) {
+      return errorResponse(res, 'FORBIDDEN', 'User lacks permission to access resources in this portfolio', 403);
+    }
     try {
       const voided = VendorChecksRepository.voidCheck(req.params.id!, req.body?.reason);
       successResponse(res, voided);

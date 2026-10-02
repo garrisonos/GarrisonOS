@@ -111,6 +111,9 @@ export class VendorChecksRepository {
     if (bankAccount.account_type !== 'Bank') {
       throw new Error(`Disbursement account "${bankAccount.account_name}" must be of type Bank.`);
     }
+    if (bankAccount.account_number === '1020' || bankAccount.category_mapping === 'trust_bank') {
+      throw new Error('Vendor bills cannot be paid from the Security Deposit Trust account (1020).');
+    }
 
     // Verify unique check number for this bank account
     const existingCheck = db.prepare(`
@@ -292,7 +295,7 @@ export class VendorChecksRepository {
       SELECT vc.*, COALESCE(c.company_name, c.first_name || ' ' || last_name) as vendor_name, c.company_name as vendor_company,
              coa.account_name as bank_account_name, coa.account_number as bank_account_number
       FROM vendor_checks vc
-      LEFT JOIN contacts c ON vc.vendor_id = c.id
+      LEFT JOIN contacts c ON vc.vendor_id = c.id AND c.operator_id = vc.operator_id AND c.deleted_at IS NULL
       LEFT JOIN chart_of_accounts coa ON vc.bank_account_id = coa.id
       WHERE vc.id = ? AND vc.operator_id = ? AND vc.deleted_at IS NULL
     `).get(id, operatorId) as unknown as (VendorCheckRecord & {
@@ -375,7 +378,7 @@ export class VendorChecksRepository {
       SELECT vc.*, COALESCE(c.company_name, c.first_name || ' ' || last_name) as vendor_name, c.company_name as vendor_company,
              coa.account_name as bank_account_name, coa.account_number as bank_account_number
       FROM vendor_checks vc
-      LEFT JOIN contacts c ON vc.vendor_id = c.id
+      LEFT JOIN contacts c ON vc.vendor_id = c.id AND c.operator_id = vc.operator_id AND c.deleted_at IS NULL
       LEFT JOIN chart_of_accounts coa ON vc.bank_account_id = coa.id
       WHERE ${whereSql}
       ORDER BY vc.check_date DESC, vc.check_number DESC
