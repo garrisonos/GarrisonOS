@@ -1,8 +1,10 @@
 import { getDatabase, withTransaction } from '../../../database/client.js';
+import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
 import { JournalService } from '../../accounting/backend/journal.js';
+import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 /**
  * Itemized recurring charge attached to a lease contract.
@@ -160,6 +162,8 @@ export interface Lease {
   updated_at: number;
   /** Soft-deletion timestamp in epoch milliseconds, or null if active. */
   deleted_at?: number | null;
+  /** Dynamic custom fields serialized as a JSON string or object. */
+  custom_fields?: Record<string, any> | string;
 }
 
 /**
@@ -218,7 +222,12 @@ export class LeasesRepository {
    * @param filter - Optional criteria for lease status or unit ID.
    * @returns Array of leases with joined property/unit details.
    */
-  public static listLeases(filter?: { status?: string; unit_id?: string }): LeaseWithDetails[] {
+  public static listLeases(filter?: {
+    status?: string;
+    unit_id?: string;
+    temporal?: Record<string, number>;
+    orderBy?: string;
+  }): LeaseWithDetails[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
 
@@ -243,8 +252,24 @@ export class LeasesRepository {
       sql += ' AND l.unit_id = ?';
       params.push(filter.unit_id);
     }
+    if (filter?.temporal) {
+      const { sql: temporalSql, params: temporalParams } = buildTemporalSqlConditions(filter.temporal, 'l');
+      sql += temporalSql;
+      params.push(...temporalParams);
+    }
 
-    sql += ' ORDER BY l.start_date DESC';
+    if (filter?.orderBy) {
+      const qualifiedOrder = filter.orderBy
+        .split(',')
+        .map((part) => {
+          const trimmed = part.trim();
+          return trimmed.startsWith('l.') ? trimmed : `l.${trimmed}`;
+        })
+        .join(', ');
+      sql += ` ORDER BY ${qualifiedOrder}`;
+    } else {
+      sql += ' ORDER BY l.start_date DESC';
+    }
     const rows = db.prepare(sql).all(...params) as unknown as LeaseWithDetails[];
     return rows.map((row) => ({
       ...row,
@@ -316,11 +341,14 @@ export class LeasesRepository {
     late_fee_grace_days?: number;
     late_fee_amount_cents?: number;
     contacts?: Array<{ contact_id: string; role: LeaseContact['role']; is_financially_responsible?: boolean }>;
+    custom_fields?: Record<string, any> | string;
   }): LeaseWithDetails {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const leaseId = generateUUIDv7();
     const now = Date.now();
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('lease', data.custom_fields);
 
     return withTransaction((tx) => {
       tx.prepare(`
@@ -328,8 +356,8 @@ export class LeasesRepository {
           id, operator_id, unit_id, status, start_date, end_date,
           rent_amount_cents, security_deposit_cents, deposit_held_cents,
           rent_due_day, late_fee_grace_days, late_fee_amount_cents,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          custom_fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         leaseId,
         operatorId,
@@ -343,6 +371,7 @@ export class LeasesRepository {
         data.rent_due_day ?? 1,
         data.late_fee_grace_days ?? 5,
         data.late_fee_amount_cents ?? 0,
+        customFieldsJson,
         now,
         now
       );
@@ -377,14 +406,17 @@ export class LeasesRepository {
    * @param data - Mutable lease fields.
    * @returns Updated lease with details or null if not found.
    */
-  public static updateLease(id: string, data: Partial<Omit<Lease, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>>): LeaseWithDetails | null {
+  public static updateLease(id: string, data: Partial<Omit<Lease, 'id' | 'operator_id' | 'created_at' | 'updated_at' | 'deleted_at'>> & { custom_fields?: Record<string, any> | string }): LeaseWithDetails | null {
     const existing = LeasesRepository.getLeaseById(id);
     if (!existing) return null;
 
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     const now = Date.now();
-    const updated = { ...existing, ...data, updated_at: now };
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('lease', data.custom_fields, existing.custom_fields);
+
+    const updated = { ...existing, ...data, custom_fields: customFieldsJson, updated_at: now };
 
     db.prepare(`
       UPDATE leases SET
@@ -392,7 +424,7 @@ export class LeasesRepository {
         rent_amount_cents = ?, security_deposit_cents = ?, deposit_held_cents = ?,
         rent_due_day = ?, late_fee_grace_days = ?, late_fee_amount_cents = ?,
         notice_date = ?, move_out_date = ?,
-        updated_at = ?
+        custom_fields = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(
       updated.unit_id,
@@ -407,6 +439,7 @@ export class LeasesRepository {
       updated.late_fee_amount_cents,
       updated.notice_date || null,
       updated.move_out_date || null,
+      customFieldsJson,
       now,
       id,
       operatorId

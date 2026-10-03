@@ -1,18 +1,117 @@
 import { Router } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
-import { PropertiesRepository } from './repository.js';
-import { AmenitiesRepository, AmenityCategory } from './amenities.js';
+import { PropertiesRepository, AmenityCategory } from './repository.js';
+import { AmenitiesRepository } from './amenities.js';
 import { generateMarketingFlyerPdf } from '../../../web/lib/pdf.js';
+import { validateTemporalParams, parseOrderByClause } from '../../../api/query-parser.js';
 
 /**
- * Register properties, portfolios, buildings, and units API routes with the router.
+ * Register properties, portfolios, buildings, units, and amenities API routes with the router.
  *
  * @param router - Application router instance to register route handlers on.
  */
 export function registerRoutes(router: Router): void {
+  // --- Amenities Catalog ---
+  router.get('/api/v1/amenities', (req, res) => {
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
+    if (temporal.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
+    }
+
+    const orderBy = parseOrderByClause(
+      req.query['order_by'],
+      ['name', 'category', 'created_at', 'updated_at'],
+      'name ASC'
+    );
+    if (orderBy.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderBy.error, 400);
+    }
+
+    const category = req.query['category'] as AmenityCategory | undefined;
+    if (category) {
+      const validCategories: AmenityCategory[] = ['community', 'unit', 'accessibility', 'pet', 'eco'];
+      if (!validCategories.includes(category)) {
+        return errorResponse(
+          res,
+          'VALIDATION_ERROR',
+          `Invalid category "${category}". Must be one of: ${validCategories.join(', ')}`,
+          400
+        );
+      }
+    }
+
+    const amenities = PropertiesRepository.listAmenities({
+      category,
+      temporal: temporal.params,
+      orderBy: orderBy.clause
+    });
+    successResponse(res, { amenities });
+  });
+
+  router.post('/api/v1/amenities', (req, res) => {
+    const { name, category, description } = req.body || {};
+    if (!name || !category) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'Amenity name and category are required', 400);
+    }
+
+    try {
+      const amenity = PropertiesRepository.createAmenity({ name, category, description });
+      successResponse(res, { amenity }, 201);
+    } catch (err: any) {
+      const status = err.code === 'CONFLICT' ? 409 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message || 'Failed to create amenity', status);
+    }
+  });
+
+  router.get('/api/v1/amenities/:id', (req, res) => {
+    const amenity = PropertiesRepository.getAmenityById(req.params.id!);
+    if (!amenity) {
+      return errorResponse(res, 'NOT_FOUND', 'Amenity not found', 404);
+    }
+    successResponse(res, { amenity });
+  });
+
+  router.put('/api/v1/amenities/:id', (req, res) => {
+    try {
+      const amenity = PropertiesRepository.updateAmenity(req.params.id!, req.body || {});
+      if (!amenity) {
+        return errorResponse(res, 'NOT_FOUND', 'Amenity not found', 404);
+      }
+      successResponse(res, { amenity });
+    } catch (err: any) {
+      const status = err.code === 'CONFLICT' ? 409 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message || 'Failed to update amenity', status);
+    }
+  });
+
+  router.delete('/api/v1/amenities/:id', (req, res) => {
+    const deleted = PropertiesRepository.deleteAmenity(req.params.id!);
+    if (!deleted) {
+      return errorResponse(res, 'NOT_FOUND', 'Amenity not found', 404);
+    }
+    successResponse(res, { deleted: true });
+  });
+
   // --- Portfolios ---
-  router.get('/api/v1/properties/portfolios', (_req, res) => {
-    const portfolios = PropertiesRepository.listPortfolios();
+  router.get('/api/v1/properties/portfolios', (req, res) => {
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
+    if (temporal.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
+    }
+
+    const orderBy = parseOrderByClause(
+      req.query['order_by'],
+      ['name', 'tax_id', 'created_at', 'updated_at'],
+      'name ASC'
+    );
+    if (orderBy.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderBy.error, 400);
+    }
+
+    const portfolios = PropertiesRepository.listPortfolios({
+      temporal: temporal.params,
+      orderBy: orderBy.clause
+    });
     successResponse(res, { portfolios });
   });
 
@@ -60,11 +159,64 @@ export function registerRoutes(router: Router): void {
     successResponse(res, { metrics });
   });
 
-  // --- Units (placed before :id to prevent collision) ---
+  // --- Unit Amenities (Placed before generic /units/:id) ---
+  router.get('/api/v1/properties/units/:unit_id/amenities', (req, res) => {
+    const unit = PropertiesRepository.getUnitById(req.params.unit_id!);
+    if (!unit) {
+      return errorResponse(res, 'NOT_FOUND', 'Unit not found', 404);
+    }
+    const amenities = PropertiesRepository.getUnitAmenities(unit.id);
+    successResponse(res, { amenities });
+  });
+
+  router.put('/api/v1/properties/units/:unit_id/amenities', (req, res) => {
+    const { amenity_ids } = req.body || {};
+    if (!Array.isArray(amenity_ids)) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'amenity_ids array is required', 400);
+    }
+
+    try {
+      const amenities = PropertiesRepository.setUnitAmenities(req.params.unit_id!, amenity_ids);
+      successResponse(res, { amenities });
+    } catch (err: any) {
+      const status = err.code === 'NOT_FOUND' ? 404 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message || 'Failed to set unit amenities', status);
+    }
+  });
+
+  // --- Units ---
   router.get('/api/v1/properties/units', (req, res) => {
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
+    if (temporal.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
+    }
+
+    const orderBy = parseOrderByClause(
+      req.query['order_by'],
+      [
+        'unit_number',
+        'status',
+        'bedrooms',
+        'bathrooms',
+        'square_feet',
+        'market_rent_cents',
+        'target_deposit_cents',
+        'published_for_rent',
+        'created_at',
+        'updated_at'
+      ],
+      'unit_number ASC'
+    );
+    if (orderBy.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderBy.error, 400);
+    }
+
     const units = PropertiesRepository.listUnits({
       property_id: req.query.property_id,
-      status: req.query.status
+      building_id: req.query.building_id,
+      status: req.query.status,
+      temporal: temporal.params,
+      orderBy: orderBy.clause
     });
     successResponse(res, { units });
   });
@@ -78,7 +230,10 @@ export function registerRoutes(router: Router): void {
       const unit = PropertiesRepository.createUnit(req.body);
       successResponse(res, { unit }, 201);
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message || 'Failed to create unit', 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -98,7 +253,10 @@ export function registerRoutes(router: Router): void {
       }
       successResponse(res, { unit });
     } catch (err: any) {
-      return errorResponse(res, 'VALIDATION_ERROR', err.message || 'Failed to update unit', 400);
+      if (err?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
+      }
+      throw err;
     }
   });
 
@@ -110,11 +268,62 @@ export function registerRoutes(router: Router): void {
     successResponse(res, { deleted: true });
   });
 
+  // --- Property Amenities ---
+  router.get('/api/v1/properties/:id/amenities', (req, res) => {
+    const property = PropertiesRepository.getPropertyById(req.params.id!);
+    if (!property) {
+      return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+    }
+    const amenities = PropertiesRepository.getPropertyAmenities(property.id);
+    successResponse(res, { amenities });
+  });
+
+  router.put('/api/v1/properties/:id/amenities', (req, res) => {
+    const { amenity_ids } = req.body || {};
+    if (!Array.isArray(amenity_ids)) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'amenity_ids array is required', 400);
+    }
+
+    try {
+      const amenities = PropertiesRepository.setPropertyAmenities(req.params.id!, amenity_ids);
+      successResponse(res, { amenities });
+    } catch (err: any) {
+      const status = err.code === 'NOT_FOUND' ? 404 : 400;
+      return errorResponse(res, err.code || 'VALIDATION_ERROR', err.message || 'Failed to set property amenities', status);
+    }
+  });
+
   // --- Properties ---
   router.get('/api/v1/properties', (req, res) => {
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
+    if (temporal.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
+    }
+
+    const orderBy = parseOrderByClause(
+      req.query['order_by'],
+      [
+        'name',
+        'property_type',
+        'city',
+        'state',
+        'postal_code',
+        'year_built',
+        'published_for_rent',
+        'created_at',
+        'updated_at'
+      ],
+      'name ASC'
+    );
+    if (orderBy.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderBy.error, 400);
+    }
+
     const properties = PropertiesRepository.listProperties({
       portfolio_id: req.query.portfolio_id,
-      portfolio: req.query.portfolio
+      portfolio: req.query.portfolio,
+      temporal: temporal.params,
+      orderBy: orderBy.clause
     });
     successResponse(res, { properties });
   });
@@ -129,8 +338,15 @@ export function registerRoutes(router: Router): void {
         400
       );
     }
-    const property = PropertiesRepository.createProperty(req.body);
-    successResponse(res, { property }, 201);
+    try {
+      const property = PropertiesRepository.createProperty(req.body);
+      successResponse(res, { property }, 201);
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
+    }
   });
 
   router.get('/api/v1/properties/:id', (req, res) => {
@@ -140,15 +356,23 @@ export function registerRoutes(router: Router): void {
     }
     const buildings = PropertiesRepository.listBuildings(property.id);
     const units = PropertiesRepository.listUnits({ property_id: property.id });
-    successResponse(res, { property, buildings, units });
+    const amenities = PropertiesRepository.getPropertyAmenities(property.id);
+    successResponse(res, { property, buildings, units, amenities });
   });
 
   router.put('/api/v1/properties/:id', (req, res) => {
-    const property = PropertiesRepository.updateProperty(req.params.id!, req.body || {});
-    if (!property) {
-      return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+    try {
+      const property = PropertiesRepository.updateProperty(req.params.id!, req.body || {});
+      if (!property) {
+        return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+      }
+      successResponse(res, { property });
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
     }
-    successResponse(res, { property });
   });
 
   router.delete('/api/v1/properties/:id', (req, res) => {
@@ -165,7 +389,25 @@ export function registerRoutes(router: Router): void {
     if (!property) {
       return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
     }
-    const buildings = PropertiesRepository.listBuildings(property.id);
+
+    const temporal = validateTemporalParams(req.query, ['created_at', 'updated_at']);
+    if (temporal.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', temporal.error, 400);
+    }
+
+    const orderBy = parseOrderByClause(
+      req.query['order_by'],
+      ['name', 'building_number', 'floors', 'created_at', 'updated_at'],
+      'name ASC'
+    );
+    if (orderBy.error) {
+      return errorResponse(res, 'VALIDATION_ERROR', orderBy.error, 400);
+    }
+
+    const buildings = PropertiesRepository.listBuildings(property.id, {
+      temporal: temporal.params,
+      orderBy: orderBy.clause
+    });
     successResponse(res, { buildings });
   });
 
@@ -174,7 +416,7 @@ export function registerRoutes(router: Router): void {
     if (!property) {
       return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
     }
-    const { name, building_number, floors, notes } = req.body || {};
+    const { name, building_number, floors, notes, custom_fields } = req.body || {};
     if (!name) {
       return errorResponse(res, 'VALIDATION_ERROR', 'Building name is required', 400);
     }
@@ -186,14 +428,22 @@ export function registerRoutes(router: Router): void {
       }
       parsedFloors = num;
     }
-    const building = PropertiesRepository.createBuilding({
-      property_id: property.id,
-      name,
-      building_number,
-      floors: parsedFloors,
-      notes
-    });
-    successResponse(res, { building }, 201);
+    try {
+      const building = PropertiesRepository.createBuilding({
+        property_id: property.id,
+        name,
+        building_number,
+        floors: parsedFloors,
+        notes,
+        custom_fields
+      });
+      successResponse(res, { building }, 201);
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
+    }
   });
 
   router.get('/api/v1/buildings/:id', (req, res) => {
@@ -213,11 +463,18 @@ export function registerRoutes(router: Router): void {
         return errorResponse(res, 'VALIDATION_ERROR', 'floors must be a positive integer', 400);
       }
     }
-    const building = PropertiesRepository.updateBuilding(req.params.id!, req.body || {});
-    if (!building) {
-      return errorResponse(res, 'NOT_FOUND', 'Building not found', 404);
+    try {
+      const building = PropertiesRepository.updateBuilding(req.params.id!, req.body || {});
+      if (!building) {
+        return errorResponse(res, 'NOT_FOUND', 'Building not found', 404);
+      }
+      successResponse(res, { building });
+    } catch (error: any) {
+      if (error?.code === 'VALIDATION_ERROR') {
+        return errorResponse(res, 'VALIDATION_ERROR', error.message, 400, error.details);
+      }
+      throw error;
     }
-    successResponse(res, { building });
   });
 
   router.delete('/api/v1/buildings/:id', (req, res) => {
