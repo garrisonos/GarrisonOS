@@ -12,6 +12,8 @@ export interface Portfolio {
   name: string;
   tax_id?: string | null;
   notes?: string | null;
+  property_count?: number;
+  unit_count?: number;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -33,6 +35,7 @@ export interface Property {
   state: string;
   postal_code: string;
   year_built?: number | null;
+  unit_count?: number;
   created_at: number;
   updated_at: number;
   deleted_at?: number | null;
@@ -90,9 +93,15 @@ export class PropertiesRepository {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
     return db.prepare(`
-      SELECT * FROM portfolios
-      WHERE operator_id = ? AND deleted_at IS NULL
-      ORDER BY name ASC
+      SELECT p.*,
+        COUNT(DISTINCT prop.id) AS property_count,
+        COUNT(DISTINCT u.id) AS unit_count
+      FROM portfolios p
+      LEFT JOIN properties prop ON prop.portfolio_id = p.id AND prop.deleted_at IS NULL AND prop.operator_id = p.operator_id
+      LEFT JOIN units u ON u.property_id = prop.id AND u.deleted_at IS NULL AND u.operator_id = p.operator_id
+      WHERE p.operator_id = ? AND p.deleted_at IS NULL
+      GROUP BY p.id
+      ORDER BY p.name ASC
     `).all(operatorId) as unknown as Portfolio[];
   }
 
@@ -185,17 +194,28 @@ export class PropertiesRepository {
    * @param filter - Optional filter containing portfolio_id.
    * @returns Array of active Property records ordered by name.
    */
-  public static listProperties(filter?: { portfolio_id?: string }): Property[] {
+  public static listProperties(filter?: { portfolio_id?: string; portfolio?: string }): Property[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
-    let sql = 'SELECT * FROM properties WHERE operator_id = ? AND deleted_at IS NULL';
+    let sql = `
+      SELECT prop.*,
+        COUNT(DISTINCT u.id) AS unit_count
+      FROM properties prop
+      LEFT JOIN units u ON u.property_id = prop.id AND u.deleted_at IS NULL AND u.operator_id = prop.operator_id
+      WHERE prop.operator_id = ? AND prop.deleted_at IS NULL
+    `;
     const params: any[] = [operatorId];
 
     if (filter?.portfolio_id) {
-      sql += ' AND portfolio_id = ?';
+      sql += ' AND prop.portfolio_id = ?';
       params.push(filter.portfolio_id);
+    } else if (filter?.portfolio) {
+      sql += ` AND prop.portfolio_id IN (
+        SELECT id FROM portfolios WHERE operator_id = ? AND (id = ? OR name = ?) AND deleted_at IS NULL
+      )`;
+      params.push(operatorId, filter.portfolio, filter.portfolio);
     }
-    sql += ' ORDER BY name ASC';
+    sql += ' GROUP BY prop.id ORDER BY prop.name ASC';
 
     return db.prepare(sql).all(...params) as unknown as Property[];
   }
@@ -652,26 +672,77 @@ export class PropertiesRepository {
    *
    * @returns Aggregated metrics including total, occupied, vacant units, percentage, and rent sum.
    */
-  public static getOccupancyMetrics(): {
+  public static getOccupancyMetrics(filter?: { property_id?: string; portfolio?: string }): {
     totalUnits: number;
     occupiedUnits: number;
     vacantUnits: number;
     occupancyRatePercentage: number;
     totalMarketRentCents: number;
+    byBedroomType: Array<{
+      bedrooms: number;
+      label: string;
+      bedroomType: string;
+      total: number;
+      totalUnits: number;
+      occupied: number;
+      occupiedUnits: number;
+      vacant: number;
+      vacantUnits: number;
+      occupancyRate: number;
+      occupancyRatePercentage: number;
+    }>;
   } {
-    const units = PropertiesRepository.listUnits();
+    let units = PropertiesRepository.listUnits(filter?.property_id ? { property_id: filter.property_id } : undefined);
+    if (filter?.portfolio) {
+      const properties = PropertiesRepository.listProperties({ portfolio: filter.portfolio });
+      const propIds = new Set(properties.map((p) => p.id));
+      units = units.filter((u) => propIds.has(u.property_id));
+    }
+
     const totalUnits = units.length;
     const occupiedUnits = units.filter((u) => u.status === 'occupied').length;
     const vacantUnits = totalUnits - occupiedUnits;
     const occupancyRatePercentage = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 10000) / 100 : 0;
     const totalMarketRentCents = units.reduce((sum, u) => sum + (u.market_rent_cents || 0), 0);
 
+    const bedroomDefs = [
+      { bedrooms: 0, label: 'Studio' },
+      { bedrooms: 1, label: '1 Bedroom' },
+      { bedrooms: 2, label: '2 Bedroom' },
+      { bedrooms: 3, label: '3+ Bedroom' }
+    ];
+
+    const byBedroomType = bedroomDefs.map((def) => {
+      const matchingUnits = units.filter((u) => {
+        if (def.bedrooms === 3) return u.bedrooms >= 3;
+        return u.bedrooms === def.bedrooms;
+      });
+      const bTotal = matchingUnits.length;
+      const bOccupied = matchingUnits.filter((u) => u.status === 'occupied').length;
+      const bVacant = bTotal - bOccupied;
+      const bRate = bTotal > 0 ? Math.round((bOccupied / bTotal) * 1000) / 10 : 0;
+      return {
+        bedrooms: def.bedrooms,
+        label: def.label,
+        bedroomType: def.label,
+        total: bTotal,
+        totalUnits: bTotal,
+        occupied: bOccupied,
+        occupiedUnits: bOccupied,
+        vacant: bVacant,
+        vacantUnits: bVacant,
+        occupancyRate: bRate,
+        occupancyRatePercentage: bRate
+      };
+    });
+
     return {
       totalUnits,
       occupiedUnits,
       vacantUnits,
       occupancyRatePercentage,
-      totalMarketRentCents
+      totalMarketRentCents,
+      byBedroomType
     };
   }
 }

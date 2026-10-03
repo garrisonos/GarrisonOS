@@ -19,6 +19,25 @@ export function renderHeader(user: SessionUser | null, operatorId: string, brand
         <span class="brand-badge">🏢 ${brandName}</span>
         <small class="text-muted font-mono" style="font-size: 0.75rem;">${operatorId}</small>
       </div>
+      <div class="topbar-search-container" role="search">
+        <form action="/search" method="GET" class="topbar-search-form" id="global-search-form">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input
+            type="search"
+            name="q"
+            id="global-search-input"
+            class="topbar-search-input"
+            placeholder="Search everything... (Ctrl+K or /)"
+            autocomplete="off"
+            aria-label="Universal search"
+            aria-autocomplete="list"
+            aria-controls="search-quick-results"
+            aria-expanded="false"
+          />
+          <kbd class="search-hotkey-badge" title="Press Ctrl+K or / to search">Ctrl K</kbd>
+        </form>
+        <div id="search-quick-results" class="search-quick-results" role="listbox" style="display: none;"></div>
+      </div>
       <div class="topbar-right">
         <button type="button" class="theme-toggle-btn" title="Toggle theme (Alt+D)">🌙 Dark</button>
         <div class="user-profile">

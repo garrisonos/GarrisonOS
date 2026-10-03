@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderPagination } from '../../../../web/templates/pagination.js';
 
 /**
  * Handles presentation requests for listing contacts with type filtering,
@@ -12,6 +13,8 @@ import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
 export async function handle(ctx: PageContext): Promise<PageResult> {
   const typeFilter = ctx.query['type'] || '';
   const searchQuery = ctx.query['q'] || '';
+  const page = Math.max(1, parseInt(ctx.query['page'] || '1', 10) || 1);
+  const limit = 10;
   const csrfToken = ctx.session.getCsrfToken();
   let error: string | null = null;
 
@@ -58,12 +61,15 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     error = error || err.message;
   }
 
+  const total = contacts.length;
+  const paginatedContacts = contacts.slice((page - 1) * limit, page * limit);
+
   const errorAlert = error
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
     : raw('');
 
-  const contactRows = contacts.length > 0
-    ? contacts.map((c) => {
+  const contactRows = paginatedContacts.length > 0
+    ? paginatedContacts.map((c) => {
         const typeFormatted = c.contact_type ? c.contact_type.charAt(0).toUpperCase() + c.contact_type.slice(1) : '';
         const isVendor = c.contact_type === 'vendor';
         const w9Badge = isVendor
@@ -73,9 +79,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           : raw('');
 
         return html`
-          <tr>
+          <tr data-entity="contact" data-id="${c.id}">
             <td>
               <strong><a href="/contacts/show?id=${encodeURIComponent(c.id)}">${c.last_name}, ${c.first_name}</a></strong>
+              <button class="btn-icon" data-action="copy-id" data-copy-value="${c.id}" title="Copy Contact ID" style="margin-left: 0.35rem; font-size: 0.75rem; background: transparent; border: none; cursor: pointer;">📋</button>
               ${c.company_name ? html`<div class="text-muted text-sm">${c.company_name}</div>` : raw('')}
             </td>
             <td>
@@ -125,6 +132,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     </div>
 
     <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Contacts (${total})</h2>
+      </div>
       <div class="table-responsive">
         <table class="data-table">
           <thead>
@@ -141,6 +151,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           </tbody>
         </table>
       </div>
+      ${renderPagination({
+        page,
+        limit,
+        total,
+        baseUrl: '/contacts',
+        queryParams: { type: typeFilter, q: searchQuery }
+      })}
     </div>
 
     <!-- Modal: Add Contact -->

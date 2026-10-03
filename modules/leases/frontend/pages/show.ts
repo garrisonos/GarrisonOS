@@ -3,6 +3,7 @@ import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
 import { renderLeaseARSubsystem } from '../../../../web/templates/lease-ar.js';
 import { renderConversationsWidget } from '../../../../web/templates/conversations.js';
+import { renderCustomFields } from '../../../../web/templates/custom-fields.js';
 
 /**
  * Format timestamp into readable UTC date string.
@@ -250,16 +251,20 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   });
 
   const content = html`
-    <div class="page-header">
+    <div class="page-header" data-entity="lease" data-id="${lease.id}">
       <div>
         <a href="/leases" class="text-muted">← Back to Leases</a>
-        <h1 class="page-title">${lease.property_name || 'Property'} – Unit ${lease.unit_number || ''}</h1>
+        <h1 class="page-title">
+          ${lease.property_name || 'Property'} – Unit ${lease.unit_number || ''}
+          <button class="btn-icon" data-action="copy-id" data-copy-value="${lease.id}" title="Copy Lease ID" style="margin-left: 0.5rem; font-size: 0.85rem; background: transparent; border: none; cursor: pointer;">📋</button>
+        </h1>
         <p class="page-subtitle">
           Status: <span class="badge badge-success">${statusFormatted}</span> •
           Term: ${formatDate(lease.start_date)} to ${formatDate(lease.end_date)}
         </p>
       </div>
       <div class="btn-group">
+        <button class="btn btn-secondary" data-action="copy-id" data-copy-value="${lease.id}">📋 Copy ID</button>
         <a href="/accounting/ledger-detail?lease_id=${encodeURIComponent(id)}" class="btn btn-secondary">Tenant Ledger</a>
         ${lease.status === 'draft'
           ? html`
@@ -280,6 +285,8 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     </div>
 
     ${errorAlert}
+
+    ${renderCustomFields('lease', lease.custom_fields || {}, { operatorId: ctx.session.operatorId })}
 
     <div class="grid-2-col">
       <div class="card">

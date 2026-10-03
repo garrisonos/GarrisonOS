@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderPagination } from '../../../../web/templates/pagination.js';
 
 function formatDate(epochMs: number): string {
   try {
@@ -18,6 +19,9 @@ function formatCurrency(cents: number): string {
 
 export async function handle(ctx: PageContext): Promise<PageResult> {
   const statusFilter = ctx.query['status'] || '';
+  const propertyFilter = ctx.query['property_id'] || '';
+  const page = Math.max(1, parseInt(ctx.query['page'] || '1', 10) || 1);
+  const limit = 10;
   const csrfToken = ctx.session.getCsrfToken();
   let error: string | null = null;
 
@@ -69,6 +73,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   let leases: any[] = [];
   let units: any[] = [];
   let contacts: any[] = [];
+  let properties: any[] = [];
 
   try {
     const params = new URLSearchParams();
@@ -81,18 +86,36 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     const propRes = await ctx.api.get('/api/v1/properties/units');
     units = propRes?.data?.units || [];
 
+    const propListRes = await ctx.api.get('/api/v1/properties');
+    properties = propListRes?.data?.properties || [];
+
     const contRes = await ctx.api.get('/api/v1/contacts?type=tenant');
     contacts = contRes?.data?.contacts || [];
   } catch (err: any) {
     error = error || err.message;
   }
 
+  const leasesByProperty = new Map<string, number>();
+  for (const l of leases) {
+    if (l.property_id) {
+      leasesByProperty.set(l.property_id, (leasesByProperty.get(l.property_id) || 0) + 1);
+    }
+  }
+
+  // Filter leases by property if specified
+  const filteredLeases = propertyFilter
+    ? leases.filter((l) => l.property_id === propertyFilter || l.property_name === propertyFilter)
+    : leases;
+
+  const total = filteredLeases.length;
+  const paginatedLeases = filteredLeases.slice((page - 1) * limit, page * limit);
+
   const errorAlert = error
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
     : raw('');
 
-  const leaseRows = leases.length > 0
-    ? leases.map((l) => {
+  const leaseRows = paginatedLeases.length > 0
+    ? paginatedLeases.map((l) => {
         let statusClass = 'badge-info';
         if (l.status === 'active') statusClass = 'badge-success';
         else if (l.status === 'expiring') statusClass = 'badge-warning';
@@ -101,16 +124,17 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         const statusFormatted = (l.status || '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
 
         return html`
-          <tr>
+          <tr data-entity="lease" data-id="${l.id}" data-status="${l.status}" data-amount-cents="${l.rent_amount_cents}">
             <td>
-              <strong><a href="/leases/show?id=${encodeURIComponent(l.id)}">${l.property_name || 'Property'}</a></strong>
+              <strong><a href="/leases/show?id=${encodeURIComponent(l.id)}" data-entity-id="${l.id}" data-entity-type="lease">${l.property_name || 'Property'}</a></strong>
+              <button class="btn-icon" data-action="copy-id" data-copy-value="${l.id}" title="Copy Lease ID" style="margin-left: 0.35rem; font-size: 0.75rem; background: transparent; border: none; cursor: pointer;">📋</button>
               <div class="text-muted text-sm">Unit ${l.unit_number || '—'}</div>
             </td>
             <td><span class="badge ${statusClass}">${statusFormatted}</span></td>
             <td>${formatDate(l.start_date)} – ${formatDate(l.end_date)}</td>
             <td><strong>$${formatCurrency(l.rent_amount_cents)}</strong>/mo</td>
             <td>$${formatCurrency(l.deposit_held_cents || 0)}</td>
-            <td><a href="/leases/show?id=${encodeURIComponent(l.id)}" class="btn btn-sm btn-secondary">View Details</a></td>
+            <td><a href="/leases/show?id=${encodeURIComponent(l.id)}" data-entity-id="${l.id}" data-entity-type="lease" class="btn btn-sm btn-secondary">View Details</a></td>
           </tr>
         `;
       })
@@ -128,6 +152,14 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   const nextYear = new Date(Date.UTC(now.getUTCFullYear() + 1, now.getUTCMonth(), 0));
   const defaultEnd = `${nextYear.getUTCFullYear()}-${String(nextYear.getUTCMonth() + 1).padStart(2, '0')}-${String(nextYear.getUTCDate()).padStart(2, '0')}`;
 
+  const buildStatusUrl = (status: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (propertyFilter) params.set('property_id', propertyFilter);
+    const qs = params.toString();
+    return `/leases${qs ? `?${qs}` : ''}`;
+  };
+
   const content = html`
     <div class="page-header">
       <div>
@@ -140,18 +172,32 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     ${errorAlert}
 
     <!-- Filters Bar -->
-    <div class="filter-bar card">
+    <div class="filter-bar card" style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
       <div class="filter-pills">
-        <a href="/leases" class="filter-pill ${!statusFilter ? 'active' : ''}">All</a>
-        <a href="/leases?status=active" class="filter-pill ${statusFilter === 'active' ? 'active' : ''}">Active</a>
-        <a href="/leases?status=draft" class="filter-pill ${statusFilter === 'draft' ? 'active' : ''}">Draft</a>
-        <a href="/leases?status=month_to_month" class="filter-pill ${statusFilter === 'month_to_month' ? 'active' : ''}">Month-to-Month</a>
-        <a href="/leases?status=expiring" class="filter-pill ${statusFilter === 'expiring' ? 'active' : ''}">Expiring</a>
-        <a href="/leases?status=terminated" class="filter-pill ${statusFilter === 'terminated' ? 'active' : ''}">Terminated</a>
+        <a href="${buildStatusUrl('')}" class="filter-pill ${!statusFilter ? 'active' : ''}">All</a>
+        <a href="${buildStatusUrl('active')}" class="filter-pill ${statusFilter === 'active' ? 'active' : ''}">Active</a>
+        <a href="${buildStatusUrl('draft')}" class="filter-pill ${statusFilter === 'draft' ? 'active' : ''}">Draft</a>
+        <a href="${buildStatusUrl('month_to_month')}" class="filter-pill ${statusFilter === 'month_to_month' ? 'active' : ''}">Month-to-Month</a>
+        <a href="${buildStatusUrl('expiring')}" class="filter-pill ${statusFilter === 'expiring' ? 'active' : ''}">Expiring</a>
+        <a href="${buildStatusUrl('terminated')}" class="filter-pill ${statusFilter === 'terminated' ? 'active' : ''}">Terminated</a>
       </div>
+
+      <form method="GET" action="/leases" style="display: flex; gap: 0.5rem; align-items: center; margin: 0;">
+        ${statusFilter ? html`<input type="hidden" name="status" value="${statusFilter}">` : raw('')}
+        <select class="form-select form-input-sm" name="property_id" onchange="this.form.submit()" style="max-width: 260px;">
+          <option value="">All Properties (${leases.length})</option>
+          ${properties.map((p) => html`
+            <option value="${p.id}" ${propertyFilter === p.id ? 'selected' : ''}>${p.name} (${leasesByProperty.get(p.id) || 0})</option>
+          `)}
+        </select>
+        ${propertyFilter ? html`<a href="${buildStatusUrl('')}" class="btn btn-sm btn-secondary">Clear</a>` : raw('')}
+      </form>
     </div>
 
     <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Leases (${total})</h2>
+      </div>
       <div class="table-responsive">
         <table class="data-table">
           <thead>
@@ -169,6 +215,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           </tbody>
         </table>
       </div>
+      ${renderPagination({
+        page,
+        limit,
+        total,
+        baseUrl: '/leases',
+        queryParams: { status: statusFilter, property_id: propertyFilter }
+      })}
     </div>
 
     <!-- Modal: New Lease -->

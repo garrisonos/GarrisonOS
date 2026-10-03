@@ -153,6 +153,7 @@ CREATE TABLE IF NOT EXISTS portfolios (
     client_contact_id TEXT REFERENCES contacts(id), -- Primary client/investor link
     name TEXT NOT NULL,
     description TEXT,
+    spend_threshold_cents INTEGER NOT NULL DEFAULT 0 CHECK (spend_threshold_cents >= 0),
     custom_fields TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -839,26 +840,52 @@ CREATE INDEX IF NOT EXISTS idx_fee_agreements_operator ON management_fee_agreeme
 CREATE TABLE IF NOT EXISTS work_orders (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    unit_id TEXT NOT NULL REFERENCES units(id),
+    property_id TEXT REFERENCES properties(id),
+    unit_id TEXT REFERENCES units(id),
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'emergency')),
-    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'assigned', 'in_progress', 'completed', 'cancelled')),
-    category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('plumbing', 'electrical', 'hvac', 'appliance', 'structural', 'make_ready', 'other')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'assigned', 'in_progress', 'on_hold', 'completed', 'cancelled')),
+    category TEXT NOT NULL DEFAULT 'other' CHECK (category IN ('plumbing', 'electrical', 'hvac', 'appliance', 'structural', 'make_ready', 'cosmetic', 'roofing', 'landscaping', 'pest_control', 'other')),
     assigned_vendor_id TEXT REFERENCES contacts(id),
-    completion_notes TEXT,
+    permission_to_enter INTEGER NOT NULL DEFAULT 1 CHECK (permission_to_enter IN (0, 1)),
+    entry_instructions TEXT,
+    scheduled_date INTEGER,
+    estimated_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (estimated_cost_cents >= 0),
     actual_cost_cents INTEGER NOT NULL DEFAULT 0 CHECK (actual_cost_cents >= 0),
+    hold_reason TEXT,
+    completion_notes TEXT,
     created_by_contact_id TEXT REFERENCES contacts(id), -- tenant submission link
     completed_at INTEGER,
+    custom_fields TEXT NOT NULL DEFAULT '{}',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_work_orders_operator_unit ON work_orders(operator_id, unit_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_work_orders_assigned_vendor ON work_orders(operator_id, assigned_vendor_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(operator_id, status) WHERE deleted_at IS NULL;
 ```
 
-### 7.2 Work Order Subtasks (`work_order_tasks`) *(Sprint 6: Field Operations)*
+### 7.2 Multi-Vendor Assignments (`work_order_vendors`)
+Junction table linking multiple primary contractors, subcontractors, or diagnostic specialists to a work order.
+```sql
+CREATE TABLE IF NOT EXISTS work_order_vendors (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    work_order_id TEXT NOT NULL REFERENCES work_orders(id),
+    vendor_contact_id TEXT NOT NULL REFERENCES contacts(id),
+    role TEXT NOT NULL DEFAULT 'Contractor',
+    notes TEXT,
+    assigned_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_wov_order ON work_order_vendors(operator_id, work_order_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_wov_vendor ON work_order_vendors(operator_id, vendor_contact_id) WHERE deleted_at IS NULL;
+```
+
+### 7.3 Work Order Subtasks (`work_order_tasks`) *(Sprint 6: Field Operations)*
 ```sql
 CREATE TABLE IF NOT EXISTS work_order_tasks (
     id TEXT PRIMARY KEY,
@@ -1054,4 +1081,123 @@ CREATE TABLE IF NOT EXISTS scheduled_tenant_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_payments_lease ON scheduled_tenant_payments(operator_id, lease_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_scheduled_payments_next ON scheduled_tenant_payments(operator_id, next_run_date) WHERE deleted_at IS NULL;
+```
+
+---
+
+## 10. Dynamic Custom Fields Subsystem
+
+### 10.1 Custom Field Sections (`custom_field_sections`)
+Categorical section containers grouping custom field inputs on entity SSR presentation cards.
+```sql
+CREATE TABLE IF NOT EXISTS custom_field_sections (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'unit', 'lease', 'contact', 'work_order', 'bill')),
+    label TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    icon TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_custom_sections_op_type ON custom_field_sections(operator_id, entity_type, sort_order) WHERE deleted_at IS NULL;
+```
+
+### 10.2 Custom Field Definitions (`custom_field_definitions`)
+Schema definition records specifying input data types, validation rules, select options, and section associations.
+```sql
+CREATE TABLE IF NOT EXISTS custom_field_definitions (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'unit', 'lease', 'contact', 'work_order', 'bill')),
+    name TEXT NOT NULL,
+    label TEXT NOT NULL,
+    field_type TEXT NOT NULL CHECK (field_type IN ('string', 'number', 'currency', 'date', 'boolean', 'select')),
+    section_id TEXT REFERENCES custom_field_sections(id),
+    is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
+    options_json TEXT,
+    default_value TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_op_type_name ON custom_field_definitions(operator_id, entity_type, name) WHERE deleted_at IS NULL;
+```
+
+---
+
+## 11. Standardized Amenities & Marketing Syndication Subsystem
+
+### 11.1 Amenity Catalog Definitions (`amenity_definitions`)
+Standardized amenity library organized into 5 operational categories (`community`, `unit`, `accessibility`, `pet`, `eco`).
+```sql
+CREATE TABLE IF NOT EXISTS amenity_definitions (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('community', 'unit', 'accessibility', 'pet', 'eco')),
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_amenities_op_name ON amenity_definitions(operator_id, name) WHERE deleted_at IS NULL;
+```
+
+### 11.2 Property Amenities Junction (`property_amenities`)
+Associates community or parcel-level amenities with a property. Inherited automatically by child units.
+```sql
+CREATE TABLE IF NOT EXISTS property_amenities (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    property_id TEXT NOT NULL REFERENCES properties(id),
+    amenity_id TEXT NOT NULL REFERENCES amenity_definitions(id),
+    details TEXT,
+    created_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prop_amenities_unique ON property_amenities(operator_id, property_id, amenity_id) WHERE deleted_at IS NULL;
+```
+
+### 11.3 Unit Amenities Junction (`unit_amenities`)
+Unit-level amenity assignments, unit-specific overrides, or exclusions of inherited property amenities.
+```sql
+CREATE TABLE IF NOT EXISTS unit_amenities (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    unit_id TEXT NOT NULL REFERENCES units(id),
+    amenity_id TEXT NOT NULL REFERENCES amenity_definitions(id),
+    details TEXT,
+    is_excluded INTEGER NOT NULL DEFAULT 0 CHECK (is_excluded IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_amenities_unique ON unit_amenities(operator_id, unit_id, amenity_id) WHERE deleted_at IS NULL;
+```
+
+### 11.4 Marketing Syndication Profiles (`marketing_syndication`)
+Listing copy, contact designations, and third-party portal publication toggles.
+```sql
+CREATE TABLE IF NOT EXISTS marketing_syndication (
+    id TEXT PRIMARY KEY,
+    operator_id TEXT NOT NULL REFERENCES operators(id),
+    property_id TEXT NOT NULL REFERENCES properties(id),
+    headline TEXT,
+    description TEXT,
+    contact_name TEXT,
+    contact_phone TEXT,
+    contact_email TEXT,
+    syndicate_zillow INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_zillow IN (0, 1)),
+    syndicate_trulia INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_trulia IN (0, 1)),
+    syndicate_hotpads INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_hotpads IN (0, 1)),
+    syndicate_apartments_com INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_apartments_com IN (0, 1)),
+    syndicate_craigslist INTEGER NOT NULL DEFAULT 0 CHECK (syndicate_craigslist IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_syndication_prop_unique ON marketing_syndication(operator_id, property_id) WHERE deleted_at IS NULL;
 ```

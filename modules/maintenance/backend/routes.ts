@@ -3,6 +3,7 @@ import { successResponse, errorResponse } from '../../../api/response.js';
 import { MaintenanceRepository } from './repository.js';
 import { eventBus } from '../../../core/events.js';
 import { RequestContext } from '../../../core/context.js';
+import { generateWorkOrderPdf } from '../../../web/lib/pdf.js';
 
 /**
  * Register REST API routes for the Maintenance module.
@@ -10,17 +11,33 @@ import { RequestContext } from '../../../core/context.js';
  * @param router - Application HTTP router.
  */
 export function registerRoutes(router: Router): void {
-  router.getBatchSafe('/api/v1/maintenance/metrics', (_req, res) => {
-    const metrics = MaintenanceRepository.getMaintenanceMetrics();
+  router.getBatchSafe('/api/v1/maintenance/metrics', (req, res) => {
+    const propertyId = req.query['property_id'] as string | undefined;
+    const portfolio = req.query['portfolio'] as string | undefined;
+    const metrics = MaintenanceRepository.getMaintenanceMetrics({
+      property_id: propertyId,
+      portfolio: portfolio
+    });
     successResponse(res, { metrics });
   });
 
   router.getBatchSafe('/api/v1/maintenance/work-orders', (req, res) => {
+    const rawLimit = req.query['limit'];
+    let limit: number | undefined;
+    if (rawLimit !== undefined) {
+      const parsed = Number(rawLimit);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "limit" must be a positive integer', 400);
+      }
+      limit = parsed;
+    }
     const workOrders = MaintenanceRepository.listWorkOrders({
       status: req.query['status'],
       priority: req.query['priority'],
       property_id: req.query['property_id'],
-      unit_id: req.query['unit_id']
+      portfolio: req.query['portfolio'],
+      unit_id: req.query['unit_id'],
+      limit
     });
     successResponse(res, { workOrders });
   });
@@ -92,6 +109,81 @@ export function registerRoutes(router: Router): void {
       return errorResponse(res, 'NOT_FOUND', 'Work order not found', 404);
     }
     successResponse(res, { deleted: true });
+  });
+
+  router.get('/api/v1/maintenance/work-orders/:id/expenses', (req, res) => {
+    try {
+      const expenses = MaintenanceRepository.getWorkOrderExpenses(req.params['id']!);
+      successResponse(res, expenses);
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes('not found')) {
+        return errorResponse(res, 'NOT_FOUND', msg, 404);
+      }
+      return errorResponse(res, 'INTERNAL_ERROR', msg, 500);
+    }
+  });
+
+  router.get('/api/v1/maintenance/work-orders/:id/pdf', (req, res) => {
+    try {
+      const dispatchData = MaintenanceRepository.getWorkOrderDispatchData(req.params['id']!);
+      if (!dispatchData) {
+        return errorResponse(res, 'NOT_FOUND', 'Work order not found', 404);
+      }
+      const pdfBuffer = generateWorkOrderPdf(dispatchData);
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="WorkOrder-${dispatchData.ticket_number}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err) {
+      return errorResponse(res, 'INTERNAL_ERROR', (err as Error).message, 500);
+    }
+  });
+
+  router.get('/api/v1/maintenance/work-orders/:id/vendors', (req, res) => {
+    try {
+      const id = req.params['id']!;
+      const vendors = MaintenanceRepository.listWorkOrderVendors(id);
+      successResponse(res, { vendors });
+    } catch (err) {
+      return errorResponse(res, 'INTERNAL_ERROR', (err as Error).message, 500);
+    }
+  });
+
+  router.post('/api/v1/maintenance/work-orders/:id/vendors', (req, res) => {
+    try {
+      const id = req.params['id']!;
+      const { vendor_contact_id, role, notes } = req.body || {};
+      if (!vendor_contact_id) {
+        return errorResponse(res, 'VALIDATION_ERROR', 'vendor_contact_id is required', 400);
+      }
+      const vendorAssignment = MaintenanceRepository.assignWorkOrderVendor(
+        id,
+        vendor_contact_id,
+        role || 'contractor',
+        notes
+      );
+      successResponse(res, { vendor: vendorAssignment }, 201);
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes('not found')) {
+        return errorResponse(res, 'NOT_FOUND', msg, 404);
+      }
+      return errorResponse(res, 'VALIDATION_ERROR', msg, 400);
+    }
+  });
+
+  router.delete('/api/v1/maintenance/work-orders/:id/vendors/:vendorContactId', (req, res) => {
+    try {
+      const id = req.params['id']!;
+      const vendorContactId = req.params['vendorContactId']!;
+      const removed = MaintenanceRepository.removeWorkOrderVendor(id, vendorContactId);
+      successResponse(res, { removed });
+    } catch (err) {
+      return errorResponse(res, 'INTERNAL_ERROR', (err as Error).message, 500);
+    }
   });
 
   // --- Preventative Maintenance Schedules ---

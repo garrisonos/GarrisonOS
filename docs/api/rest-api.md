@@ -104,6 +104,7 @@ All JSON responses conform to standardized envelopes:
 * `GET /api/v1/users/:id`: Get subuser profile with module and portfolio permissions
 * `PUT /api/v1/users/:id`: Update subuser profile, role, password, `allowed_modules`, or `allowed_portfolios`
 * `DELETE /api/v1/users/:id`: Soft delete subuser (prevents deletion of the last owner)
+* `GET /api/v1/users/:id/activity`: Get chronological activity audit trail for a team member (`limit`, `offset`)
 
 ### Universal Attachments
 
@@ -136,6 +137,7 @@ All JSON responses conform to standardized envelopes:
 * `PUT /api/v1/properties/:id/amenities`: Replace/sync assigned amenities for a property parcel
 * `GET /api/v1/properties/units/:unit_id/amenities`: Get assigned amenities for an individual unit
 * `PUT /api/v1/properties/units/:unit_id/amenities`: Replace/sync assigned amenities for an individual unit
+* `GET /api/v1/properties/:id/flyer-pdf`: Generate zero-dependency vector PDF marketing flyer with property specifications, unit inventory matrix, and categorized amenities
 
 ### Contacts & Vendors
 
@@ -197,6 +199,7 @@ All JSON responses conform to standardized envelopes:
 * `POST /api/v1/accounting/checks`: Record paper check payment settling one or more bills
 * `GET /api/v1/accounting/checks/:id`: Get check details and bill settlements
 * `GET /api/v1/accounting/checks/:id/pdf`: Generate zero-dependency ANSI X9.100-140 check PDF with MICR line and remittance vouchers
+* `POST /api/v1/accounting/checks/batch-pdf`: Generate consolidated multi-page ANSI X9.100-140 check batch PDF
 * `POST /api/v1/accounting/checks/:id/void`: Void check, reopen bills, and reverse GL payment
 * `GET /api/v1/accounting/vendor_credits`: List vendor credit memos
 * `POST /api/v1/accounting/vendor_credits`: Record vendor credit memo / refund
@@ -207,6 +210,8 @@ All JSON responses conform to standardized envelopes:
 * `GET /api/v1/accounting/deposits`: List batched bank deposits
 * `POST /api/v1/accounting/deposits`: Create bank deposit grouping payments into bank clearing account
 * `GET /api/v1/accounting/deposits/:id`: Get bank deposit details and itemized receipts
+* `GET /api/v1/accounting/deposits/:id/pdf`: Generate official bank deposit slip PDF with itemized cash/check lines
+* `GET /api/v1/accounting/deposits/receipts/:id/pdf`: Generate customer remitter receipt PDF
 * `POST /api/v1/accounting/deposits/:id/void`: Void deposit slip, return receipts to undeposited pool, and reverse GL clearing
 * `GET /api/v1/accounting/client_contributions`: List client owner capital contributions
 * `POST /api/v1/accounting/client_contributions`: Record investor/owner capital infusion
@@ -222,6 +227,11 @@ All JSON responses conform to standardized envelopes:
 * `GET /api/v1/maintenance/:id`: Work order details, assigned vendor, and costs
 * `PUT /api/v1/maintenance/:id`: Update work order status and costs
 * `PUT /api/v1/maintenance/:id/close`: Complete work order workflow (`completion_notes`, `actual_cost_cents`, `completed_at`)
+* `GET /api/v1/maintenance/work-orders/:id/vendors`: List assigned vendor contractors & trade specialists
+* `POST /api/v1/maintenance/work-orders/:id/vendors`: Assign vendor contractor or specialist (`vendor_contact_id`, `role`, `notes`)
+* `DELETE /api/v1/maintenance/work-orders/:id/vendors/:vendorContactId`: Unlink vendor contractor from work order
+* `GET /api/v1/maintenance/work-orders/:id/expenses`: Budget vs. actual expense summary, linked AP bills, and over-budget status
+* `GET /api/v1/maintenance/work-orders/:id/pdf`: Stream zero-dependency vector PDF 1.4 dispatch sheet for field technicians
 * `GET /api/v1/maintenance/:id/tasks`: List work order checklist tasks
 * `POST /api/v1/maintenance/:id/tasks`: Create subtask checklist item
 * `PUT /api/v1/maintenance/:id/tasks/:task_id`: Mark subtask complete or reassign
@@ -244,11 +254,20 @@ All JSON responses conform to standardized envelopes:
 
 ### Custom Fields Engine
 
+* `GET /api/v1/custom_fields/sections`: List custom field sections filtered by `entity_type`
+* `POST /api/v1/custom_fields/sections`: Create custom field section (`entity_type`, `label`, `sort_order`, `icon`)
+* `PUT /api/v1/custom_fields/sections/:id`: Update custom field section label, sort order, or icon
+* `DELETE /api/v1/custom_fields/sections/:id`: Soft delete custom field section
 * `GET /api/v1/custom_fields/definitions`: List custom field schemas filtered by `entity_type`
-* `POST /api/v1/custom_fields/definitions`: Register custom field definition
-* `PUT /api/v1/custom_fields/definitions/:id`: Update field label, required status, or options
+* `POST /api/v1/custom_fields/definitions`: Register custom field definition (`name`, `label`, `field_type`, `section_id`, `is_required`, `options`, `sort_order`, `description`)
+* `PUT /api/v1/custom_fields/definitions/:id`: Update field label, required status, section, or options
 * `DELETE /api/v1/custom_fields/definitions/:id`: Soft delete custom field definition
 * `PUT /api/v1/:entity_type/:id/custom_fields`: Update entity custom field values
+
+### Universal Search Engine & Entity Previews
+
+* `GET /api/v1/search`: Cross-entity search engine with wildcard and prefix matching, token filter parsing (`type:`, `status:`, `vendor:`, `amount:`), relevance scoring, RBAC scoping, and pagination (`q`, `category`, `limit`)
+* `GET /api/v1/entities/preview`: Resolve brief summary card, metadata key-values, status badges, and full URL navigation target for any entity by ID (`id`, optional `type`) with operator isolation
 
 ### Backup & Disaster Recovery
 

@@ -104,9 +104,9 @@ describe('Seed Dataset Verification & Integrity (50-Unit Portfolio)', () => {
     assert.ok(distributions.length >= 2, 'Must seed owner distributions');
   });
 
-  it('populates 8 diverse work orders across categories, priorities, and statuses', () => {
+  it('populates 9 diverse work orders across categories, priorities, and statuses', () => {
     const workOrders = db.prepare('SELECT * FROM work_orders WHERE operator_id = ?').all(operatorId) as any[];
-    assert.equal(workOrders.length, 8);
+    assert.equal(workOrders.length, 9);
 
     const statuses = new Set(workOrders.map(w => w.status));
     assert.ok(statuses.has('open'));
@@ -114,12 +114,16 @@ describe('Seed Dataset Verification & Integrity (50-Unit Portfolio)', () => {
     assert.ok(statuses.has('in_progress'));
     assert.ok(statuses.has('completed'));
     assert.ok(statuses.has('cancelled'));
+    assert.ok(statuses.has('on_hold'));
 
     const priorities = new Set(workOrders.map(w => w.priority));
     assert.ok(priorities.has('emergency'));
     assert.ok(priorities.has('high'));
     assert.ok(priorities.has('medium'));
     assert.ok(priorities.has('low'));
+
+    const wovs = db.prepare('SELECT * FROM work_order_vendors WHERE operator_id = ?').all(operatorId) as any[];
+    assert.ok(wovs.length >= 4, 'Must seed multi-vendor assignments for work orders');
   });
 
   it('aggregates annual 1099-NEC vendor report correctly from seeded operating expenses', () => {

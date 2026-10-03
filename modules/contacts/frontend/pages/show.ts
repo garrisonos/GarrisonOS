@@ -1,5 +1,6 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
+import { renderCustomFields } from '../../../../web/templates/custom-fields.js';
 
 /**
  * Handles presentation requests for viewing a single contact detail view,
@@ -55,16 +56,24 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     : html`<span class="text-muted">No notes recorded for this contact.</span>`;
 
   const content = html`
-    <div class="page-header">
+    <div class="page-header" data-entity="contact" data-id="${contact.id}">
       <div>
         <a href="/contacts" class="text-muted">← Back to Contacts</a>
-        <h1 class="page-title">${contact.first_name} ${contact.last_name}</h1>
+        <h1 class="page-title">
+          ${contact.first_name} ${contact.last_name}
+          <button class="btn-icon" data-action="copy-id" data-copy-value="${contact.id}" title="Copy Contact ID" style="margin-left: 0.5rem; font-size: 0.85rem; background: transparent; border: none; cursor: pointer;">📋</button>
+        </h1>
         <p class="page-subtitle">
           <span class="badge">${typeFormatted}</span>
           ${contact.company_name ? html` • ${contact.company_name}` : raw('')}
         </p>
       </div>
+      <div>
+        <button class="btn btn-secondary" data-action="copy-id" data-copy-value="${contact.id}">📋 Copy ID</button>
+      </div>
     </div>
+
+    ${renderCustomFields('contact', contact.custom_fields || {}, { operatorId: ctx.session.operatorId })}
 
     <div class="grid-2-col">
       <div class="card">

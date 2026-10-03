@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderPagination } from '../../../../web/templates/pagination.js';
 
 function formatDate(epochMs: number): string {
   if (!epochMs) return '—';
@@ -16,6 +17,9 @@ function formatDate(epochMs: number): string {
 export async function handle(ctx: PageContext): Promise<PageResult> {
   const csrfToken = ctx.session.getCsrfToken();
   let error: string | null = null;
+  const propertyFilter = ctx.query['property_id'] || '';
+  const page = Math.max(1, parseInt(ctx.query['page'] || '1', 10) || 1);
+  const pageSize = 10;
 
   if (ctx.method === 'POST') {
     if (!validateCsrf(csrfToken, ctx.body['csrf_token'])) {
@@ -92,10 +96,19 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
     : raw('');
 
+  // Filter schedules
+  const filteredSchedules = propertyFilter
+    ? schedules.filter((s) => s.property_id === propertyFilter)
+    : schedules;
+
+  const totalFiltered = filteredSchedules.length;
+  const totalPages = Math.ceil(totalFiltered / pageSize) || 1;
+  const paginatedSchedules = filteredSchedules.slice((page - 1) * pageSize, page * pageSize);
+
   const now = Date.now();
-  const scheduleRows = schedules.length === 0
-    ? html`<tr><td colspan="7" class="text-center text-muted">No preventative maintenance schedules established yet.</td></tr>`
-    : schedules.map((s) => {
+  const scheduleRows = paginatedSchedules.length === 0
+    ? html`<tr><td colspan="7" class="text-center text-muted">No preventative maintenance schedules established yet${propertyFilter ? ' for this property' : ''}.</td></tr>`
+    : paginatedSchedules.map((s) => {
         const isOverdue = s.next_due_date && s.next_due_date <= now;
         const dueClass = isOverdue ? 'text-danger font-bold' : '';
         const cadenceDesc = String(s.frequency || '').replace(/_/g, ' ');
@@ -125,7 +138,9 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         `;
       });
 
-  const propertyOptions = properties.map((p) => html`<option value="${p.id}">${p.name}</option>`);
+  const propertyOptions = properties.map((p) => html`
+    <option value="${p.id}" ${propertyFilter === p.id ? raw('selected') : raw('')}>${p.name}</option>
+  `);
   const vendorOptions = vendors.map((v) => html`<option value="${v.id}">${v.last_name}, ${v.first_name}${v.company_name ? ` (${v.company_name})` : ''}</option>`);
 
   const content = html`
@@ -175,14 +190,30 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       </div>
     </div>
 
+    <!-- Filter Bar -->
+    <div class="filter-bar card">
+      <form method="GET" action="/maintenance/preventative" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; width: 100%;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label class="form-label" style="display:inline-block; margin-right:0.5rem;" for="property_id">Filter by Property:</label>
+          <select class="form-select form-input-sm" id="property_id" name="property_id" onchange="this.form.submit()">
+            <option value="">-- All Properties Combined --</option>
+            ${propertyOptions}
+          </select>
+        </div>
+        ${propertyFilter
+          ? html`<a href="/maintenance/preventative" class="btn btn-sm btn-subtle" style="margin-left: auto;">Clear Filter</a>`
+          : raw('')}
+      </form>
+    </div>
+
     <!-- Schedules Table -->
-    <div class="card">
-      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+    <div class="card" style="padding: 0; overflow-x: auto;">
+      <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; padding: 1rem 1.25rem;">
         <h2 class="card-title">Recurring Maintenance Cadences</h2>
-        <span class="badge badge-info">${schedules.length} configured</span>
+        <span class="badge badge-info">${totalFiltered} configured</span>
       </div>
       <div class="table-responsive">
-        <table class="data-table">
+        <table class="data-table" style="margin-bottom: 0;">
           <thead>
             <tr>
               <th>Schedule Title</th>
@@ -200,10 +231,17 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         </table>
       </div>
     </div>
+    ${renderPagination({
+      page,
+      limit: pageSize,
+      total: totalFiltered,
+      baseUrl: '/maintenance/preventative',
+      queryParams: { property_id: propertyFilter }
+    })}
 
     <!-- Modal: Create Schedule -->
-    <dialog id="createScheduleModal" class="modal">
-      <form method="POST" action="/maintenance/preventative" class="modal-box">
+    <dialog id="createScheduleModal" class="modal modal-box" style="background: var(--bg-surface); color: var(--text-main);">
+      <form method="POST" action="/maintenance/preventative" class="modal-box" style="background: var(--bg-surface); color: var(--text-main);">
         ${csrfField(csrfToken)}
         <input type="hidden" name="action" value="create_schedule">
         <div class="modal-header">

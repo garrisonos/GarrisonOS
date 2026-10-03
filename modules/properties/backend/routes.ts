@@ -1,6 +1,8 @@
 import { Router } from '../../../api/router.js';
 import { successResponse, errorResponse } from '../../../api/response.js';
 import { PropertiesRepository } from './repository.js';
+import { AmenitiesRepository, AmenityCategory } from './amenities.js';
+import { generateMarketingFlyerPdf } from '../../../web/lib/pdf.js';
 
 /**
  * Register properties, portfolios, buildings, and units API routes with the router.
@@ -48,8 +50,13 @@ export function registerRoutes(router: Router): void {
   });
 
   // --- Occupancy Metrics ---
-  router.getBatchSafe('/api/v1/properties/metrics/occupancy', (_req, res) => {
-    const metrics = PropertiesRepository.getOccupancyMetrics();
+  router.getBatchSafe('/api/v1/properties/metrics/occupancy', (req, res) => {
+    const propertyId = req.query['property_id'] as string | undefined;
+    const portfolio = req.query['portfolio'] as string | undefined;
+    const metrics = PropertiesRepository.getOccupancyMetrics({
+      property_id: propertyId,
+      portfolio: portfolio
+    });
     successResponse(res, { metrics });
   });
 
@@ -106,7 +113,8 @@ export function registerRoutes(router: Router): void {
   // --- Properties ---
   router.get('/api/v1/properties', (req, res) => {
     const properties = PropertiesRepository.listProperties({
-      portfolio_id: req.query.portfolio_id
+      portfolio_id: req.query.portfolio_id,
+      portfolio: req.query.portfolio
     });
     successResponse(res, { properties });
   });
@@ -219,4 +227,178 @@ export function registerRoutes(router: Router): void {
     }
     successResponse(res, { deleted: true });
   });
+
+  // --- Amenities Catalog & Assignments ---
+  router.get('/api/v1/properties/amenities/definitions', (req, res) => {
+    const category = typeof req.query['category'] === 'string' ? req.query['category'] as AmenityCategory : undefined;
+    const amenities = AmenitiesRepository.listAmenities(category);
+    successResponse(res, { amenities });
+  });
+
+  router.post('/api/v1/properties/amenities/definitions', (req, res) => {
+    const { category, name, icon } = req.body || {};
+    if (!category || !name) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'category and name are required', 400);
+    }
+    try {
+      const def = AmenitiesRepository.createAmenity(category, name, icon, true);
+      successResponse(res, { amenity: def }, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/properties/:id/amenities', (req, res) => {
+    const data = AmenitiesRepository.getPropertyAmenities(req.params.id!);
+    successResponse(res, data);
+  });
+
+  router.put('/api/v1/properties/:id/amenities', (req, res) => {
+    const amenityIds = Array.isArray(req.body?.amenity_ids) ? req.body.amenity_ids : [];
+    try {
+      AmenitiesRepository.setPropertyAmenities(req.params.id!, amenityIds);
+      const data = AmenitiesRepository.getPropertyAmenities(req.params.id!);
+      successResponse(res, data);
+    } catch (err: any) {
+      errorResponse(res, 'UPDATE_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/properties/units/:id/amenities', (req, res) => {
+    const unit = PropertiesRepository.getUnitById(req.params.id!);
+    if (!unit) {
+      return errorResponse(res, 'NOT_FOUND', 'Unit not found', 404);
+    }
+    const data = AmenitiesRepository.getUnitAmenities(unit.id, unit.property_id);
+    successResponse(res, data);
+  });
+
+  router.put('/api/v1/properties/units/:id/amenities', (req, res) => {
+    const unit = PropertiesRepository.getUnitById(req.params.id!);
+    if (!unit) {
+      return errorResponse(res, 'NOT_FOUND', 'Unit not found', 404);
+    }
+    const selectedIds = Array.isArray(req.body?.selected_ids) ? req.body.selected_ids : [];
+    const excludedInheritedIds = Array.isArray(req.body?.excluded_inherited_ids) ? req.body.excluded_inherited_ids : [];
+    try {
+      AmenitiesRepository.setUnitAmenities(unit.id, { selectedIds, excludedInheritedIds });
+      const data = AmenitiesRepository.getUnitAmenities(unit.id, unit.property_id);
+      successResponse(res, data);
+    } catch (err: any) {
+      errorResponse(res, 'UPDATE_FAILED', err.message, 400);
+    }
+  });
+
+  // --- Marketing Syndication & Flyers ---
+  router.get('/api/v1/properties/:id/marketing', (req, res) => {
+    const syndication = AmenitiesRepository.getMarketingSyndication(req.params.id!);
+    successResponse(res, { syndication });
+  });
+
+  router.put('/api/v1/properties/:id/marketing', (req, res) => {
+    try {
+      const syndication = AmenitiesRepository.upsertMarketingSyndication({
+        property_id: req.params.id!,
+        ...req.body
+      });
+      successResponse(res, { syndication });
+    } catch (err: any) {
+      errorResponse(res, 'UPDATE_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/properties/units/:id/marketing', (req, res) => {
+    const syndication = AmenitiesRepository.getMarketingSyndication(undefined, req.params.id!);
+    successResponse(res, { syndication });
+  });
+
+  router.put('/api/v1/properties/units/:id/marketing', (req, res) => {
+    try {
+      const syndication = AmenitiesRepository.upsertMarketingSyndication({
+        unit_id: req.params.id!,
+        ...req.body
+      });
+      successResponse(res, { syndication });
+    } catch (err: any) {
+      errorResponse(res, 'UPDATE_FAILED', err.message, 400);
+    }
+  });
+
+  router.get('/api/v1/properties/:id/flyer-pdf', (req, res) => {
+    const property = PropertiesRepository.getPropertyById(req.params.id!);
+    if (!property) {
+      return errorResponse(res, 'NOT_FOUND', 'Property not found', 404);
+    }
+    const { active } = AmenitiesRepository.getPropertyAmenities(property.id);
+    const syndication = AmenitiesRepository.getMarketingSyndication(property.id);
+
+    try {
+      const pdfBuffer = generateMarketingFlyerPdf({
+        property_name: property.name,
+        property_type: property.property_type,
+        address: `${property.address_line1}, ${property.city}, ${property.state} ${property.postal_code}`,
+        headline: syndication?.headline || `Spacious Living at ${property.name}`,
+        description: syndication?.description || 'Premier residential community offering modern living spaces, convenience, and attentive local property management.',
+        market_rent_cents: syndication?.advertised_rent_cents || 150000,
+        target_deposit_cents: syndication?.target_deposit_cents || 150000,
+        bedrooms: 2,
+        bathrooms: 1.5,
+        available_date: syndication?.available_date ? new Date(syndication.available_date).toISOString().slice(0, 10) : 'Immediate',
+        amenities: active.map((a) => ({ name: a.name, category: a.category.toUpperCase() })),
+        contact_name: syndication?.contact_name || 'Leasing Office',
+        contact_phone: syndication?.contact_phone || null,
+        contact_email: syndication?.contact_email || null
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="flyer-${property.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_FAILED', err.message, 500);
+    }
+  });
+
+  router.get('/api/v1/properties/units/:id/flyer-pdf', (req, res) => {
+    const unit = PropertiesRepository.getUnitById(req.params.id!);
+    if (!unit) {
+      return errorResponse(res, 'NOT_FOUND', 'Unit not found', 404);
+    }
+    const property = PropertiesRepository.getPropertyById(unit.property_id);
+    const { active } = AmenitiesRepository.getUnitAmenities(unit.id, unit.property_id);
+    const syndication = AmenitiesRepository.getMarketingSyndication(undefined, unit.id) || AmenitiesRepository.getMarketingSyndication(unit.property_id);
+
+    try {
+      const pdfBuffer = generateMarketingFlyerPdf({
+        property_name: property?.name || 'Residence',
+        unit_number: unit.unit_number,
+        property_type: property?.property_type || 'Apartment',
+        address: property ? `${property.address_line1}, ${property.city}, ${property.state} ${property.postal_code}` : 'Address on file',
+        headline: syndication?.headline || `Unit ${unit.unit_number} Available at ${property?.name || 'Property'}`,
+        description: syndication?.description || 'Thoughtfully finished interior with modern appliances, ample closet space, and fast responsive maintenance.',
+        market_rent_cents: syndication?.advertised_rent_cents || unit.market_rent_cents,
+        target_deposit_cents: syndication?.target_deposit_cents || unit.target_deposit_cents,
+        bedrooms: unit.bedrooms,
+        bathrooms: unit.bathrooms,
+        square_feet: unit.square_feet,
+        available_date: syndication?.available_date ? new Date(syndication.available_date).toISOString().slice(0, 10) : 'Available Now',
+        amenities: active.map((a) => ({ name: a.name, category: a.category.toUpperCase() })),
+        contact_name: syndication?.contact_name || 'Leasing Office',
+        contact_phone: syndication?.contact_phone || null,
+        contact_email: syndication?.contact_email || null
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="flyer-unit-${unit.unit_number}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_FAILED', err.message, 500);
+    }
+  });
 }
+
