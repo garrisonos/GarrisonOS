@@ -35,8 +35,9 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     withTransaction((tx) => {
     // 1. Clean existing demo data in safe reverse dependency order
     try { tx.prepare('DELETE FROM marketing_syndication WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
-    try { tx.prepare('DELETE FROM unit_amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM property_amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM unit_amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM amenity_definitions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM custom_field_definitions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM custom_field_sections WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
@@ -1013,28 +1014,28 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     // 15. Dynamic Custom Field Sections & Definitions + Populating Entities
     // =========================================================================
     const propSecId = generateUUIDv7();
+    const bldgSecId = generateUUIDv7();
     const unitSecId = generateUUIDv7();
     const leaseSecId = generateUUIDv7();
     const contactSecId = generateUUIDv7();
     const woSecId = generateUUIDv7();
-    const billSecId = generateUUIDv7();
 
     tx.prepare(`
       INSERT INTO custom_field_sections (id, operator_id, entity_type, title, sort_order, created_at, updated_at)
       VALUES
         (?, ?, 'property', 'Building & Access Security', 1, ?, ?),
+        (?, ?, 'building', 'Building Systems & Compliance', 1, ?, ?),
         (?, ?, 'unit', 'Unit Mechanical & Specifications', 1, ?, ?),
         (?, ?, 'lease', 'Compliance & Policy Verification', 1, ?, ?),
         (?, ?, 'contact', 'Emergency & Verification', 1, ?, ?),
-        (?, ?, 'work_order', 'Access & Vendor Dispatch', 1, ?, ?),
-        (?, ?, 'bill', 'Project Accounting & CapEx Tagging', 1, ?, ?)
+        (?, ?, 'work_order', 'Access & Vendor Dispatch', 1, ?, ?)
     `).run(
       propSecId, OPERATOR_ID, now, now,
+      bldgSecId, OPERATOR_ID, now, now,
       unitSecId, OPERATOR_ID, now, now,
       leaseSecId, OPERATOR_ID, now, now,
       contactSecId, OPERATOR_ID, now, now,
-      woSecId, OPERATOR_ID, now, now,
-      billSecId, OPERATOR_ID, now, now
+      woSecId, OPERATOR_ID, now, now
     );
 
     tx.prepare(`
@@ -1046,6 +1047,9 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         (?, ?, ?, 'property', 'gate_code', 'Gate Access Code', 'string', 0, '9876', NULL, 1, ?, ?),
         (?, ?, ?, 'property', 'lockbox_code', 'Master Lockbox Code', 'string', 0, '1234', NULL, 2, ?, ?),
         (?, ?, ?, 'property', 'roof_replacement_year', 'Roof Replacement Year', 'number', 0, '2019', NULL, 3, ?, ?),
+        -- Building
+        (?, ?, ?, 'building', 'fire_sprinkler_cert', 'Fire Sprinkler Certification', 'string', 0, 'CERT-2025-A', NULL, 1, ?, ?),
+        (?, ?, ?, 'building', 'elevator_contract', 'Elevator Maintenance Contract', 'string', 0, 'ELEV-9948', NULL, 2, ?, ?),
         -- Unit
         (?, ?, ?, 'unit', 'hvac_filter_size', 'HVAC Filter Size', 'string', 0, '16x25x1', NULL, 1, ?, ?),
         (?, ?, ?, 'unit', 'water_heater_sn', 'Water Heater Serial #', 'string', 0, 'WH-884920', NULL, 2, ?, ?),
@@ -1058,14 +1062,13 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         (?, ?, ?, 'contact', 'id_verification_status', 'ID Verification Status', 'select', 0, 'verified', '["verified", "pending", "exempt"]', 2, ?, ?),
         -- Work Order
         (?, ?, ?, 'work_order', 'access_instructions', 'Entry Permission & Alarm', 'string', 0, 'Alarm disarm: 4421. Dog in crate.', NULL, 1, ?, ?),
-        (?, ?, ?, 'work_order', 'safety_hazard_noted', 'Safety Hazard Noted', 'boolean', 0, '0', NULL, 2, ?, ?),
-        -- Bill
-        (?, ?, ?, 'bill', 'project_code', 'CapEx Project Code', 'string', 0, 'CAPEX-2026-Q1', NULL, 1, ?, ?),
-        (?, ?, ?, 'bill', 'is_1099_reportable', '1099 Reportable', 'boolean', 0, '1', NULL, 2, ?, ?)
+        (?, ?, ?, 'work_order', 'safety_hazard_noted', 'Safety Hazard Noted', 'boolean', 0, '0', NULL, 2, ?, ?)
     `).run(
       generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, bldgSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, bldgSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
@@ -1074,9 +1077,7 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
       generateUUIDv7(), OPERATOR_ID, contactSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, contactSecId, now, now,
       generateUUIDv7(), OPERATOR_ID, woSecId, now, now,
-      generateUUIDv7(), OPERATOR_ID, woSecId, now, now,
-      generateUUIDv7(), OPERATOR_ID, billSecId, now, now,
-      generateUUIDv7(), OPERATOR_ID, billSecId, now, now
+      generateUUIDv7(), OPERATOR_ID, woSecId, now, now
     );
 
     // Populate custom field values across entities
@@ -1132,6 +1133,32 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     const amSolar = generateUUIDv7();
 
     tx.prepare(`
+      INSERT INTO amenities (id, operator_id, category, name, description, created_at, updated_at)
+      VALUES
+        (?, ?, 'community', 'Resort-Style Swimming Pool', 'Resort-Style Swimming Pool', ?, ?),
+        (?, ?, 'community', '24/7 Fitness Center', '24/7 Fitness Center', ?, ?),
+        (?, ?, 'community', 'Rooftop Terrace & BBQ Lounge', 'Rooftop Terrace & BBQ Lounge', ?, ?),
+        (?, ?, 'community', 'Electric Vehicle Charging Stations', 'Electric Vehicle Charging Stations', ?, ?),
+        (?, ?, 'community', 'Package Concierge Hub', 'Package Concierge Hub', ?, ?),
+        (?, ?, 'unit', 'In-Unit Washer/Dryer', 'In-Unit Washer/Dryer', ?, ?),
+        (?, ?, 'unit', 'Stainless Steel Appliances', 'Stainless Steel Appliances', ?, ?),
+        (?, ?, 'unit', 'Smart Thermostat', 'Smart Thermostat', ?, ?),
+        (?, ?, 'pet', 'Bark Park & Agility Course', 'Bark Park & Agility Course', ?, ?),
+        (?, ?, 'eco', 'Solar-Powered Common Areas', 'Solar-Powered Common Areas', ?, ?)
+    `).run(
+      amPool, OPERATOR_ID, now, now,
+      amGym, OPERATOR_ID, now, now,
+      amRoof, OPERATOR_ID, now, now,
+      amEv, OPERATOR_ID, now, now,
+      amPackage, OPERATOR_ID, now, now,
+      amWasher, OPERATOR_ID, now, now,
+      amStainless, OPERATOR_ID, now, now,
+      amThermostat, OPERATOR_ID, now, now,
+      amPetPark, OPERATOR_ID, now, now,
+      amSolar, OPERATOR_ID, now, now
+    );
+
+    tx.prepare(`
       INSERT INTO amenity_definitions (id, operator_id, category, name, icon, is_custom, created_at, updated_at)
       VALUES
         (?, ?, 'community', 'Resort-Style Swimming Pool', 'waves', 0, ?, ?),
@@ -1178,11 +1205,11 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
 
     // Assign unit-level amenities
     tx.prepare(`
-      INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, is_override, is_excluded, created_at)
+      INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, created_at)
       VALUES
-        (?, ?, ?, ?, 0, 0, ?),
-        (?, ?, ?, ?, 0, 0, ?),
-        (?, ?, ?, ?, 0, 0, ?)
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?)
     `).run(
       generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.unitId, amWasher, now,
       generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.unitId, amStainless, now,

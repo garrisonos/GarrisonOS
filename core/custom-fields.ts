@@ -406,11 +406,11 @@ export class CustomFieldsService {
     let optionsJson: string | null = null;
     if (data.data_type === 'select') {
       if (!Array.isArray(data.options) || data.options.length === 0) {
-        throw new Error('Data type "select" requires a non-empty array of options');
+        throw new Error('options array is required for select data type');
       }
       const cleaned = data.options.map((o) => String(o).trim()).filter(Boolean);
       if (cleaned.length === 0) {
-        throw new Error('Options array must contain at least one non-empty string option');
+        throw new Error('options array is required for select data type');
       }
       optionsJson = JSON.stringify(cleaned);
     }
@@ -502,14 +502,14 @@ export class CustomFieldsService {
       isRequired = data.is_required ? 1 : 0;
     }
 
-    let optionsJson = existing.options_json;
+    let optionsJson: string | null = existing.options_json ?? null;
     if (existing.data_type === 'select' && data.options !== undefined) {
       if (!Array.isArray(data.options) || data.options.length === 0) {
-        throw new Error('Data type "select" requires a non-empty array of options');
+        throw new Error('options array is required for select data type');
       }
       const cleaned = data.options.map((o) => String(o).trim()).filter(Boolean);
       if (cleaned.length === 0) {
-        throw new Error('Options array must contain at least one non-empty string option');
+        throw new Error('options array is required for select data type');
       }
       optionsJson = JSON.stringify(cleaned);
     }
@@ -528,13 +528,13 @@ export class CustomFieldsService {
         UPDATE custom_field_definitions
         SET field_label = ?, is_required = ?, options_json = ?, section_id = ?, default_value = ?, sort_order = ?, updated_at = ?
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).run(cleanLabel, isRequired, optionsJson, sectionId || null, defaultValue || null, sortOrder ?? 0, now, id, operatorId);
+      `).run(cleanLabel, isRequired, optionsJson ?? null, sectionId || null, defaultValue || null, sortOrder ?? 0, now, id, operatorId);
     } else {
       db.prepare(`
         UPDATE custom_field_definitions
         SET field_label = ?, is_required = ?, options_json = ?, updated_at = ?
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).run(cleanLabel, isRequired, optionsJson, now, id, operatorId);
+      `).run(cleanLabel, isRequired, optionsJson ?? null, now, id, operatorId);
     }
 
     return CustomFieldsService.getDefinitionById(id, operatorId);
@@ -585,7 +585,12 @@ export class CustomFieldsService {
     for (const def of definitions) {
       if (def.is_required) {
         const val = payload[def.field_name];
-        if (val === undefined || val === null || val === '') {
+        if (
+          val === undefined ||
+          val === null ||
+          val === '' ||
+          (typeof val === 'string' && val.trim() === '')
+        ) {
           errors.push(`Field '${def.field_label}' (${def.field_name}) is required.`);
         }
       }
@@ -611,7 +616,7 @@ export class CustomFieldsService {
         case 'number': {
           const num = Number(val);
           if (!Number.isFinite(num)) {
-            errors.push(`Field '${def.field_label}' must be a valid number.`);
+            errors.push(`Custom field "${def.field_name}" must be a valid finite number`);
           } else {
             formatted[def.field_name] = num;
           }
@@ -680,6 +685,17 @@ export class CustomFieldsService {
       formatted,
       errors
     };
+  }
+
+  /**
+   * Alias for validateAndFormat for backward compatibility.
+   */
+  public static validateAndFormatCustomFields(
+    entityType: CustomFieldEntityType,
+    payload: Record<string, any>,
+    opId?: string
+  ): CustomFieldValidationResult {
+    return CustomFieldsService.validateAndFormat(entityType, payload, opId);
   }
 
   /**

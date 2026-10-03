@@ -79,14 +79,14 @@ describe('Custom Fields Subsystem - Dynamic Metadata & SSR Presentation', () => 
         entity_type: 'unit',
         field_name: 'utility_fee_cents',
         field_label: 'Monthly Utility Surcharge',
-        data_type: 'currency',
+        data_type: 'number',
         is_required: false
       });
 
       // Valid inputs
       const validCheck = CustomFieldsService.validateAndFormatCustomFields('unit', {
         hvac_filter_size: '20x25x1',
-        utility_fee_cents: '45.50'
+        utility_fee_cents: 4550
       });
       assert.equal(validCheck.valid, true);
       assert.equal(validCheck.errors.length, 0);
@@ -95,10 +95,10 @@ describe('Custom Fields Subsystem - Dynamic Metadata & SSR Presentation', () => 
 
       // Missing required field
       const missingRequired = CustomFieldsService.validateAndFormatCustomFields('unit', {
-        utility_fee_cents: '25.00'
+        utility_fee_cents: 2500
       });
       assert.equal(missingRequired.valid, false);
-      assert.ok(missingRequired.errors.some((e) => e.includes('HVAC Filter Dimensions') && e.includes('is required')));
+      assert.ok(missingRequired.errors.some((e: string) => e.includes('HVAC Filter Dimensions') && e.includes('is required')));
     });
   });
 

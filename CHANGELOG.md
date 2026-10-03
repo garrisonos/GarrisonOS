@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Added repository methods `assignWorkOrderVendor`, `listWorkOrderVendors`, and `removeWorkOrderVendor` with REST endpoints `GET /api/v1/maintenance/work-orders/:id/vendors`, `POST /api/v1/maintenance/work-orders/:id/vendors`, and `DELETE /api/v1/maintenance/work-orders/:id/vendors/:vendorContactId`.
     - Added "Assigned Contractors & Specialists" card with table and "+ Link Contractor" modal on work order show page.
     - Updated printable field technician dispatch PDF (`generateWorkOrderPdf`) to display multi-contractor rosters and specialty trades.
-  - **Automated Spend Threshold & Available Funds Auto-Hold (`modules/properties/backend/migrations/0005_portfolio_spend_threshold.sql`, `modules/maintenance/backend/repository.ts`, `show.ts`, `test/work_order_advanced.test.ts`)**:
+  - **Automated Spend Threshold & Available Funds Auto-Hold (`modules/properties/backend/migrations/0004_portfolio_spend_threshold.sql`, `modules/maintenance/backend/repository.ts`, `show.ts`, `test/work_order_advanced.test.ts`)**:
     - Added `spend_threshold_cents` column to `portfolios` table to configure per-portfolio expenditure limits.
     - Added `hold_reason` column to `work_orders` table to persist policy rationale.
     - Implemented `MaintenanceRepository.evaluateSpendPolicy(propertyId, estimatedCostCents)` to evaluate portfolio permissible spend limits and verify available operating cash in portfolio bank accounts and capital contributions.

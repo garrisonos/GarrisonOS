@@ -112,9 +112,10 @@ export class AmenitiesRepository {
 
     const now = Date.now();
     const stmt = db.prepare(`
-      INSERT OR IGNORE INTO amenity_definitions (
+      INSERT INTO amenity_definitions (
         id, operator_id, category, name, icon, is_custom, created_at, updated_at, deleted_at
       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, NULL)
+      ON CONFLICT (operator_id, category, name) WHERE deleted_at IS NULL DO NOTHING
     `);
 
     for (const item of DEFAULT_AMENITIES) {
