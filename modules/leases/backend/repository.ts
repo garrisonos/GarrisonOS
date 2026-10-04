@@ -472,6 +472,12 @@ export class LeasesRepository {
   ): LeaseWithDetails | null {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
+    if (status === 'active' || status === 'month_to_month') {
+      const existing = LeasesRepository.getLeaseById(id);
+      if (existing && existing.status !== 'active' && existing.status !== 'month_to_month') {
+        assertUnitQuota(db);
+      }
+    }
     const now = Date.now();
 
     if (status === 'terminated' && (noticeDate !== undefined || moveOutDate !== undefined)) {

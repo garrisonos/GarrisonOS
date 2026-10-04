@@ -17,17 +17,20 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 async function main() {
-  let getOrCreateInstanceId, getHardwareFingerprint;
+  let getOrCreateInstanceId, getHardwareFingerprint, getDatabase;
   try {
     const licenseModule = await import('../dist/core/license.js');
+    const dbModule = await import('../dist/database/client.js');
     getOrCreateInstanceId = licenseModule.getOrCreateInstanceId;
     getHardwareFingerprint = licenseModule.getHardwareFingerprint;
+    getDatabase = dbModule.getDatabase;
   } catch {
     console.error('Error: GarrisonOS build artifacts not found. Run `npm.cmd run build` first.');
     process.exit(1);
   }
 
-  const instanceId = getOrCreateInstanceId();
+  const db = getDatabase();
+  const instanceId = getOrCreateInstanceId(db);
   const hardwareFingerprint = getHardwareFingerprint();
   const platform = `${process.platform} (${process.arch})`;
   const hostname = os.hostname();

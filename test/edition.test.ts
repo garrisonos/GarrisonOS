@@ -122,6 +122,29 @@ describe('GarrisonOS Multi-Edition Subsystem', () => {
       );
     });
 
+    it('strictly blocks standard edition modules in Community Edition', () => {
+      process.env.GARRISON_EDITION = 'community';
+      const standardModule = {
+        id: 'standard_feature',
+        name: 'Standard Feature Module',
+        edition: 'standard',
+        license: 'GarrisonOS-Fair-Code-1.0'
+      };
+
+      assert.throws(
+        () => {
+          assertModuleLicensing(standardModule);
+        },
+        (err: any) => {
+          assert.ok(err instanceof LicenseViolationError);
+          assert.strictEqual(err.code, 'LICENSE_VIOLATION');
+          assert.strictEqual(err.status, 403);
+          assert.ok(err.message.includes('cannot be loaded in Community Edition'));
+          return true;
+        }
+      );
+    });
+
     it('strictly blocks enterprise modules in Community Edition', () => {
       process.env.GARRISON_EDITION = 'community';
       const enterpriseModule = {

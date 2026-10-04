@@ -13,8 +13,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as child_process from 'node:child_process';
-import { getRuntimeEdition } from './edition.js';
+import { getRuntimeEdition, isCommunityEdition } from './edition.js';
 import { generateUUIDv7 } from './crypto.js';
+import { withTransaction } from '../database/client.js';
 
 /** Free tier threshold for Standard Edition (units) */
 export const COMMUNITY_UNIT_LIMIT = 50;
@@ -308,32 +309,47 @@ export function getOrCreateInstanceId(db?: DatabaseSync): string {
   return newInstanceId;
 }
 
+let cachedRawMachineId: string | null = null;
+
+/**
+ * Clears the cached raw machine identifier in memory (primarily for unit test isolation).
+ */
+export function clearMachineIdCache(): void {
+  cachedRawMachineId = null;
+}
+
 /**
  * Resolves the host OS hardware machine identity without third-party dependencies.
- * - Linux: /etc/machine-id or /var/lib/dbus/machine-id
+ * - Linux: DMI product UUID in sysfs, machine-id, or D-Bus machine-id
  * - Windows: HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid
  * - macOS: IOPlatformUUID via ioreg
- * - Fallback: Hashed CPU model, architecture, and network interface MAC addresses.
+ * - Fallback: Hashed CPU model and architecture.
  */
 function resolveRawMachineId(): string {
+  if (cachedRawMachineId) {
+    return cachedRawMachineId;
+  }
+
   // 1. Linux
   if (process.platform === 'linux') {
-    try {
-      const dmiUuidPath = path.join('/', 'sys', 'class', 'dmi', 'id', 'product_uuid');
-      if (fs.existsSync(dmiUuidPath)) {
-        const id = fs.readFileSync(dmiUuidPath, 'utf8').trim();
-        if (id && id !== '00000000-0000-0000-0000-000000000000') return id;
+    const candidatePaths = [
+      path.join('/', 'sys', 'class', 'dmi', 'id', 'product_uuid'),
+      '/etc/machine-id',
+      '/var/lib/dbus/machine-id'
+    ];
+
+    for (const candidatePath of candidatePaths) {
+      try {
+        if (fs.existsSync(candidatePath)) {
+          const id = fs.readFileSync(candidatePath, 'utf8').trim();
+          if (id && id !== '00000000-0000-0000-0000-000000000000') {
+            cachedRawMachineId = id;
+            return id;
+          }
+        }
+      } catch {
+        // Individual try/catch ensures an unreadable source (e.g. EACCES on product_uuid) does not abort trying others
       }
-      if (fs.existsSync('/etc/machine-id')) {
-        const id = fs.readFileSync('/etc/machine-id', 'utf8').trim();
-        if (id) return id;
-      }
-      if (fs.existsSync('/var/lib/dbus/machine-id')) {
-        const id = fs.readFileSync('/var/lib/dbus/machine-id', 'utf8').trim();
-        if (id) return id;
-      }
-    } catch {
-      // Fallback
     }
   }
 
@@ -346,7 +362,9 @@ function resolveRawMachineId(): string {
       );
       const match = output.match(/MachineGuid\s+REG_SZ\s+([a-zA-Z0-9_-]+)/);
       if (match && match[1]) {
-        return match[1].trim();
+        const id = match[1].trim();
+        cachedRawMachineId = id;
+        return id;
       }
     } catch {
       // Fallback
@@ -362,7 +380,9 @@ function resolveRawMachineId(): string {
       );
       const match = output.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/);
       if (match && match[1]) {
-        return match[1].trim();
+        const id = match[1].trim();
+        cachedRawMachineId = id;
+        return id;
       }
     } catch {
       // Fallback
@@ -370,24 +390,13 @@ function resolveRawMachineId(): string {
   }
 
   // 4. Cross-platform deterministic hardware fallback
+  // Restrict inputs to stable platform and CPU identifiers, excluding dynamic network MACs
   const cpus = os.cpus();
   const cpuModel = cpus.length > 0 ? cpus[0]!.model : 'generic-cpu';
-  const networkInterfaces = os.networkInterfaces();
-  const macs: string[] = [];
 
-  for (const name of Object.keys(networkInterfaces)) {
-    const list = networkInterfaces[name];
-    if (list) {
-      for (const iface of list) {
-        if (!iface.internal && iface.mac && iface.mac !== '00:00:00:00:00:00') {
-          macs.push(iface.mac);
-        }
-      }
-    }
-  }
-  macs.sort();
-
-  return `${process.platform}:${process.arch}:${cpuModel}:${macs.join(',')}`;
+  const fallback = `${process.platform}:${process.arch}:${cpuModel}`;
+  cachedRawMachineId = fallback;
+  return fallback;
 }
 
 /**
@@ -561,8 +570,8 @@ export function verifyAndApplyCrl(
 
     ensureSystemSettingsTable(db);
     const existing = getStoredCrl(db);
-    if (existing && existing.issuedAt > crl.issuedAt) {
-      return { success: false, error: 'Stale CRL: existing CRL is newer than provided token' };
+    if (existing && existing.issuedAt >= crl.issuedAt) {
+      return { success: false, error: 'Stale CRL: existing CRL is newer than or identical to provided token' };
     }
 
     const now = Date.now();
@@ -769,6 +778,35 @@ export function evaluateModuleIntegrity(
 }
 
 /**
+ * Resolves or generates the local instance secret for signing fiduciary audit seals.
+ * Persisted in system_settings under key 'seal_hmac_secret'. Never exposed in report outputs.
+ *
+ * @param db - DatabaseSync instance.
+ * @returns Cryptographically secure 256-bit hexadecimal secret string.
+ */
+export function getOrCreateSealSecret(db: DatabaseSync): string {
+  ensureSystemSettingsTable(db);
+  try {
+    const stmt = db.prepare("SELECT value FROM system_settings WHERE key = 'seal_hmac_secret' AND deleted_at IS NULL LIMIT 1");
+    const row = stmt.get() as { value: string } | undefined;
+    if (row && row.value) {
+      return row.value;
+    }
+
+    const newSecret = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO system_settings (key, value, created_at, updated_at, deleted_at)
+      VALUES ('seal_hmac_secret', ?, ?, ?, NULL)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(newSecret, now, now);
+    return newSecret;
+  } catch {
+    return 'garrison_local_seal_secret_fallback';
+  }
+}
+
+/**
  * Generates an Ed25519/HMAC-backed Fiduciary Audit Seal for financial reports and statutory exports.
  * Licensed deployments receive a certified audit seal; unlicensed deployments receive a prominent
  * statutory warning watermark, precluding submission to auditors, banks, and tax authorities.
@@ -813,7 +851,8 @@ export function generateFiduciaryAuditSeal(
     summaryData: summaryData || {}
   };
   const sealJson = JSON.stringify(sealPayload);
-  const sealToken = `GARRISON-SEAL-${crypto.createHmac('sha256', instanceId).update(sealJson).digest('hex').substring(0, 32).toUpperCase()}`;
+  const sealSecret = getOrCreateSealSecret(db);
+  const sealToken = `GARRISON-SEAL-${crypto.createHmac('sha256', sealSecret).update(sealJson).digest('hex').substring(0, 32).toUpperCase()}`;
 
   return {
     status: 'VERIFIED_AUDIT_SEAL',
@@ -825,7 +864,7 @@ export function generateFiduciaryAuditSeal(
     instanceId,
     verifiedAt: now,
     reportType,
-    auditNotice: 'Certified GarrisonOS Fiduciary Audit Seal. Formally verified for GAAP compliance and trust accounting standards.'
+    auditNotice: 'Certified GarrisonOS Fiduciary Audit Seal. Formally verified that instance was within authorized unit capacity when generated.'
   };
 }
 
@@ -856,9 +895,12 @@ export function getActiveUnitCount(db: DatabaseSync): number {
     const stmt = db.prepare('SELECT COUNT(*) as count FROM units WHERE deleted_at IS NULL');
     const row = stmt.get() as { count: number } | undefined;
     return row ? Number(row.count) : 0;
-  } catch {
-    // If units table has not been migrated yet, default to 0
-    return 0;
+  } catch (err: any) {
+    // Only return 0 if the units table does not exist yet (pre-migration)
+    if (err && (String(err.message).includes('no such table') || err.code === 'SQLITE_ERROR')) {
+      return 0;
+    }
+    throw err;
   }
 }
 
@@ -1230,25 +1272,37 @@ export function recordVerifiedHeartbeat(
   const now = Date.now();
 
   try {
-    const upsertTime = db.prepare(`
-      INSERT INTO system_settings (key, value, created_at, updated_at, deleted_at)
-      VALUES ('last_heartbeat_verified_at', ?, ?, ?, NULL)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `);
-    upsertTime.run(String(result.payload.timestamp), now, now);
+    return withTransaction((txDb) => {
+      const currentStored = txDb.prepare("SELECT value FROM system_settings WHERE key = 'last_heartbeat_verified_at' AND deleted_at IS NULL LIMIT 1").get() as { value: string } | undefined;
+      const storedTime = currentStored?.value ? Number(currentStored.value) : 0;
 
-    const upsertStatus = db.prepare(`
-      INSERT INTO system_settings (key, value, created_at, updated_at, deleted_at)
-      VALUES ('last_heartbeat_status', ?, ?, ?, NULL)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `);
-    upsertStatus.run(result.payload.status, now, now);
+      if (storedTime && result.payload!.timestamp < storedTime) {
+        return { success: false, error: 'Stale heartbeat: incoming timestamp is older than last verified heartbeat' };
+      }
 
-    if (result.payload.crlToken) {
-      verifyAndApplyCrl(db, result.payload.crlToken, customPublicKey);
-    }
+      const upsertTime = txDb.prepare(`
+        INSERT INTO system_settings (key, value, created_at, updated_at, deleted_at)
+        VALUES ('last_heartbeat_verified_at', ?, ?, ?, NULL)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `);
+      upsertTime.run(String(result.payload!.timestamp), now, now);
 
-    return { success: true, payload: result.payload };
+      const upsertStatus = txDb.prepare(`
+        INSERT INTO system_settings (key, value, created_at, updated_at, deleted_at)
+        VALUES ('last_heartbeat_status', ?, ?, ?, NULL)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `);
+      upsertStatus.run(result.payload!.status, now, now);
+
+      if (result.payload!.crlToken) {
+        const crlResult = verifyAndApplyCrl(txDb, result.payload!.crlToken, customPublicKey);
+        if (!crlResult.success) {
+          throw new Error(crlResult.error || 'Failed to apply accompanying CRL from heartbeat');
+        }
+      }
+
+      return { success: true, payload: result.payload };
+    }, db);
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to persist heartbeat status' };
   }
@@ -1372,7 +1426,7 @@ export function getLicenseStatus(
         unitCount > COMMUNITY_UNIT_LIMIT
       );
 
-      const isOverQuota = (unitCount >= maxUnits) || isStandardCutoff || clockCheck.isClockRollbackDetected;
+      const isOverQuota = (unitCount > maxUnits) || isStandardCutoff || clockCheck.isClockRollbackDetected;
       let errorMessage: string | undefined;
       if (clockCheck.isClockRollbackDetected) {
         errorMessage = 'System clock rollback detected: current system time is earlier than historical records in the database. Please synchronize your system clock with NTP to continue.';
@@ -1493,7 +1547,62 @@ export function getLicenseStatus(
 
 /**
  * Asserts that the system is permitted to create an additional unit.
- * Throws LicenseLimitError if the current unit count exceeds the allowed quota.
+ * Evaluates whether incrementing unitCount by 1 exceeds the applicable edition or commercial tier limit.
+ *
+ * @param db - DatabaseSync instance.
+ * @throws LicenseLimitError if adding an additional unit is prohibited.
+ */
+export function assertCanAddUnit(db: DatabaseSync): void {
+  assertUnitQuota(db);
+  const status = getLicenseStatus(db);
+
+  if (isCommunityEdition()) {
+    return;
+  }
+
+  const candidateCount = status.unitCount + 1;
+
+  if (status.hasValidCommercialKey) {
+    if (candidateCount > status.maxUnits) {
+      throw new LicenseLimitError(
+        `Adding a unit would exceed your licensed capacity of ${status.maxUnits} units (currently managing ${status.unitCount} units). Please upgrade your license to expand capacity.`,
+        status.unitCount,
+        status.maxUnits
+      );
+    }
+    return;
+  }
+
+  // Standard Edition without commercial key
+  if (candidateCount <= COMMUNITY_UNIT_LIMIT) {
+    return;
+  }
+
+  if (candidateCount <= GRACE_UNIT_LIMIT) {
+    if (status.isGraceExpired) {
+      throw new LicenseLimitError(
+        `GarrisonOS Standard Edition 14-day grace window expired: your portfolio contains ${status.unitCount} units, ` +
+        `and the 14-day grace period for units 51–60 has elapsed. ` +
+        `Please upgrade to a commercial license or reduce active units to 50 or fewer to resume creating units.`,
+        status.unitCount,
+        COMMUNITY_UNIT_LIMIT
+      );
+    }
+    return;
+  }
+
+  throw new LicenseLimitError(
+    `GarrisonOS Standard Edition unit creation limit reached: your portfolio contains ${status.unitCount} units ` +
+    `(maximum ${GRACE_UNIT_LIMIT} units during grace period). ` +
+    `Please upgrade to a commercial license to add unit ${candidateCount}.`,
+    status.unitCount,
+    COMMUNITY_UNIT_LIMIT
+  );
+}
+
+/**
+ * Asserts that the current system is within authorized operational unit quota.
+ * Throws LicenseLimitError if current unit count exceeds the allowed quota.
  *
  * @param db - DatabaseSync instance.
  * @throws LicenseLimitError if over quota.

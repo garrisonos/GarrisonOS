@@ -9,6 +9,7 @@
     "setup": "node scripts/setup.js",
     "start": "node scripts/serve.js",
     "start:community": "node scripts/serve.js --edition=community",
+    "start:standard": "node scripts/serve.js --edition=standard",
     "start:engine": "node dist/api/server.js",
     "dev": "node scripts/serve.js --dev",
     "dev:engine": "node --watch dist/api/server.js",

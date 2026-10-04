@@ -18,7 +18,7 @@ export interface ModuleNavigationItem {
 export interface ModuleManifest {
   id: string;
   name: string;
-  edition?: 'community' | 'commercial' | 'enterprise';
+  edition?: 'community' | 'standard' | 'enterprise' | 'commercial';
   license?: string;
   version: string;
   description: string;
@@ -62,7 +62,7 @@ export async function loadModules(
     const manifest = JSON.parse(manifestRaw) as ModuleManifest;
     manifest.version = manifest.version || '0.1.0';
 
-    // Enforce edition-level licensing protection (DMCA TPM guard)
+    // Enforce edition-level licensing protection
     assertModuleLicensing(manifest);
 
     // 2. Load backend routes if present

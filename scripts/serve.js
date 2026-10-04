@@ -42,6 +42,8 @@ let apiPort = parseInt(process.env['PORT'] || '3000', 10);
 let apiHost = process.env['HOST'] || '127.0.0.1';
 let isDev = false;
 
+let edition = (process.env['GARRISON_EDITION'] || 'standard').toLowerCase();
+
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i];
   if (arg === '--help' || arg === '-h') {
@@ -53,6 +55,7 @@ Usage:
   npm start -- [options]
 
 Options:
+  --edition <EDITION>     Target edition (community, standard, enterprise) (default: standard or GARRISON_EDITION)
   --port, -p <PORT>       Web presentation port (default: 8080 or WEB_PORT)
   --host <HOST>           Web presentation host (default: localhost or WEB_HOST)
   --api-port <PORT>       API Engine loopback port (default: 3000 or PORT)
@@ -62,12 +65,18 @@ Options:
 
 Examples:
   node scripts/serve.js --port 8080
+  node scripts/serve.js --edition community
   node scripts/serve.js -p 8085
   npm start -- --port=3080
 \n`);
     process.exit(0);
   } else if (arg === '--dev') {
     isDev = true;
+  } else if (arg === '--edition') {
+    const next = argv[++i];
+    if (next) edition = next.toLowerCase();
+  } else if (arg.startsWith('--edition=')) {
+    edition = arg.split('=')[1].toLowerCase();
   } else if (arg === '-p' || arg === '--port') {
     const next = argv[++i];
     if (next) webPort = parseInt(next, 10);
@@ -85,6 +94,12 @@ Examples:
     apiPort = parseInt(arg.split('=')[1], 10);
   }
 }
+
+if (!['community', 'standard', 'enterprise'].includes(edition)) {
+  process.stderr.write(`❌ Error: Invalid edition "${edition}". Permitted editions: community, standard, enterprise\n`);
+  process.exit(1);
+}
+process.env['GARRISON_EDITION'] = edition;
 
 // Helper to check if a port is available
 function checkPortAvailable(port, host) {
@@ -207,7 +222,8 @@ async function main() {
   const engineEnv = {
     ...process.env,
     PORT: String(apiPort),
-    HOST: apiHost
+    HOST: apiHost,
+    GARRISON_EDITION: edition
   };
 
   const engineProc = spawn(process.execPath, nodeArgs, {
@@ -262,7 +278,8 @@ async function main() {
     API_URL: `http://${apiHost}:${apiPort}`,
     WEB_PORT: String(webPort),
     WEB_HOST: webHost,
-    PORT: String(apiPort)
+    PORT: String(apiPort),
+    GARRISON_EDITION: edition
   };
 
   const webProc = spawn(process.execPath, [path.join('dist', 'web', 'server.js')], {
@@ -299,8 +316,9 @@ async function main() {
     }
   });
 
+  const editionDisplay = edition.charAt(0).toUpperCase() + edition.slice(1);
   process.stdout.write('\n======================================================\n');
-  process.stdout.write(`  ✨ GarrisonOS is online!\n`);
+  process.stdout.write(`  ✨ GarrisonOS (${editionDisplay} Edition) is online!\n`);
   process.stdout.write(`  Web Application: http://${webHost}:${webPort}\n`);
   process.stdout.write(`  Backend Engine:  http://${apiHost}:${apiPort}\n`);
   process.stdout.write('======================================================\n');

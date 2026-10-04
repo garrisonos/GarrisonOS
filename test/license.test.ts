@@ -21,6 +21,8 @@ import {
   getActiveUnitCount,
   getLicenseStatus,
   assertUnitQuota,
+  assertCanAddUnit,
+  clearMachineIdCache,
   verifyLicenseKey,
   generateLicenseToken,
   getOrCreateInstanceId,
@@ -262,6 +264,58 @@ describe('GarrisonOS License & Quota Subsystem', () => {
       assert.strictEqual(status.inGraceWindow, false);
       assert.strictEqual(status.isOverQuota, false);
       assert.doesNotThrow(() => assertUnitQuota(db));
+      assert.doesNotThrow(() => assertCanAddUnit(db));
+    });
+  });
+
+  describe('assertCanAddUnit Unit Creation Pre-Flight Guard', () => {
+    it('permits adding a unit when current unit count is below limit (e.g. 45 units in Standard)', () => {
+      process.env.GARRISON_EDITION = 'standard';
+      insertUnits(45);
+      assert.doesNotThrow(() => assertCanAddUnit(db));
+      assert.doesNotThrow(() => assertUnitQuota(db));
+    });
+
+    it('permits adding unit 51 during active grace window in Standard Edition', () => {
+      process.env.GARRISON_EDITION = 'standard';
+      insertUnits(50);
+      assert.doesNotThrow(() => assertCanAddUnit(db));
+      assert.doesNotThrow(() => assertUnitQuota(db));
+    });
+
+    it('blocks adding unit 61 when portfolio reaches grace limit in Standard Edition', () => {
+      process.env.GARRISON_EDITION = 'standard';
+      insertUnits(60);
+      assert.throws(
+        () => assertCanAddUnit(db),
+        (err: any) => {
+          assert.ok(err instanceof LicenseLimitError);
+          assert.strictEqual(err.code, 'LICENSE_LIMIT_EXCEEDED');
+          assert.ok(err.message.includes('unit creation limit reached'));
+          return true;
+        }
+      );
+      // Operational quota assertion does not throw at exactly 60 units during active grace
+      assert.doesNotThrow(() => assertUnitQuota(db));
+    });
+
+    it('blocks adding a unit when grace period has expired', () => {
+      process.env.GARRISON_EDITION = 'standard';
+      insertUnits(55);
+      getLicenseStatus(db);
+      const fifteenDaysAgo = Date.now() - 15 * 24 * 60 * 60 * 1000;
+      db.prepare("UPDATE system_settings SET value = ? WHERE key = 'standard_grace_entered_at'").run(String(fifteenDaysAgo));
+
+      assert.throws(() => assertCanAddUnit(db), LicenseLimitError);
+      assert.throws(() => assertUnitQuota(db), LicenseLimitError);
+    });
+
+    it('machine ID cache caches and can be cleared', () => {
+      clearMachineIdCache();
+      const fp1 = getHardwareFingerprint();
+      const fp2 = getHardwareFingerprint();
+      assert.strictEqual(fp1, fp2);
+      clearMachineIdCache();
     });
   });
 
@@ -1014,9 +1068,14 @@ describe('Redundant Multi-Chokepoint Module Enforcement', () => {
       });
       assert.strictEqual(draftLease.status, 'draft');
 
-      // 4. Activating draft lease fails closed at lease repository level
+      // 4. Activating draft lease fails closed at lease repository level via updateLease
       assert.throws(() => {
         LeasesRepository.updateLease(draftLease.id, { status: 'active' });
+      }, LicenseLimitError);
+
+      // 4b. Activating draft lease also fails closed via updateLeaseStatus
+      assert.throws(() => {
+        LeasesRepository.updateLeaseStatus(draftLease.id, 'active');
       }, LicenseLimitError);
 
       // 5. Creating an active lease directly fails closed at lease repository level
@@ -1030,10 +1089,10 @@ describe('Redundant Multi-Chokepoint Module Enforcement', () => {
         });
       }, LicenseLimitError);
 
-      // 6. Automated monthly rent billing run fails closed at billing engine level
-      assert.throws(() => {
+      // 6. Automated monthly rent billing runs without throwing to avoid halting operations on active leases
+      assert.doesNotThrow(() => {
         generateMonthlyRentCharges('2026-10');
-      }, LicenseLimitError);
+      });
     });
   });
 });

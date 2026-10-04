@@ -290,15 +290,16 @@ export function assertModuleLicensing(
 
   // 3. Community Edition: Strict whitelist and signature verification
   if (currentEdition === 'community') {
-    const isCommercial =
+    const isNonCommunity =
+      declaredEdition === 'standard' ||
       declaredEdition === 'commercial' ||
       declaredEdition === 'enterprise' ||
       (manifest.license && manifest.license.includes('Fair-Code'));
 
-    if (isCommercial) {
+    if (isNonCommunity) {
       throw new LicenseViolationError(
         `[GARRISONOS LICENSE VIOLATION] Module "${manifest.name}" (${manifest.id}) ` +
-        `is licensed under the GarrisonOS Fair-Code License and cannot be loaded in Community Edition. ` +
+        `is licensed for ${declaredEdition.toUpperCase()} edition and cannot be loaded in Community Edition. ` +
         `To run this module, switch to GarrisonOS Standard or Enterprise Edition, or contact support@garrisonos.org.`
       );
     }

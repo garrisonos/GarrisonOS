@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +49,13 @@ Options:
 const targetDir = customOutDir
   ? path.resolve(rootDir, customOutDir)
   : path.resolve(rootDir, 'dist-releases', 'community');
+
+const resolvedTarget = path.resolve(targetDir);
+const resolvedRoot = path.resolve(rootDir);
+if (resolvedTarget === resolvedRoot) {
+  process.stderr.write('❌ Error: Target output directory cannot be the repository root!\n');
+  process.exit(1);
+}
 
 process.stdout.write('====================================================\n');
 process.stdout.write('  GarrisonOS Community Edition Packager (AGPLv3)   \n');
@@ -97,6 +104,7 @@ for (const modName of candidateModules) {
       (communitySpec.modules && communitySpec.modules.includes(modName));
 
     const isCommercialOrFairCode =
+      modManifest.edition === 'standard' ||
       modManifest.edition === 'commercial' ||
       modManifest.edition === 'enterprise' ||
       (modManifest.license && modManifest.license.includes('Fair-Code'));
@@ -162,7 +170,7 @@ const communityPkg = {
 fs.writeFileSync(path.join(targetDir, 'package.json'), JSON.stringify(communityPkg, null, 2), 'utf8');
 
 // Generate Community Release Manifest
-const releaseNotes = `# GarrisonOS Community Edition (v${rootPkg.version || '0.2.0'})
+const releaseNotes = `# GarrisonOS Community Edition (v${rootPkg.version || '0.2.1-alpha'})
 
 **Governing License**: GNU Affero General Public License v3.0 ([LICENSE](file:///LICENSE))
 
@@ -201,13 +209,15 @@ if (!skipBuild) {
 
 if (isArchive) {
   try {
-    const archiveName = `garrisonos-community-v${rootPkg.version || '0.2.0'}.tar.gz`;
+    const archiveName = `garrisonos-community-v${rootPkg.version || '0.2.1-alpha'}.tar.gz`;
     const archivePath = path.resolve(rootDir, 'dist-releases', archiveName);
+    fs.mkdirSync(path.dirname(archivePath), { recursive: true });
     process.stdout.write(`  Packaging release tarball: ${archivePath}...\n`);
-    execSync(`tar -czf "${archivePath}" -C "${path.dirname(targetDir)}" "${path.basename(targetDir)}"`, { stdio: 'inherit' });
+    execFileSync('tar', ['-czf', archivePath, '-C', path.dirname(targetDir), path.basename(targetDir)], { stdio: 'inherit' });
     process.stdout.write(`  ✔ Archive created: ${archiveName}\n`);
   } catch (err) {
-    process.stderr.write(`  ⚠ Warning: Could not create tarball archive: ${err.message}\n`);
+    process.stderr.write(`  ❌ Error: Could not create tarball archive: ${err.message}\n`);
+    process.exit(1);
   }
 }
 
