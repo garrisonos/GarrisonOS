@@ -23,6 +23,7 @@ storage/uploads/*
 storage/backups/*
 !storage/backups/.gitkeep
 storage/test-*
+storage/.instance_id
 
 # Logs and Debug Output
 *.log
@@ -46,4 +47,8 @@ desktop.ini
 # Test & Coverage Output
 coverage/
 *.lcov
+
+# Release Packages & Distribution
+dist-releases/
+releases/
 
