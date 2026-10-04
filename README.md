@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Dual:_AGPLv3_/_Fair--Code-blue.svg" alt="License: Dual AGPLv3 / Fair-Code"></a>
-  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.2.0--alpha-yellow.svg" alt="Status"></a>
+  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.2.1--alpha-yellow.svg" alt="Status"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-v22.5%2B-green.svg" alt="Node.js"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg" alt="TypeScript"></a>
   <a href="#dependencies--runtime-prerequisites"><img src="https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg" alt="Runtime Dependencies"></a>
@@ -634,21 +634,26 @@ Official GarrisonOS visual identity assets, icons, and logos are located under [
 GarrisonOS is engineered under a **Manifest-Driven Multi-Edition Licensing Architecture** defined in [`editions.json`](editions.json) and governed by the master [`LICENSE`](LICENSE) manifest.
 
 ### Module-Level License Declarations
+
 Every functional domain module under [`modules/`](modules/) explicitly declares its governing license and edition tier within its `module.json` manifest:
+
 * **Community Modules** (`"license": "AGPL-3.0-or-later"`): 100% Free and Open Source commons, freely usable and forkable under GNU AGPLv3.
 * **Fair-Code / Commercial Modules** (`"license": "GarrisonOS-Fair-Code-1.0"`): Governed by the Fair-Code License for commercial portfolio scale.
 
 Dedicated packaging scripts assemble clean release distributions for each target:
+
 * `npm run package:community` — Packages a pure Open-Source Community Edition bundle containing only AGPL modules and installing `LICENSE.AGPL` as the root license.
 * `npm run package:standard` — Packages the official Fair-Code Standard Edition distribution with the 50-unit free tier, heartbeat engine, and `LICENSE.FAIRCODE`.
 
 ### 1. GarrisonOS Community Edition (GNU AGPLv3)
+
 * **Scope**: 100% Free and Open Source software. Includes all baseline capabilities developed to date (properties, units, contacts, leases, attachments, accounting, maintenance, conversations, and backup).
 * **License**: [GNU Affero General Public License v3](LICENSE.AGPL) (AGPLv3).
 * **Telemetry**: Strictly offline-first with **Zero Outbound Telemetry** by default. Users may optionally opt-in to the Value-Exchange feature to receive real-time security bulletins and automated update notifications.
 * **Target Audience**: Independent landlords, DIY property managers, and open-source developers.
 
 ### 2. GarrisonOS Standard Edition (Fair-Code v1.0)
+
 * **Scope**: The primary official distribution, packaged release archive, and container images.
 * **License**: [GarrisonOS Fair-Code License v1.0](LICENSE.FAIRCODE).
 * **Quota**: **Free for production use for up to fifty (50) managed units**. A ten (10) unit grace period (51 to 60 units) is permitted for a maximum duration of **fourteen (14) calendar days** to allow operators time to procure a commercial license or rebalance their portfolio before unit creation pauses.
@@ -656,6 +661,7 @@ Dedicated packaging scripts assemble clean release distributions for each target
 * **SaaS Prohibition**: Providing the software as a hosted commercial service or multi-tenant Software-as-a-Service (SaaS) to third parties is strictly prohibited without an express commercial license agreement.
 
 ### 3. GarrisonOS Enterprise Edition (Commercial)
+
 * **Scope**: Scaled management firms and institutional operators managing 61+ units.
 * **License**: Commercial Enterprise License issued by the Project Owners.
 * **Features**: Custom unit capacity, dedicated commercial SLAs, and **offline-compatible Ed25519 cryptographic license keys** allowing 100% air-gapped, zero-telemetry private VPC execution.
@@ -665,9 +671,11 @@ Dedicated packaging scripts assemble clean release distributions for each target
   * See the complete [Enterprise Hardware Locking & Server Migration Guide](docs/licensing/enterprise-migration.md) for details.
 
 ### User Interface Attribution
+
 Pursuant to Section 7(b) of AGPLv3 and Section 5 of the Fair-Code License, all interactive, web-facing, or network deployments must preserve and prominently display original author attribution ("Powered by GarrisonOS" linking to [https://github.com/garrisonos/GarrisonOS](https://github.com/garrisonos/GarrisonOS)) in the primary application footer or navigation interface.
 
 ### Non-Profit Stewardship & Inquiries
+
 GarrisonOS is maintained and governed by the GarrisonOS Project Owners and Foundation (501(c)(3) registration pending), dedicated to democratizing property management technology and liberating independent landlords from predatory software silos.
 
-For commercial licensing, enterprise keys, or partnership inquiries, contact: **support@garrisonos.org**
+For commercial licensing, enterprise keys, or partnership inquiries, contact: <support@garrisonos.org>

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned (Closing Sprint 5 & Sprint 6 Foundational Operator MVP)
+
+- **Standardized Bulk Ingestion & Temporal Query Conventions (Task 34)**:
+  - Atomic transactional bulk creation (`POST /api/v1/:resource/bulk`) wrapping operations in `withTransaction()`.
+  - Millisecond interval filtering (`*_start`, `*_end`) across entity collection endpoints.
+  - Multi-key sort parsing (`order_by=field:asc,field2:desc`) with column whitelist guards.
+- **In-App License Management, Key Activation & Offline Tooling (Task 35e)**:
+  - SSR License Management view under Admin settings (`/admin?tab=licensing`) displaying active edition, unit count, threshold progress bar, Instance ID, and Hardware Fingerprint.
+  - License key activation endpoint (`POST /api/v1/license/activate`) saving cryptographic tokens to disk/database and hot-reloading runtime state.
+  - Progressive in-app warning threshold banners (45-unit nudge, 51–60 grace notice, 61+ hard stop).
+  - Enterprise Hardware Locking and 1-week parallel migration window.
+- **Public-Facing Tenant Self-Service Portal (Task 36)**:
+  - Isolated subdomain routing (`portal.<domain>`) with magic-link passwordless email login.
+  - Mobile-first tenant dashboard with balance check, itemized charges, and notification preferences.
+  - Safe mobile maintenance photo request form and Resident Troubleshooting Self-Help Wizard.
+- **Universal Self-Service Data Migration Importer (Task 37)**:
+  - Zero-dependency CSV/Excel dry-run validator and schema mapper for properties, units, leases, tenants, and vendors.
+  - Opening balance General Ledger importer with zero-sum proof validation.
+- **Core Financial & Operational Reports - Tier 1 (Task 38)**:
+  - Interactive & printable Rent Roll (HTML/PDF/CSV) with contract vs. market rent and deposit liabilities.
+  - Income Statement (P&L) engine with cash vs. accrual toggle and Schedule E line mappings.
+  - General Ledger Detail Report with running balance proofs.
+  - Delinquency Aging Report with 30/60/90+ day aging buckets and direct tenant communication links.
+- **Field Operations, Responsive Layout & Ergonomics (Tasks 39–44)**:
+  - Responsive table layout containment with mobile card fallbacks and sticky summary bars.
+  - Native datepicker and currency input masks retaining integer-cents under the hood.
+  - Work order task checklists (`work_order_tasks`) and field technician timecards (`technician_timecards`).
+  - Unit turnover checklist templates and multi-stage make-ready dependency Gantt schedule.
+  - Key/fob/lockbox access inventory, pet registry with Fair Housing ESA compliance, and operator regional locales.
+
+## [0.2.1-alpha] - 2026-10-04
+
 ### Added
 
 - **Manifest-Driven Multi-Edition Licensing Architecture**:
@@ -18,14 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Computes active units across all properties via `getActiveUnitCount(db)`.
     - Evaluates 50-unit free tier, 51–60 unit grace window, and 61+ over-quota status via `getLicenseStatus(db)`.
     - Implements offline Ed25519 cryptographic license key verification (`verifyLicenseKey()`) conforming to the Zero Outbound Telemetry and Offline-First invariants.
-    - Enforces unit creation limits via `assertUnitQuota(db)`.
+    - Enforces unit creation limits via `assertCanAddUnit(db)` while preserving operational capacity for existing leases.
   - Contributor License Agreement upgrade to **CLA v2** in [`docs/legal/CLA.md`](docs/legal/CLA.md) granting Project Owners unilateral commercialization, dual-licensing, and cross-edition distribution authority without royalties.
   - **Persistent Instance Identity & License Key Anti-Reuse Protection**:
     - Implemented update-resistant `getOrCreateInstanceId(db)` in [`core/license.ts`](core/license.ts) featuring a 3-tier self-healing persistence hierarchy: explicit `GARRISON_INSTANCE_ID` environment variable override $\to$ persistent SQLite `system_settings` table $\to$ persistent storage volume file (`STORAGE_PATH/.instance_id`).
     - Added database migration [`database/migrations/0011_system_settings.sql`](database/migrations/0011_system_settings.sql) creating the global `system_settings` table for instance identity and offline keys.
     - Enforced cryptographic instance binding in `verifyLicenseKey()` and `getLicenseStatus(db)`: keys issued with an `instanceId` fail closed when deployed on a different instance ID, preventing unauthorized key sharing and duplication across operators.
   - **Enterprise Edition Hardware Locking & Server Migration Policy**:
-    - Implemented node hardware fingerprinting in [`scripts/fingerprint.js`](scripts/fingerprint.js) and [`core/license.ts`](core/license.ts) computing an SHA-256 hash of primary MAC address, CPU cores, platform, and total RAM (`hw_...`).
+    - Implemented node hardware fingerprinting in [`scripts/fingerprint.js`](scripts/fingerprint.js) and [`core/license.ts`](core/license.ts) resolving DMI product UUID, `/etc/machine-id`, Windows `MachineGuid`, macOS `IOPlatformUUID`, or deterministic hardware fallback (`hw_<sha256>`), cached for process lifetime.
     - Enforced mandatory hardware binding in `verifyLicenseKey()` for Enterprise Edition, preventing VM cloning and multi-node proliferation.
     - Formalized customer migration guidelines in [`docs/licensing/enterprise-migration.md`](docs/licensing/enterprise-migration.md) supporting a 1-week parallel migration window with automated expiration on the decommissioned node.
   - **Standard Edition Anti-MITM Telemetry & Progressive Warning Thresholds**:
@@ -34,18 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Enforced a strict 14-day duration limit on the 51–60 unit grace window via `evaluateGracePeriod()` in `system_settings` (`standard_grace_entered_at`), automatically locking unit creation if an operator remains above 50 units for longer than 14 days without a commercial license.
     - Implemented an offline grace window for Standard Edition nodes managing > 50 units: 14-day warning notification and 30-day fail-closed unit creation cutoff (`STANDARD_OFFLINE_CUTOFF_DAYS`), channeling disconnected operators to the Enterprise Edition while protecting access to existing tenant data.
   - **Redundant Multi-Chokepoint Module Enforcement**:
-    - Enforced quota assertions at multiple structural points across the user value loop: inventory creation in `modules/properties/backend/repository.ts` (`createUnit`), lease creation/activation in `modules/leases/backend/repository.ts` (`createLease`, `updateLease`), and monthly recurring rent billing in `modules/accounting/backend/billing.ts` (`generateMonthlyRentCharges`).
+    - Enforced quota assertions across customer value-loop points: inventory creation in `modules/properties/backend/repository.ts` (`createUnit` via `assertCanAddUnit`), and lease activation in `modules/leases/backend/repository.ts` (`createLease`, `updateLease`, `updateLeaseStatus` via `assertUnitQuota`).
   - **DST-Immune Monotonic Clock Guard**:
     - Implemented `evaluateClockIntegrity(db)` in `core/license.ts` with 24-hour rollback tolerance window (`CLOCK_ROLLBACK_TOLERANCE_MS`), completely protecting against NTP rollback exploits while remaining 100% immune to Daylight Savings Time transitions and global hardware relocations.
   - **Cryptographic Revocation List (CRL) & Heartbeat Distribution**:
     - Implemented Ed25519-signed revocation lists (`LicenseCrl`, `SignedCrlPayload`) supporting instant revocation of compromised or refunded offline tokens and instance IDs.
     - Enforced monotonic CRL timestamp sequencing (`issuedAt > stored.issuedAt`) and automatic ingestion via daily heartbeat pings.
   - **Database Cryptographic Identity Anchor & Anti-Cloning Guard**:
-    - Anchored SQLite databases to their authorized host server using an HMAC-SHA256 signature in `system_settings` (`db_anchor_sig`). Copying database files to unauthorized servers halts unit additions and lease activations.
+    - Anchored SQLite databases to their authorized host server using an HMAC-SHA256 signature in `system_settings` (`database_anchor`). Copying database files to unauthorized servers halts unit additions and lease activations.
   - **Enterprise Rolling Annual Lease & 30-Day Renewal Grace**:
     - Added 365-day rolling enterprise lease tokens with opt-in 30-day renewal grace period (`renewalGraceDays`) for operational continuity during enterprise renewal cycles.
   - **Fiduciary Watermarking & Statutory Audit Seals**:
-    - Integrated `generateFiduciaryAuditSeal()` into Three-Way Bank Reconciliation and Form 1099-NEC statutory reports in `modules/accounting/backend/repository.ts`, stamping compliant deployments with a certified seal and unlicensed instances with a prominent statutory warning watermark.
+    - Integrated `generateFiduciaryAuditSeal()` into Three-Way Bank Reconciliation and Form 1099-NEC statutory reports in `modules/accounting/backend/repository.ts`, stamping compliant deployments with a certified seal signed by a private internal HMAC secret and unlicensed instances with a prominent statutory warning watermark.
   - **Dedicated Edition Packaging Scripts**:
     - Implemented `scripts/package-community.js` (pure GNU AGPLv3 package with `LICENSE.AGPL` and filtered community modules) and `scripts/package-standard.js` (Fair-Code v1.0 distribution).
   - **Compiled Community Whitelist & Ed25519 Manifest Signatures**:
@@ -59,9 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Module Manifests & Module Loader**:
   - Explicitly tagged all 8 baseline modules (`accounting`, `attachments`, `backup`, `contacts`, `conversations`, `leases`, `maintenance`, `properties`) in their respective `module.json` manifests with `"edition": "community"` and `"license": "AGPL-3.0-or-later"`.
-  - Updated [`core/module-loader.ts`](core/module-loader.ts) to assert module licensing at boot, establishing a Technological Protection Measure (TPM) under DMCA §1201 against cross-edition backporting.
+  - Updated [`core/module-loader.ts`](core/module-loader.ts) to assert module licensing at boot against cross-edition backporting.
 - **Properties Unit Ingestion**:
-  - Integrated `assertUnitQuota(db)` into `PropertiesRepository.createUnit()` in [`modules/properties/backend/repository.ts`](modules/properties/backend/repository.ts).
+  - Integrated `assertCanAddUnit(db)` into `PropertiesRepository.createUnit()` in [`modules/properties/backend/repository.ts`](modules/properties/backend/repository.ts).
   - Added structured HTTP 402 `LICENSE_LIMIT_EXCEEDED` error handling in [`modules/properties/backend/routes.ts`](modules/properties/backend/routes.ts).
 - **Contributor & Agent Directives**:
   - Updated [`AGENTS.md`](AGENTS.md) with mandatory `module.json` edition tagging, agent requirement clarification mandates, high-granularity modularity rules, and multi-tier telemetry privacy invariants.
@@ -69,11 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated [`.github/workflows/cla.yml`](.github/workflows/cla.yml) to point signature validation to `signatures/version2/cla.json`.
 - **Packaging & Repository Documentation**:
   - Updated [`package.json`](package.json) with `"license": "SEE LICENSE IN LICENSE"` and added `"start:community"` script.
-  - Updated [`Dockerfile`](Dockerfile) license label to `"GarrisonOS-Fair-Code-1.0 / AGPL-3.0-or-later"`.
+  - Updated [`Dockerfile`](Dockerfile) license label to `"LicenseRef-GarrisonOS-Fair-Code-1.0 OR AGPL-3.0-or-later"`.
   - Updated [`README.md`](README.md) badges, title overview, directory tree, and Section 12 Multi-Edition Licensing governance.
   - Updated [`docs/ROADMAP.md`](docs/ROADMAP.md) documenting Milestone 1 open-source commons protection and Task 75 telemetry integration.
-
-### Planned (Closing Sprint 5 & Sprint 6 Foundational Operator MVP)
 
 - **Standardized Bulk Ingestion & Temporal Query Conventions (Task 34)**:
   - Atomic transactional bulk creation (`POST /api/v1/:resource/bulk`) wrapping operations in `withTransaction()`.

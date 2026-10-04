@@ -37,7 +37,7 @@ flowchart LR
      - **Enterprise Edition** (Commercial Proprietary): Custom quota, air-gapped Ed25519 offline keys, hardware locking (`hw_<sha256>`), 7-day migration overlap, and rolling annual leases.
   2. **Five-Pillar Security Hardening (9.9/10 Architecture Grade)**:
      - **Cryptographic Revocation List (CRL)**: Signed Ed25519 CRL token ingestion with monotonic sequencing and automated distribution via daily heartbeat.
-     - **Database Identity Anchor**: SQLite HMAC-SHA256 signature (`db_anchor_sig`) preventing unauthorized cross-server database copying/cloning.
+     - **Database Identity Anchor**: SQLite HMAC-SHA256 signature (`database_anchor`) preventing unauthorized cross-server database copying/cloning.
      - **Runtime Module Self-Integrity**: Pre-computed SHA-256 build checksums detecting runtime byte tampering in licensing files.
      - **Enterprise Rolling Annual Lease**: 365-day validity with 30-day renewal grace period (`renewalGraceDays`) for mission-critical continuity.
      - **Statutory Fiduciary Watermarking**: Certified cryptographic audit seals on Three-Way Bank Reconciliation and Form 1099-NEC reports; unlicensed or over-quota instances produce a statutory watermark: `UNLICENSED EXECUTION — INVALID FIDUCIARY AUDIT SEAL — NOT LEGAL FOR STATUTORY COMPLIANCE`.
@@ -559,7 +559,7 @@ classDiagram
   - **Subtask 74.3**: Build Linux distribution package (`.deb`) with automated Systemd unit provisioning and permission hardening.
   - **Subtask 74.4**: Build first-run desktop browser launcher automatically opening the initial setup wizard handshake.
 - [ ] **Task 75**: GarrisonOS Managed Update Network, Registration & Maintenance Subsystem
-  - **Operational Rationale**: Implements the telemetry heartbeat for Standard Edition and the Value-Exchange Opt-In for Community Edition, delivering automated security bulletins, vulnerability notices, and verified release binaries from `updates.garrisonos.org`. Enterprise Edition offline keys permit completely air-gapped, zero-telemetry private VPC execution.
+  - **Operational Rationale**: Implements the telemetry heartbeat for Standard Edition and the Value-Exchange Opt-In for Community Edition, delivering automated security bulletins, vulnerability notices, and verified release binaries from `updates.garrisonos.org`. Enterprise Edition offline keys permit completely air-gapped, zero-telemetry private VPC execution. Air-gapped and manual self-management mode remains 100% functional with zero feature degradation.
   - **Subtask 75.1**: Build Update Channel Registration Client requiring Operator Business Name, Contact Email, Active Unit Count, and System Version, exchanging credentials for a cryptographically verified `update_token`.
   - **Subtask 75.2**: Implement Operator Maintenance Window and Update Preferences UI (`/admin?tab=updates`), allowing operators to define low-traffic maintenance schedules (e.g. Tuesdays at 3:00 AM) and select release tracks (`stable`, `beta`, `security_only`).
   - **Subtask 75.3**: Implement Cryptographic Package Signature Verification (Ed25519) and SHA-256 checksum validation ensuring downloaded release archives are mathematically authentic and un-tampered before execution.
