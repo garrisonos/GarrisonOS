@@ -319,8 +319,9 @@ function resolveRawMachineId(): string {
   // 1. Linux
   if (process.platform === 'linux') {
     try {
-      if (fs.existsSync('/sys/class/dmi/id/product_uuid')) {
-        const id = fs.readFileSync('/sys/class/dmi/id/product_uuid', 'utf8').trim();
+      const dmiUuidPath = path.join('/', 'sys', 'class', 'dmi', 'id', 'product_uuid');
+      if (fs.existsSync(dmiUuidPath)) {
+        const id = fs.readFileSync(dmiUuidPath, 'utf8').trim();
         if (id && id !== '00000000-0000-0000-0000-000000000000') return id;
       }
       if (fs.existsSync('/etc/machine-id')) {
