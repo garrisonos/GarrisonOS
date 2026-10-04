@@ -70,7 +70,10 @@ garrison-os/
 ├── CONTRIBUTING.md            # Contribution guide & dual-licensing policy
 ├── Dockerfile                 # Multi-stage zero-dependency Alpine production container
 ├── docker-compose.yml         # Turnkey Docker Compose service orchestration
-├── LICENSE                    # AGPLv3 with Section 7(b) UI attribution addendum
+├── editions.json              # Multi-Edition definitions (Community, Standard, Enterprise)
+├── LICENSE                    # Master Multi-Edition licensing manifest
+├── LICENSE.AGPL               # GNU AGPLv3 for Community Edition
+├── LICENSE.FAIRCODE           # GarrisonOS Fair-Code License v1.0
 ├── package.json               # Zero runtime dependencies (typescript, @types/node)
 ├── tsconfig.json              # Strict TypeScript compiler configuration
 │

@@ -6,22 +6,25 @@ Please review this guide before submitting issues or Pull Requests. All particip
 
 ---
 
-## 1. Contributor License Agreement (CLA) & Dual Licensing
+## 1. Contributor License Agreement (CLA v2) & Multi-Edition Architecture
 
-To ensure that GarrisonOS remains legally protected and sustainable, all contributors must sign our [Contributor License Agreement (CLA)](docs/legal/CLA.md) before their contributions can be merged.
+To ensure that GarrisonOS remains legally protected and sustainable, all contributors must sign our [Contributor License Agreement (CLA v2)](docs/legal/CLA.md) before their contributions can be merged.
 
-### Why do we require a CLA?
+### Multi-Edition Architecture & Why We Require a CLA
 
-GarrisonOS operates under an open-source model licensed under the **GNU Affero General Public License v3 (AGPLv3)** with a Section 7 UI attribution requirement. To sustainably support and fund ongoing open-source engineering, the project utilizes a **dual-licensing / commercial licensing model**.
+GarrisonOS is engineered under a **Multi-Edition Architecture**:
+1. **Community Edition (GNU AGPLv3)**: 100% free and open-source property management platform including all baseline capabilities developed to date.
+2. **Standard Edition (GarrisonOS Fair-Code v1.0)**: The official distribution, free for production use up to 50 managed units (with a 51–60 unit grace window), requiring a paid commercial license for 61+ units and prohibiting third-party commercial SaaS hosting.
+3. **Enterprise Edition (Commercial)**: Custom unit limits and air-gapped offline Ed25519 cryptographic key support for high-scale portfolios and institutions.
 
-Under our CLA:
-
+Under our **CLA v2**:
 1. **You keep ownership** of your contributions.
-2. You grant the project a perpetual, royalty-free license to distribute your code under the AGPLv3 open-source license as well as commercial/proprietary editions.
+2. You grant the Project Owners a perpetual, worldwide, royalty-free license to distribute your contributions across the Community Edition (GNU AGPLv3), Standard Edition (Fair-Code v1.0), and Enterprise commercial editions.
+3. You grant a defensive patent license protecting the project and its users from patent litigation.
 
 ### Automated CLA Check
 
-When you open a Pull Request, an automated **CLA Assistant** GitHub Action will check whether your GitHub account has signed the agreement. If you have not yet signed, the bot will post a comment on your PR with a link and simple instructions to agree in one click.
+When you open a Pull Request, an automated **CLA Assistant** GitHub Action will check whether your GitHub account has signed the agreement. If you have not yet signed, the bot will post a comment on your PR with a link and simple instructions to agree in one click (by posting: `I have read the CLA Document and I hereby sign the CLA`).
 
 ---
 

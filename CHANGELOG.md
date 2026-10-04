@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Manifest-Driven Multi-Edition Licensing Architecture**:
+  - Master [`LICENSE`](LICENSE) manifest defining the 3-tier product structure: **Community Edition** (GNU AGPLv3), **Standard Edition** (GarrisonOS Fair-Code v1.0), and **Enterprise Edition** (Commercial).
+  - Dedicated license texts: [`LICENSE.AGPL`](LICENSE.AGPL) (GNU Affero General Public License v3) and [`LICENSE.FAIRCODE`](LICENSE.FAIRCODE) (GarrisonOS Fair-Code License v1.0).
+  - Central edition specifications in [`editions.json`](editions.json) defining runtime targets, module sets, telemetry specifications, and unit thresholds.
+  - Core edition management in [`core/edition.ts`](core/edition.ts) providing runtime edition resolution (`getRuntimeEdition()`) and fail-closed module license enforcement (`assertModuleLicensing()`).
+  - Unit quota and cryptographic licensing subsystem in [`core/license.ts`](core/license.ts):
+    - Computes active units across all properties via `getActiveUnitCount(db)`.
+    - Evaluates 50-unit free tier, 51–60 unit grace window, and 61+ over-quota status via `getLicenseStatus(db)`.
+    - Implements offline Ed25519 cryptographic license key verification (`verifyLicenseKey()`) conforming to the Zero Outbound Telemetry and Offline-First invariants.
+    - Enforces unit creation limits via `assertUnitQuota(db)`.
+  - Contributor License Agreement upgrade to **CLA v2** in [`docs/legal/CLA.md`](docs/legal/CLA.md) granting Project Owners unilateral commercialization, dual-licensing, and cross-edition distribution authority without royalties.
+  - **Persistent Instance Identity & License Key Anti-Reuse Protection**:
+    - Implemented update-resistant `getOrCreateInstanceId(db)` in [`core/license.ts`](core/license.ts) featuring a 3-tier self-healing persistence hierarchy: explicit `GARRISON_INSTANCE_ID` environment variable override $\to$ persistent SQLite `system_settings` table $\to$ persistent storage volume file (`STORAGE_PATH/.instance_id`).
+    - Added database migration [`database/migrations/0011_system_settings.sql`](database/migrations/0011_system_settings.sql) creating the global `system_settings` table for instance identity and offline keys.
+    - Enforced cryptographic instance binding in `verifyLicenseKey()` and `getLicenseStatus(db)`: keys issued with an `instanceId` fail closed when deployed on a different instance ID, preventing unauthorized key sharing and duplication across operators.
+  - **Enterprise Edition Hardware Locking & Server Migration Policy**:
+    - Implemented node hardware fingerprinting in [`scripts/fingerprint.js`](scripts/fingerprint.js) and [`core/license.ts`](core/license.ts) computing an SHA-256 hash of primary MAC address, CPU cores, platform, and total RAM (`hw_...`).
+    - Enforced mandatory hardware binding in `verifyLicenseKey()` for Enterprise Edition, preventing VM cloning and multi-node proliferation.
+    - Formalized customer migration guidelines in [`docs/licensing/enterprise-migration.md`](docs/licensing/enterprise-migration.md) supporting a 1-week parallel migration window with automated expiration on the decommissioned node.
+  - **Standard Edition Anti-MITM Telemetry & Progressive Warning Thresholds**:
+    - Implemented asymmetric Ed25519 challenge-response heartbeat verification in [`core/license.ts`](core/license.ts) (`createHeartbeatChallenge`, `verifyHeartbeatResponse`, `recordVerifiedHeartbeat`) neutralizing `/etc/hosts` redirection, DNS poisoning, and local proxy interception.
+    - Added progressive quota threshold notices (`calculateThresholdNotice()`): 45-unit approaching limit nudge, 51–60 unit grace window notice, and 61+ unit over-quota hard limit.
+    - Enforced a strict 14-day duration limit on the 51–60 unit grace window via `evaluateGracePeriod()` in `system_settings` (`standard_grace_entered_at`), automatically locking unit creation if an operator remains above 50 units for longer than 14 days without a commercial license.
+    - Implemented an offline grace window for Standard Edition nodes managing > 50 units: 14-day warning notification and 30-day fail-closed unit creation cutoff (`STANDARD_OFFLINE_CUTOFF_DAYS`), channeling disconnected operators to the Enterprise Edition while protecting access to existing tenant data.
+  - **Redundant Multi-Chokepoint Module Enforcement**:
+    - Enforced quota assertions at multiple structural points across the user value loop: inventory creation in `modules/properties/backend/repository.ts` (`createUnit`), lease creation/activation in `modules/leases/backend/repository.ts` (`createLease`, `updateLease`), and monthly recurring rent billing in `modules/accounting/backend/billing.ts` (`generateMonthlyRentCharges`).
+  - **DST-Immune Monotonic Clock Guard**:
+    - Implemented `evaluateClockIntegrity(db)` in `core/license.ts` with 24-hour rollback tolerance window (`CLOCK_ROLLBACK_TOLERANCE_MS`), completely protecting against NTP rollback exploits while remaining 100% immune to Daylight Savings Time transitions and global hardware relocations.
+  - **Cryptographic Revocation List (CRL) & Heartbeat Distribution**:
+    - Implemented Ed25519-signed revocation lists (`LicenseCrl`, `SignedCrlPayload`) supporting instant revocation of compromised or refunded offline tokens and instance IDs.
+    - Enforced monotonic CRL timestamp sequencing (`issuedAt > stored.issuedAt`) and automatic ingestion via daily heartbeat pings.
+  - **Database Cryptographic Identity Anchor & Anti-Cloning Guard**:
+    - Anchored SQLite databases to their authorized host server using an HMAC-SHA256 signature in `system_settings` (`db_anchor_sig`). Copying database files to unauthorized servers halts unit additions and lease activations.
+  - **Enterprise Rolling Annual Lease & 30-Day Renewal Grace**:
+    - Added 365-day rolling enterprise lease tokens with opt-in 30-day renewal grace period (`renewalGraceDays`) for operational continuity during enterprise renewal cycles.
+  - **Fiduciary Watermarking & Statutory Audit Seals**:
+    - Integrated `generateFiduciaryAuditSeal()` into Three-Way Bank Reconciliation and Form 1099-NEC statutory reports in `modules/accounting/backend/repository.ts`, stamping compliant deployments with a certified seal and unlicensed instances with a prominent statutory warning watermark.
+  - **Dedicated Edition Packaging Scripts**:
+    - Implemented `scripts/package-community.js` (pure GNU AGPLv3 package with `LICENSE.AGPL` and filtered community modules) and `scripts/package-standard.js` (Fair-Code v1.0 distribution).
+  - **Compiled Community Whitelist & Ed25519 Manifest Signatures**:
+    - Hardcoded `OFFICIAL_COMMUNITY_MODULES` compiled whitelist in `core/edition.ts`.
+    - Added Ed25519 digital signature validation for module and plugin manifests (`garrisonos:module:...` and `garrisonos:plugin:...`), eliminating casual text-editor manifest tampering.
+  - **Plugin Licensing & Community Safety Warning Policy**:
+    - Defined `assertPluginLicensing()` in `core/edition.ts`: allows unverified plugins in Community Edition with a prominent high-visibility warning banner, strictly enforces signature verification in Standard Edition, and permits custom in-house extensions in Enterprise Edition.
+  - Automated test suites in [`test/edition.test.ts`](test/edition.test.ts) (23 tests) and [`test/license.test.ts`](test/license.test.ts) (56 tests) achieving 100% pass rate across 79 total unit test assertions.
+
+### Changed
+
+- **Module Manifests & Module Loader**:
+  - Explicitly tagged all 8 baseline modules (`accounting`, `attachments`, `backup`, `contacts`, `conversations`, `leases`, `maintenance`, `properties`) in their respective `module.json` manifests with `"edition": "community"` and `"license": "AGPL-3.0-or-later"`.
+  - Updated [`core/module-loader.ts`](core/module-loader.ts) to assert module licensing at boot, establishing a Technological Protection Measure (TPM) under DMCA §1201 against cross-edition backporting.
+- **Properties Unit Ingestion**:
+  - Integrated `assertUnitQuota(db)` into `PropertiesRepository.createUnit()` in [`modules/properties/backend/repository.ts`](modules/properties/backend/repository.ts).
+  - Added structured HTTP 402 `LICENSE_LIMIT_EXCEEDED` error handling in [`modules/properties/backend/routes.ts`](modules/properties/backend/routes.ts).
+- **Contributor & Agent Directives**:
+  - Updated [`AGENTS.md`](AGENTS.md) with mandatory `module.json` edition tagging, agent requirement clarification mandates, high-granularity modularity rules, and multi-tier telemetry privacy invariants.
+  - Updated [`CONTRIBUTING.md`](CONTRIBUTING.md) with 3-tier architecture details and CLA v2 signing instructions.
+  - Updated [`.github/workflows/cla.yml`](.github/workflows/cla.yml) to point signature validation to `signatures/version2/cla.json`.
+- **Packaging & Repository Documentation**:
+  - Updated [`package.json`](package.json) with `"license": "SEE LICENSE IN LICENSE"` and added `"start:community"` script.
+  - Updated [`Dockerfile`](Dockerfile) license label to `"GarrisonOS-Fair-Code-1.0 / AGPL-3.0-or-later"`.
+  - Updated [`README.md`](README.md) badges, title overview, directory tree, and Section 12 Multi-Edition Licensing governance.
+  - Updated [`docs/ROADMAP.md`](docs/ROADMAP.md) documenting Milestone 1 open-source commons protection and Task 75 telemetry integration.
+
 ### Planned (Closing Sprint 5 & Sprint 6 Foundational Operator MVP)
 
 - **Standardized Bulk Ingestion & Temporal Query Conventions (Task 34)**:
