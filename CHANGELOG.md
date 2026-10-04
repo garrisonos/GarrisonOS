@@ -105,29 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated [`README.md`](README.md) badges, title overview, directory tree, and Section 12 Multi-Edition Licensing governance.
   - Updated [`docs/ROADMAP.md`](docs/ROADMAP.md) documenting Milestone 1 open-source commons protection and Task 75 telemetry integration.
 
-- **Standardized Bulk Ingestion & Temporal Query Conventions (Task 34)**:
-  - Atomic transactional bulk creation (`POST /api/v1/:resource/bulk`) wrapping operations in `withTransaction()`.
-  - Millisecond interval filtering (`*_start`, `*_end`) across entity collection endpoints.
-  - Multi-key sort parsing (`order_by=field:asc,field2:desc`) with column whitelist guards.
-- **Public-Facing Tenant Self-Service Portal (Task 36)**:
-  - Isolated subdomain routing (`portal.<domain>`) with magic-link passwordless email login.
-  - Mobile-first tenant dashboard with balance check, itemized charges, and notification preferences.
-  - Safe mobile maintenance photo request form and Resident Troubleshooting Self-Help Wizard.
-- **Universal Self-Service Data Migration Importer (Task 37)**:
-  - Zero-dependency CSV/Excel dry-run validator and schema mapper for properties, units, leases, tenants, and vendors.
-  - Opening balance General Ledger importer with zero-sum proof validation.
-- **Core Financial & Operational Reports - Tier 1 (Task 38)**:
-  - Interactive & printable Rent Roll (HTML/PDF/CSV) with contract vs. market rent and deposit liabilities.
-  - Income Statement (P&L) engine with cash vs. accrual toggle and Schedule E line mappings.
-  - General Ledger Detail Report with running balance proofs.
-  - Delinquency Aging Report with 30/60/90+ day aging buckets and direct tenant communication links.
-- **Field Operations, Responsive Layout & Ergonomics (Tasks 39–44)**:
-  - Responsive table layout containment with mobile card fallbacks and sticky summary bars.
-  - Native datepicker and currency input masks retaining integer-cents under the hood.
-  - Work order task checklists (`work_order_tasks`) and field technician timecards (`technician_timecards`).
-  - Unit turnover checklist templates and multi-stage make-ready dependency Gantt schedule.
-  - Key/fob/lockbox access inventory, pet registry with Fair Housing ESA compliance, and operator regional locales.
-
 ## [0.2.0-alpha] - 2026-10-04
 
 ### Added & Enhanced (Sprint 5 Deliverables & Reviews)

@@ -44,6 +44,7 @@ import {
   calculateFileSha256,
   evaluateModuleIntegrity,
   generateFiduciaryAuditSeal,
+  getOrCreateSealSecret,
   LicenseLimitError,
   LicensePayload,
   LicenseCrl,
@@ -128,6 +129,14 @@ describe('GarrisonOS License & Quota Subsystem', () => {
       insertUnits(15, false); // 15 active
       insertUnits(5, true);   // 5 deleted
       assert.strictEqual(getActiveUnitCount(db), 15);
+    });
+
+    it('returns 0 for non-existent table and rethrows other SQLite errors', () => {
+      const freshDb = new DatabaseSync(':memory:');
+      assert.strictEqual(getActiveUnitCount(freshDb), 0);
+
+      freshDb.close();
+      assert.throws(() => getActiveUnitCount(freshDb));
     });
   });
 
@@ -1433,6 +1442,18 @@ describe('Fiduciary Watermarking & Statutory Audit Seals', () => {
       assert.ok(vendor1099.fiduciary_seal);
       assert.strictEqual(vendor1099.fiduciary_seal.status, 'UNLICENSED_AUDIT_SEAL');
     });
+  });
+
+  it('fails closed and throws error when seal secret cannot be resolved', () => {
+    const closedDb = new DatabaseSync(':memory:');
+    closedDb.close();
+    assert.throws(
+      () => getOrCreateSealSecret(closedDb),
+      (err: any) => {
+        assert.ok(err.message.includes('Unable to resolve fiduciary seal secret'));
+        return true;
+      }
+    );
   });
 });
 

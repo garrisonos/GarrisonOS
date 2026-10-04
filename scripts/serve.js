@@ -42,7 +42,20 @@ let apiPort = parseInt(process.env['PORT'] || '3000', 10);
 let apiHost = process.env['HOST'] || '127.0.0.1';
 let isDev = false;
 
-let edition = (process.env['GARRISON_EDITION'] || 'standard').toLowerCase();
+let packageEdition = '';
+try {
+  const pkgPath = path.join(rootDir, 'package.json');
+  if (existsSync(pkgPath)) {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    if (pkg.garrisonEdition === 'community' || pkg.garrisonEdition === 'standard' || pkg.garrisonEdition === 'enterprise') {
+      packageEdition = pkg.garrisonEdition;
+    }
+  }
+} catch {
+  // ignore
+}
+
+let edition = (process.env['GARRISON_EDITION'] || packageEdition || 'standard').toLowerCase();
 
 for (let i = 0; i < argv.length; i++) {
   const arg = argv[i];

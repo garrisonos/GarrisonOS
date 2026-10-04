@@ -80,6 +80,17 @@ export function getRuntimeEdition(): GarrisonEdition {
   if (envVal === 'community' || envVal === 'standard' || envVal === 'enterprise') {
     return envVal as GarrisonEdition;
   }
+  try {
+    const pkgPath = path.resolve(process.cwd(), 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.garrisonEdition === 'community' || pkg.garrisonEdition === 'standard' || pkg.garrisonEdition === 'enterprise') {
+        return pkg.garrisonEdition as GarrisonEdition;
+      }
+    }
+  } catch {
+    // fallback to standard
+  }
   return 'standard';
 }
 

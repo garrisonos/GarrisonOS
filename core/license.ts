@@ -801,8 +801,8 @@ export function getOrCreateSealSecret(db: DatabaseSync): string {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(newSecret, now, now);
     return newSecret;
-  } catch {
-    return 'garrison_local_seal_secret_fallback';
+  } catch (err) {
+    throw new Error(`Unable to resolve fiduciary seal secret: ${String((err as Error)?.message ?? err)}`);
   }
 }
 
@@ -897,7 +897,7 @@ export function getActiveUnitCount(db: DatabaseSync): number {
     return row ? Number(row.count) : 0;
   } catch (err: any) {
     // Only return 0 if the units table does not exist yet (pre-migration)
-    if (err && (String(err.message).includes('no such table') || err.code === 'SQLITE_ERROR')) {
+    if (err && String(err.message).includes('no such table')) {
       return 0;
     }
     throw err;
