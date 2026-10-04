@@ -6,14 +6,60 @@ import { eventBus, DeadLetterFailure } from '../../core/events.js';
 import { getRateLimitStats, RateLimitStats } from '../../api/middleware.js';
 import { hasPermission, loadOperatorRoleOverrides } from '../../core/rbac.js';
 import { BrandingService, THEME_PRESETS, OperatorBranding, ThemePresetKey } from '../../core/branding.js';
+import {
+  CustomFieldsService,
+  CustomFieldSectionRecord,
+  CustomFieldDefinitionRecord,
+  CustomFieldEntityType,
+  CustomFieldDataType
+} from '../../core/custom-fields.js';
 import { csrfField, validateCsrf } from '../lib/csrf.js';
 
 /**
  * Telemetry data model compiled for the Admin Management Dashboard.
  */
 export interface AdminDashboardData {
-  activeTab?: 'telemetry' | 'branding';
+  activeTab?: 'telemetry' | 'branding' | 'custom_fields' | 'backups' | 'modules' | 'users';
   branding?: OperatorBranding;
+  customFieldSections?: CustomFieldSectionRecord[];
+  customFieldDefinitions?: CustomFieldDefinitionRecord[];
+  allBackups?: Array<{
+    id: string;
+    filename: string;
+    size_bytes: number;
+    sha256_checksum: string;
+    status: string;
+    created_at: number;
+  }>;
+  usersList?: Array<{
+    id: string;
+    operator_id: string;
+    email: string;
+    first_name: string;
+    last_name: string;
+    role: string;
+    is_system_user: number;
+    allowed_portfolios?: string[];
+    allowed_modules?: string[];
+    created_at: number;
+    updated_at: number;
+  }>;
+  allPortfolios?: Array<{ id: string; name: string }>;
+  auditedUser?: {
+    user: { id: string; email: string; first_name: string; last_name: string; role: string };
+    activity: Array<{
+      id: string;
+      operator_id: string;
+      user_id: string;
+      entity_type: string;
+      entity_id: string;
+      action: string;
+      changes: any;
+      ip_address: string;
+      created_at: number;
+    }>;
+    total: number;
+  } | null;
   csrfToken?: string;
   activeOperatorsCount: number;
   activeUsersCount: number;
@@ -216,6 +262,732 @@ function renderBrandingTab(branding: OperatorBranding, csrfToken: string): SafeH
   `;
 }
 
+function renderCustomFieldsTab(
+  sections: CustomFieldSectionRecord[],
+  definitions: CustomFieldDefinitionRecord[],
+  csrfToken: string
+): SafeHtml {
+  const entityTypes: Array<{ id: CustomFieldEntityType; label: string; icon: string }> = [
+    { id: 'property', label: 'Properties', icon: '🏢' },
+    { id: 'unit', label: 'Units', icon: '🚪' },
+    { id: 'lease', label: 'Leases', icon: '📝' },
+    { id: 'contact', label: 'Contacts', icon: '👥' },
+    { id: 'work_order', label: 'Work Orders', icon: '🔧' },
+    { id: 'bill', label: 'Bills & AP', icon: '🧾' }
+  ];
+
+  return html`
+    <div class="row g-4 mb-4">
+      <!-- Create Section Card -->
+      <div class="col-md-5">
+        <div class="card shadow-sm">
+          <div class="card-header bg-light">
+            <h2 class="card-title h6 mb-0">Create Custom Section</h2>
+            <small class="text-muted">Group fields into categorized cards on entity view pages</small>
+          </div>
+          <div class="card-body">
+            <form method="POST" action="/admin?tab=custom_fields">
+              ${csrfField(csrfToken)}
+              <input type="hidden" name="action" value="create_custom_section">
+
+              <div class="mb-3">
+                <label class="form-label fw-bold">Target Entity *</label>
+                <select name="entity_type" class="form-select" required>
+                  ${entityTypes.map((e) => html`<option value="${e.id}">${e.icon} ${e.label}</option>`)}
+                </select>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-bold">Section Title *</label>
+                <input type="text" name="title" class="form-control" placeholder="e.g. Utility Meters or Compliance" required>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-bold">Display Order</label>
+                <input type="number" name="sort_order" class="form-control" value="0">
+              </div>
+
+              <button type="submit" class="btn btn-outline-primary w-100" id="btn-create-section">
+                ➕ Create Section
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- Create Field Definition Card -->
+      <div class="col-md-7">
+        <div class="card shadow-sm">
+          <div class="card-header bg-light">
+            <h2 class="card-title h6 mb-0">Define Custom Field</h2>
+            <small class="text-muted">Add typed attributes to schemas with validation & search indexing</small>
+          </div>
+          <div class="card-body">
+            <form method="POST" action="/admin?tab=custom_fields">
+              ${csrfField(csrfToken)}
+              <input type="hidden" name="action" value="create_custom_definition">
+
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label class="form-label fw-bold">Target Entity *</label>
+                  <select name="entity_type" class="form-select" id="def_entity_type" required>
+                    ${entityTypes.map((e) => html`<option value="${e.id}">${e.icon} ${e.label}</option>`)}
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-bold">Section Card</label>
+                  <select name="section_id" class="form-select">
+                    <option value="">-- No Section (Default) --</option>
+                    ${sections.map((s) => html`<option value="${s.id}">[${s.entity_type}] ${s.title}</option>`)}
+                  </select>
+                </div>
+              </div>
+
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label class="form-label fw-bold">Display Label *</label>
+                  <input type="text" name="field_label" class="form-control" placeholder="e.g. Electric Meter ID" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-bold">Field Key (Machine Name)</label>
+                  <input type="text" name="field_name" class="form-control" placeholder="e.g. electric_meter_id (auto if empty)">
+                </div>
+              </div>
+
+              <div class="row g-2 mb-3">
+                <div class="col-6">
+                  <label class="form-label fw-bold">Data Type *</label>
+                  <select name="data_type" class="form-select" required>
+                    <option value="string">Text String</option>
+                    <option value="number">Numeric (Float/Int)</option>
+                    <option value="currency">Currency ($ Cents)</option>
+                    <option value="date">Calendar Date</option>
+                    <option value="boolean">Checkbox (Yes/No)</option>
+                    <option value="select">Dropdown Select List</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-bold">Default Value</label>
+                  <input type="text" name="default_value" class="form-control" placeholder="Optional fallback">
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <label class="form-label fw-bold">Dropdown Options (Comma-separated, for Select)</label>
+                <input type="text" name="options" class="form-control" placeholder="e.g. Option A, Option B, Option C">
+              </div>
+
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="form-check">
+                  <input type="checkbox" name="is_required" value="1" id="def_is_required" class="form-check-input">
+                  <label class="form-check-label fw-semibold" for="def_is_required">Mandatory Required Field</label>
+                </div>
+                <div style="width: 120px;">
+                  <input type="number" name="sort_order" class="form-control" placeholder="Sort order" value="0">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary w-100" id="btn-create-definition">
+                Save Custom Field Definition
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Schema Definitions Table -->
+    <div class="card shadow-sm">
+      <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h2 class="card-title h6 mb-0">Active Custom Field Definitions (${String(definitions.length)})</h2>
+        <span class="badge bg-secondary">${String(sections.length)} section cards configured</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Entity</th>
+              <th>Section</th>
+              <th>Label & Key</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Options / Default</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${definitions.length === 0 ? html`
+              <tr>
+                <td colspan="7" class="text-center py-4 text-muted">
+                  No custom field definitions created yet. Use the form above to add customized attributes to any entity.
+                </td>
+              </tr>
+            ` : definitions.map((d) => html`
+              <tr data-definition-id="${d.id}" data-entity-type="${d.entity_type}">
+                <td>
+                  <span class="badge bg-light text-dark border text-uppercase">${d.entity_type}</span>
+                </td>
+                <td>
+                  <span class="text-muted">${d.section_title || '—'}</span>
+                </td>
+                <td>
+                  <strong>${d.field_label}</strong>
+                  <div class="small text-muted font-mono"><code>${d.field_name}</code></div>
+                </td>
+                <td>
+                  <span class="badge bg-info text-dark">${d.data_type}</span>
+                </td>
+                <td>
+                  ${d.is_required ? html`<span class="badge bg-danger">Required</span>` : html`<span class="text-muted small">Optional</span>`}
+                </td>
+                <td class="small text-muted">
+                  ${d.options && d.options.length > 0 ? html`Options: ${d.options.join(', ')}` : d.default_value ? html`Default: ${d.default_value}` : '—'}
+                </td>
+                <td class="text-end">
+                  <form method="POST" action="/admin?tab=custom_fields" class="d-inline" onsubmit="return confirm('Are you sure you want to delete this custom field definition? Existing values will be retained in history.');">
+                    ${csrfField(csrfToken)}
+                    <input type="hidden" name="action" value="delete_custom_definition">
+                    <input type="hidden" name="definition_id" value="${d.id}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">🗑️</button>
+                  </form>
+                </td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render database backups and disaster recovery tab.
+ *
+ * @param backups Array of backup snapshot records.
+ * @param csrfToken Cryptographic CSRF token.
+ * @returns SafeHtml content for backups tab.
+ */
+function renderBackupsTab(backups: any[], csrfToken: string): SafeHtml {
+  const completedBackups = backups.filter((b) => b.status === 'completed');
+  const totalSizeBytes = backups.reduce((sum, b) => sum + (b.size_bytes || 0), 0);
+
+  return html`
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700;">Database Backups & Disaster Recovery</h2>
+        <p class="text-muted" style="margin: 0.25rem 0 0 0;">Automated point-in-time SQLite snapshots with SHA-256 cryptographic verification.</p>
+      </div>
+      <div>
+        <a href="/backups" class="btn btn-primary">+ Create Snapshot</a>
+      </div>
+    </div>
+
+    <!-- Backup Metrics -->
+    <div class="metrics-grid" style="margin-bottom: 2rem;">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Total Backups</span>
+          <span class="kpi-icon">💾</span>
+        </div>
+        <div class="kpi-value font-bold" style="color: var(--primary);">${String(backups.length)}</div>
+        <div class="kpi-trend neutral">${String(completedBackups.length)} verified completed</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Backup Storage</span>
+          <span class="kpi-icon">📦</span>
+        </div>
+        <div class="kpi-value font-bold" style="color: #059669;">${formatBytes(totalSizeBytes)}</div>
+        <div class="kpi-trend neutral">Compressed gzip archives</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Backup Cadence</span>
+          <span class="kpi-icon">⏱️</span>
+        </div>
+        <div class="kpi-value font-bold" style="color: #7c3aed;">Every 24h</div>
+        <div class="kpi-trend neutral">Retention policy: 30 days</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Scheduler Status</span>
+          <span class="kpi-icon">⚡</span>
+        </div>
+        <div class="kpi-value font-bold" style="color: #16a34a;">Online</div>
+        <div class="kpi-trend neutral">Background WAL checkpoint active</div>
+      </div>
+    </div>
+
+    <!-- Backups Table -->
+    <div class="card" style="padding: 0; overflow-x: auto;">
+      <table class="table" style="margin-bottom: 0;">
+        <thead>
+          <tr>
+            <th>Date & Time</th>
+            <th>Archive Filename</th>
+            <th>Size</th>
+            <th>SHA-256 Checksum</th>
+            <th>Status</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${backups.length > 0
+            ? backups.map((b) => html`
+                <tr>
+                  <td>${formatTimestamp(b.created_at)}</td>
+                  <td style="font-weight: 600; font-family: var(--font-mono);">${b.filename}</td>
+                  <td>${formatBytes(b.size_bytes)}</td>
+                  <td style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">
+                    ${b.sha256_checksum ? b.sha256_checksum.slice(0, 16) + '...' : '—'}
+                    ${b.sha256_checksum
+                      ? html`
+                          <button
+                            type="button"
+                            class="btn-copy-id"
+                            data-action="copy-id"
+                            data-target-id="${b.sha256_checksum}"
+                            title="Copy SHA-256 Checksum"
+                            style="background: none; border: none; cursor: pointer; opacity: 0.6; padding: 0 4px;"
+                          >
+                            📋
+                          </button>
+                        `
+                      : raw('')}
+                  </td>
+                  <td>
+                    <span class="badge ${b.status === 'completed' ? 'badge-success' : 'badge-danger'}">
+                      ${b.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td style="text-align: right; white-space: nowrap;">
+                    <a href="/api/v1/backups/${encodeURIComponent(b.id)}/download" class="btn btn-sm btn-secondary" style="padding: 0.25rem 0.6rem;">
+                      ⬇️ Download
+                    </a>
+                  </td>
+                </tr>
+              `)
+            : html`
+                <tr>
+                  <td colspan="6" class="text-center text-muted" style="padding: 2.5rem;">
+                    No database snapshots recorded yet.
+                  </td>
+                </tr>
+              `}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+/**
+ * Render loaded system modules tab.
+ *
+ * @param modules Array of registered module metadata.
+ * @returns SafeHtml content for modules tab.
+ */
+function renderModulesTab(modules: any[]): SafeHtml {
+  return html`
+    <div style="margin-bottom: 1.5rem;">
+      <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700;">Loaded Modules & System Extensions</h2>
+      <p class="text-muted" style="margin: 0.25rem 0 0 0;">Zero-dependency modular domain architecture with decoupled event messaging.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;">
+      ${modules.map((m) => html`
+        <div class="card" style="padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+              <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700;">${m.name}</h3>
+              <span class="badge badge-primary">v${m.version}</span>
+            </div>
+            <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1rem;">${m.description || 'Core domain capability module.'}</p>
+          </div>
+          <div style="border-top: 1px solid var(--border-color); padding-top: 0.75rem; font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.35rem;">
+            <div>
+              <span class="text-muted">Module ID:</span> <code class="font-mono">${m.id}</code>
+            </div>
+            <div>
+              <span class="text-muted">Dependencies:</span>
+              ${m.dependencies.length > 0
+                ? m.dependencies.map((d: string) => html`<span class="badge badge-secondary" style="margin-right: 0.25rem;">${d}</span>`)
+                : html`<span class="text-muted">None (Standalone)</span>`}
+            </div>
+            <div>
+              <span class="text-muted">Extension Slots:</span>
+              ${m.slots && m.slots.length > 0
+                ? m.slots.map((s: string) => html`<span class="badge badge-subtle" style="margin-right: 0.25rem;">${s}</span>`)
+                : html`<span class="text-muted">None</span>`}
+            </div>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+/**
+ * Render User Directory & Permissions Governance tab with Audit Activity trail.
+ *
+ * @param users - Operator user list.
+ * @param allPortfolios - Available property portfolios for scoping.
+ * @param auditedUser - Target user audit records if active.
+ * @param csrfToken - Active CSRF token.
+ * @returns SafeHtml content for Users tab.
+ */
+function renderUsersTab(
+  users: any[],
+  allPortfolios: Array<{ id: string; name: string }>,
+  auditedUser: any,
+  csrfToken: string
+): SafeHtml {
+  const availableModules = [
+    { id: 'properties', label: 'Properties & Units' },
+    { id: 'leases', label: 'Leases & Tenancy' },
+    { id: 'maintenance', label: 'Work Orders & Repairs' },
+    { id: 'accounting', label: 'Accounts & Ledgers' },
+    { id: 'contacts', label: 'Contacts & Vendors' },
+    { id: 'backup', label: 'Backups & Snapshots' }
+  ];
+
+  return html`
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.75rem;">
+      <div>
+        <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700;">Team Members & Access Governance</h2>
+        <p class="text-muted" style="margin: 0.25rem 0 0 0;">Manage operator users, role permissions, portfolio access, and audit chronological activity trails.</p>
+      </div>
+      <div>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('createUserModal').showModal()">
+          ➕ Add Team Member
+        </button>
+      </div>
+    </div>
+
+    ${auditedUser ? html`
+      <!-- Activity Audit Trail Panel -->
+      <div class="card" style="margin-bottom: 2rem; border-left: 4px solid var(--primary, #0284c7); background: var(--bg-surface-raised, rgba(0,0,0,0.01));">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <span class="badge badge-primary" style="margin-right: 0.5rem;">AUDIT TRAIL</span>
+            <strong style="font-size: 1.1rem;">${auditedUser.user.first_name} ${auditedUser.user.last_name}</strong>
+            <span class="text-muted" style="margin-left: 0.4rem;">(${auditedUser.user.email})</span>
+            <span class="badge badge-secondary" style="margin-left: 0.5rem; text-transform: uppercase;">${auditedUser.user.role}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="text-muted" style="font-size: 0.85rem;">${auditedUser.total} recorded event(s)</span>
+            <a href="/admin?tab=users" class="btn btn-sm btn-secondary" style="padding: 0.25rem 0.6rem;">✕ Close Audit View</a>
+          </div>
+        </div>
+
+        <div class="table-responsive" style="max-height: 450px; overflow-y: auto;">
+          <table class="data-table" style="font-size: 0.85rem; margin-bottom: 0;">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Action</th>
+                <th>Entity Type</th>
+                <th>Entity ID</th>
+                <th>Change Details / Summary</th>
+                <th>IP Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${auditedUser.activity.length > 0
+                ? auditedUser.activity.map((l: any) => {
+                    const actionClass = l.action === 'create' ? 'badge-success' : l.action === 'delete' ? 'badge-danger' : l.action === 'update' ? 'badge-primary' : 'badge-secondary';
+                    const detailsStr = l.changes ? JSON.stringify(l.changes) : '—';
+                    return html`
+                      <tr>
+                        <td style="white-space: nowrap;">${formatTimestamp(l.created_at)}</td>
+                        <td><span class="badge ${actionClass}">${l.action.toUpperCase()}</span></td>
+                        <td><code>${l.entity_type}</code></td>
+                        <td style="font-family: var(--font-mono); font-size: 0.75rem;">
+                          ${l.entity_id ? l.entity_id.slice(0, 12) + '...' : '—'}
+                        </td>
+                        <td style="max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${detailsStr}">
+                          <code style="font-size: 0.75rem;">${detailsStr}</code>
+                        </td>
+                        <td style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">${l.ip_address}</td>
+                      </tr>
+                    `;
+                  })
+                : html`
+                    <tr>
+                      <td colspan="6" class="text-center text-muted" style="padding: 2rem;">
+                        No audit events recorded for this user yet.
+                      </td>
+                    </tr>
+                  `}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : raw('')}
+
+    <!-- Team Members Table -->
+    <div class="table-responsive card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Module Access</th>
+            <th>Portfolio Access</th>
+            <th>Created</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${users.length > 0
+            ? users.map((u: any) => {
+                const modules = u.allowed_modules || [];
+                const portfolios = u.allowed_portfolios || [];
+                const roleBadge = u.role === 'owner' ? 'badge-primary' : u.role === 'manager' ? 'badge-success' : u.role === 'maintenance' ? 'badge-warning' : 'badge-secondary';
+                const portfolioNames = portfolios.map((pid: string) => {
+                  const p = allPortfolios.find((port) => port.id === pid);
+                  return p ? p.name : pid.slice(0, 8);
+                });
+
+                return html`
+                  <tr>
+                    <td>
+                      <div style="font-weight: 600;">${u.first_name} ${u.last_name}</div>
+                      <div class="text-muted" style="font-size: 0.8rem;">${u.email}</div>
+                    </td>
+                    <td>
+                      <span class="badge ${roleBadge}" style="text-transform: capitalize;">${u.role.replace(/_/g, ' ')}</span>
+                      ${u.is_system_user === 1 ? html`<span class="badge badge-subtle" style="margin-left: 0.25rem;">System</span>` : raw('')}
+                    </td>
+                    <td>
+                      ${modules.length > 0
+                        ? modules.map((m: string) => html`<span class="badge badge-secondary" style="margin-right: 0.25rem; font-size: 0.75rem;">${m}</span>`)
+                        : html`<span class="text-muted" style="font-size: 0.8rem;">All Modules (Global)</span>`}
+                    </td>
+                    <td>
+                      ${portfolios.length > 0
+                        ? portfolioNames.map((pName: string) => html`<span class="badge badge-subtle" style="margin-right: 0.25rem; font-size: 0.75rem;">${pName}</span>`)
+                        : html`<span class="text-muted" style="font-size: 0.8rem;">All Portfolios (Global)</span>`}
+                    </td>
+                    <td style="font-size: 0.8rem; color: var(--text-muted);">${formatTimestamp(u.created_at)}</td>
+                    <td style="text-align: right; white-space: nowrap;">
+                      <a href="/admin?tab=users&audit_user_id=${encodeURIComponent(u.id)}" class="btn btn-sm btn-secondary" style="padding: 0.25rem 0.5rem; margin-right: 0.25rem;" title="Audit all activity by this user">
+                        🔍 Audit Activity
+                      </a>
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-subtle"
+                        style="padding: 0.25rem 0.5rem; margin-right: 0.25rem;"
+                        onclick="openEditUserModal(${JSON.stringify(u.id)}, ${JSON.stringify(u.email)}, ${JSON.stringify(u.first_name)}, ${JSON.stringify(u.last_name)}, ${JSON.stringify(u.role)}, ${JSON.stringify(JSON.stringify(modules))}, ${JSON.stringify(JSON.stringify(portfolios))})"
+                        title="Edit User & Permissions"
+                      >
+                        ✏️ Edit
+                      </button>
+                      ${u.role !== 'owner'
+                        ? html`
+                            <form method="POST" action="/admin?tab=users" style="display: inline;" onsubmit="return confirm(${JSON.stringify(`Are you sure you want to deactivate and remove ${u.first_name} ${u.last_name}?`)});">
+                              ${csrfField(csrfToken)}
+                              <input type="hidden" name="action" value="delete_user">
+                              <input type="hidden" name="user_id" value="${u.id}">
+                              <button type="submit" class="btn btn-sm btn-subtle" style="color: var(--danger); padding: 0.2rem 0.4rem;" title="Remove User">
+                                🗑️
+                              </button>
+                            </form>
+                          `
+                        : raw('')}
+                    </td>
+                  </tr>
+                `;
+              })
+            : html`
+                <tr>
+                  <td colspan="6" class="text-center text-muted" style="padding: 2.5rem;">
+                    No team members found.
+                  </td>
+                </tr>
+              `}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Modal: Create / Add Team Member -->
+    <dialog id="createUserModal" class="modal">
+      <form method="POST" action="/admin?tab=users" class="modal-box" style="max-width: 620px; width: 95%;">
+        ${csrfField(csrfToken)}
+        <input type="hidden" name="action" value="create_user">
+        <div class="modal-header">
+          <h3>Add Team Member</h3>
+          <button type="button" class="btn-close" onclick="document.getElementById('createUserModal').close()">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+            Provision an account for a team member and configure role hierarchy and scoped module/portfolio access.
+          </p>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="create_first_name">First Name *</label>
+              <input class="form-input" type="text" id="create_first_name" name="first_name" required placeholder="Jane">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create_last_name">Last Name *</label>
+              <input class="form-input" type="text" id="create_last_name" name="last_name" required placeholder="Doe">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="create_email">Email Address *</label>
+              <input class="form-input" type="email" id="create_email" name="email" required placeholder="jane@propertycorp.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create_password">Initial Password (min 8 chars) *</label>
+              <input class="form-input" type="password" id="create_password" name="password" required minlength="8" placeholder="••••••••">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="create_role">Assigned Role *</label>
+            <select class="form-select" id="create_role" name="role" required>
+              <option value="manager">Manager (Full Operational Access)</option>
+              <option value="leasing_agent">Leasing Agent (Leases & Contacts)</option>
+              <option value="maintenance">Maintenance Tech (Work Orders & Vendors)</option>
+              <option value="auditor">Auditor (Financial & Compliance Read-Only)</option>
+              <option value="viewer">Viewer (Read-Only across all modules)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="margin-bottom: 0.4rem;">Module Whitelist (Leave empty for All Modules)</label>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem; background: var(--bg-surface-raised, rgba(0,0,0,0.02)); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              ${availableModules.map((m) => html`
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="checkbox" name="module_ids" value="${m.id}">
+                  <span>${m.label}</span>
+                </label>
+              `)}
+            </div>
+          </div>
+
+          ${allPortfolios.length > 0 ? html`
+            <div class="form-group">
+              <label class="form-label" style="margin-bottom: 0.4rem;">Portfolio Scope (Leave empty for All Portfolios)</label>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem; background: var(--bg-surface-raised, rgba(0,0,0,0.02)); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); max-height: 140px; overflow-y: auto;">
+                ${allPortfolios.map((p) => html`
+                  <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                    <input type="checkbox" name="portfolio_ids" value="${p.id}">
+                    <span>${p.name}</span>
+                  </label>
+                `)}
+              </div>
+            </div>
+          ` : raw('')}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('createUserModal').close()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create User Account</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Modal: Edit User & Permissions -->
+    <dialog id="editUserModal" class="modal">
+      <form method="POST" action="/admin?tab=users" class="modal-box" style="max-width: 620px; width: 95%;">
+        ${csrfField(csrfToken)}
+        <input type="hidden" name="action" value="update_user">
+        <input type="hidden" id="edit_user_id" name="user_id">
+        <div class="modal-header">
+          <h3>Edit User & Permissions</h3>
+          <button type="button" class="btn-close" onclick="document.getElementById('editUserModal').close()">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="edit_first_name">First Name</label>
+              <input class="form-input" type="text" id="edit_first_name" name="first_name">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="edit_last_name">Last Name</label>
+              <input class="form-input" type="text" id="edit_last_name" name="last_name">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="edit_role">Assigned Role</label>
+              <select class="form-select" id="edit_role" name="role">
+                <option value="owner">Owner (Full Instance Control)</option>
+                <option value="manager">Manager (Operational Admin)</option>
+                <option value="leasing_agent">Leasing Agent</option>
+                <option value="maintenance">Maintenance Tech</option>
+                <option value="auditor">Auditor</option>
+                <option value="viewer">Viewer</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="edit_password">Reset Password (Optional)</label>
+              <input class="form-input" type="password" id="edit_password" name="password" minlength="8" placeholder="Leave blank to preserve">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" style="margin-bottom: 0.4rem;">Module Whitelist (Uncheck all for Global Access)</label>
+            <div id="edit_modules_container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem; background: var(--bg-surface-raised, rgba(0,0,0,0.02)); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+              ${availableModules.map((m) => html`
+                <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                  <input type="checkbox" name="module_ids" value="${m.id}" id="edit_mod_${m.id}">
+                  <span>${m.label}</span>
+                </label>
+              `)}
+            </div>
+          </div>
+
+          ${allPortfolios.length > 0 ? html`
+            <div class="form-group">
+              <label class="form-label" style="margin-bottom: 0.4rem;">Portfolio Scope (Uncheck all for Global Access)</label>
+              <div id="edit_portfolios_container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.5rem; background: var(--bg-surface-raised, rgba(0,0,0,0.02)); padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-color); max-height: 140px; overflow-y: auto;">
+                ${allPortfolios.map((p) => html`
+                  <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; cursor: pointer;">
+                    <input type="checkbox" name="portfolio_ids" value="${p.id}" id="edit_port_${p.id}">
+                    <span>${p.name}</span>
+                  </label>
+                `)}
+              </div>
+            </div>
+          ` : raw('')}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('editUserModal').close()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Permissions</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script>
+      function openEditUserModal(id, email, firstName, lastName, role, rawModules, rawPortfolios) {
+        document.getElementById('edit_user_id').value = id;
+        document.getElementById('edit_first_name').value = firstName || '';
+        document.getElementById('edit_last_name').value = lastName || '';
+        document.getElementById('edit_role').value = role || 'manager';
+        document.getElementById('edit_password').value = '';
+
+        var modules = [];
+        try { modules = typeof rawModules === 'string' ? JSON.parse(rawModules) : rawModules; } catch(e) {}
+        document.querySelectorAll('#edit_modules_container input[type="checkbox"]').forEach(function(cb) {
+          cb.checked = Array.isArray(modules) && modules.indexOf(cb.value) !== -1;
+        });
+
+        var portfolios = [];
+        try { portfolios = typeof rawPortfolios === 'string' ? JSON.parse(rawPortfolios) : rawPortfolios; } catch(e) {}
+        document.querySelectorAll('#edit_portfolios_container input[type="checkbox"]').forEach(function(cb) {
+          cb.checked = Array.isArray(portfolios) && portfolios.indexOf(cb.value) !== -1;
+        });
+
+        document.getElementById('editUserModal').showModal();
+      }
+    </script>
+  `;
+}
+
 export function renderAdminPage(data: AdminDashboardData): SafeHtml {
   const quotaPercentage = data.storageQuotaBytes > 0
     ? Math.min(100, Math.round((data.storageUsedBytes / data.storageQuotaBytes) * 100))
@@ -290,16 +1062,36 @@ export function renderAdminPage(data: AdminDashboardData): SafeHtml {
 
       <!-- Admin Section Tabs -->
       <div class="tabs-bar">
-        <a href="/admin?tab=telemetry" class="tab-link ${activeTab !== 'branding' ? 'active' : ''}">
+        <a href="/admin?tab=telemetry" class="tab-link ${activeTab === 'telemetry' ? 'active' : ''}">
           📊 Telemetry & System Health
         </a>
         <a href="/admin?tab=branding" class="tab-link ${activeTab === 'branding' ? 'active' : ''}">
           🎨 Branding & Appearance
         </a>
+        <a href="/admin?tab=custom_fields" class="tab-link ${activeTab === 'custom_fields' ? 'active' : ''}">
+          🎛️ Custom Fields Schema
+        </a>
+        <a href="/admin?tab=backups" class="tab-link ${activeTab === 'backups' ? 'active' : ''}">
+          💾 Database Backups
+        </a>
+        <a href="/admin?tab=modules" class="tab-link ${activeTab === 'modules' ? 'active' : ''}">
+          🧩 System Modules
+        </a>
+        <a href="/admin?tab=users" class="tab-link ${activeTab === 'users' ? 'active' : ''}">
+          👥 Team & Permissions
+        </a>
       </div>
 
       ${activeTab === 'branding'
         ? renderBrandingTab(branding, csrfToken)
+        : activeTab === 'custom_fields'
+        ? renderCustomFieldsTab(data.customFieldSections || [], data.customFieldDefinitions || [], csrfToken)
+        : activeTab === 'backups'
+        ? renderBackupsTab(data.allBackups || [], csrfToken)
+        : activeTab === 'modules'
+        ? renderModulesTab(data.loadedModules || [])
+        : activeTab === 'users'
+        ? renderUsersTab(data.usersList || [], data.allPortfolios || [], data.auditedUser || null, csrfToken)
         : html`
             <!-- Overview Metric Cards -->
             <div class="metrics-grid">
@@ -473,10 +1265,144 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         ctx.session.addFlash('error', `Failed to update branding: ${err.message}`);
         return { redirect: '/admin?tab=branding', content: '' };
       }
+    } else if (ctx.body['action'] === 'create_custom_section') {
+      try {
+        const entityType = ctx.body['entity_type'] as CustomFieldEntityType;
+        const title = (ctx.body['title'] || '').trim();
+        const sortOrder = parseInt(ctx.body['sort_order'] || '0', 10) || 0;
+        if (!title) {
+          ctx.session.addFlash('error', 'Section title is required.');
+        } else {
+          CustomFieldsService.createSection({ entity_type: entityType, title, sort_order: sortOrder }, operatorId);
+          ctx.session.addFlash('success', `Created custom field section "${title}".`);
+        }
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to create section: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=custom_fields', content: '' };
+    } else if (ctx.body['action'] === 'delete_custom_section') {
+      try {
+        const sectionId = ctx.body['section_id'] || '';
+        CustomFieldsService.deleteSection(sectionId, operatorId);
+        ctx.session.addFlash('success', 'Section deleted.');
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to delete section: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=custom_fields', content: '' };
+    } else if (ctx.body['action'] === 'create_custom_definition') {
+      try {
+        const entityType = ctx.body['entity_type'] as CustomFieldEntityType;
+        const sectionId = ctx.body['section_id'] || null;
+        const fieldLabel = (ctx.body['field_label'] || '').trim();
+        const fieldName = (ctx.body['field_name'] || fieldLabel.toLowerCase().replace(/[^a-z0-9_]/g, '_')).trim();
+        const dataType = (ctx.body['data_type'] || 'string') as CustomFieldDataType;
+        const isRequired = ctx.body['is_required'] === '1';
+        const defaultValue = ctx.body['default_value'] || null;
+        const optionsRaw = (ctx.body['options'] || '').trim();
+        const options = optionsRaw ? optionsRaw.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined;
+        const sortOrder = parseInt(ctx.body['sort_order'] || '0', 10) || 0;
+
+        if (!fieldLabel || !fieldName) {
+          ctx.session.addFlash('error', 'Field label and name are required.');
+        } else {
+          CustomFieldsService.createDefinition({
+            entity_type: entityType,
+            section_id: sectionId,
+            field_name: fieldName,
+            field_label: fieldLabel,
+            data_type: dataType,
+            is_required: isRequired,
+            default_value: defaultValue,
+            options,
+            sort_order: sortOrder
+          }, operatorId);
+          ctx.session.addFlash('success', `Created custom field definition "${fieldLabel}".`);
+        }
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to create field definition: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=custom_fields', content: '' };
+    } else if (ctx.body['action'] === 'delete_custom_definition') {
+      try {
+        const defId = ctx.body['definition_id'] || '';
+        CustomFieldsService.deleteDefinition(defId, operatorId);
+        ctx.session.addFlash('success', 'Field definition deleted.');
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to delete field definition: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=custom_fields', content: '' };
+    } else if (ctx.body['action'] === 'create_user') {
+      try {
+        const email = (ctx.body['email'] || '').trim().toLowerCase();
+        const password = ctx.body['password'] || '';
+        const firstName = (ctx.body['first_name'] || '').trim();
+        const lastName = (ctx.body['last_name'] || '').trim();
+        const role = (ctx.body['role'] || 'leasing_agent').trim().toLowerCase();
+
+        const rawPortfolios = ctx.body['portfolio_ids'];
+        const portfolioIds = Array.isArray(rawPortfolios) ? rawPortfolios : (rawPortfolios ? [rawPortfolios] : []);
+
+        const rawModules = ctx.body['module_ids'];
+        const moduleIds = Array.isArray(rawModules) ? rawModules : (rawModules ? [rawModules] : []);
+
+        await ctx.api.post('/api/v1/users', {
+          email,
+          password,
+          first_name: firstName,
+          last_name: lastName,
+          role,
+          portfolio_ids: portfolioIds,
+          module_ids: moduleIds
+        });
+        ctx.session.addFlash('success', `User account for ${firstName} ${lastName} (${email}) created successfully.`);
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to create user: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=users', content: '' };
+    } else if (ctx.body['action'] === 'update_user') {
+      try {
+        const userId = ctx.body['user_id'];
+        const firstName = (ctx.body['first_name'] || '').trim();
+        const lastName = (ctx.body['last_name'] || '').trim();
+        const role = (ctx.body['role'] || '').trim().toLowerCase();
+        const password = ctx.body['password'] || undefined;
+
+        const rawPortfolios = ctx.body['portfolio_ids'];
+        const portfolioIds = Array.isArray(rawPortfolios) ? rawPortfolios : (rawPortfolios ? [rawPortfolios] : []);
+
+        const rawModules = ctx.body['module_ids'];
+        const moduleIds = Array.isArray(rawModules) ? rawModules : (rawModules ? [rawModules] : []);
+
+        await ctx.api.put(`/api/v1/users/${encodeURIComponent(userId)}`, {
+          first_name: firstName || undefined,
+          last_name: lastName || undefined,
+          role: role || undefined,
+          password: password && password.length >= 8 ? password : undefined,
+          portfolio_ids: portfolioIds,
+          module_ids: moduleIds
+        });
+        ctx.session.addFlash('success', 'User profile and permissions updated successfully.');
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to update user: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=users', content: '' };
+    } else if (ctx.body['action'] === 'delete_user') {
+      try {
+        const userId = ctx.body['user_id'];
+        await ctx.api.delete(`/api/v1/users/${encodeURIComponent(userId)}`);
+        ctx.session.addFlash('success', 'User removed successfully.');
+      } catch (err: any) {
+        ctx.session.addFlash('error', `Failed to delete user: ${err.message}`);
+      }
+      return { redirect: '/admin?tab=users', content: '' };
     }
   }
 
-  const activeTab = ctx.query['tab'] === 'branding' ? 'branding' : 'telemetry';
+  const rawTab = String(ctx.query['tab'] || 'telemetry').toLowerCase();
+  const validTabs = ['telemetry', 'branding', 'custom_fields', 'backups', 'modules', 'users'];
+  const activeTab: 'telemetry' | 'branding' | 'custom_fields' | 'backups' | 'modules' | 'users' = validTabs.includes(rawTab)
+    ? (rawTab as any)
+    : 'telemetry';
   const branding = BrandingService.getBranding(operatorId, db);
 
   let dbStatus: 'healthy' | 'degraded' = 'healthy';
@@ -559,9 +1485,58 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     slots: m.manifest.slots || []
   }));
 
+  const customFieldSections = CustomFieldsService.listSections(undefined, operatorId);
+  const customFieldDefinitions = CustomFieldsService.listDefinitions(undefined, operatorId);
+
+  let allBackups: any[] = [];
+  try {
+    allBackups = db.prepare(`
+      SELECT id, filename, file_size_bytes AS size_bytes, checksum_sha256 AS sha256_checksum, status, created_at
+      FROM backups
+      WHERE operator_id = ? AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 25
+    `).all(operatorId) as any[];
+  } catch (err: any) {
+    const msg = String(err?.message || '');
+    if (!msg.includes('no such table')) {
+      dbStatus = 'degraded';
+    }
+  }
+
+  let usersList: any[] = [];
+  let allPortfolios: any[] = [];
+  let auditedUser: any = null;
+
+  if (activeTab === 'users') {
+    try {
+      const uRes = await ctx.api.get('/api/v1/users');
+      usersList = uRes?.data?.users || [];
+
+      const pRows = db.prepare('SELECT id, name FROM portfolios WHERE operator_id = ? AND deleted_at IS NULL ORDER BY name ASC').all(operatorId) as any[];
+      allPortfolios = pRows || [];
+
+      const auditUserId = ctx.query['audit_user_id'] as string | undefined;
+      if (auditUserId) {
+        const actRes = await ctx.api.get(`/api/v1/users/${encodeURIComponent(auditUserId)}/activity`);
+        if (actRes?.data) {
+          auditedUser = actRes.data;
+        }
+      }
+    } catch (err: any) {
+      ctx.session.addFlash('error', `Failed to load user administration data: ${err.message}`);
+    }
+  }
+
   const content = renderAdminPage({
     activeTab,
     branding,
+    customFieldSections,
+    customFieldDefinitions,
+    allBackups,
+    usersList,
+    allPortfolios,
+    auditedUser,
     csrfToken: ctx.session.getCsrfToken(),
     activeOperatorsCount,
     activeUsersCount,

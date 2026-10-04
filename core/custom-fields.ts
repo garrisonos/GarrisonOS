@@ -1,23 +1,51 @@
 /**
  * Dynamic Custom Fields Engine
  *
- * Provides schema definitions, type validation, strict date formatting (YYYY-MM-DD),
- * and parent entity mutation across properties, buildings, units, leases, contacts, and work orders.
+ * Provides schema definitions, customizable section cards, type validation,
+ * strict date formatting (YYYY-MM-DD), and parent entity mutation across
+ * properties, buildings, units, leases, contacts, work orders, and bills.
  */
 
-import { getDatabase } from '../database/client.js';
+import { getDatabase, withTransaction } from '../database/client.js';
 import { RequestContext } from './context.js';
 import { generateUUIDv7 } from './crypto.js';
 
 /**
  * Permitted entity types supporting dynamic custom fields.
  */
-export type CustomFieldEntityType = 'property' | 'building' | 'unit' | 'lease' | 'contact' | 'work_order';
+export type CustomFieldEntityType =
+  | 'property'
+  | 'building'
+  | 'unit'
+  | 'lease'
+  | 'contact'
+  | 'work_order'
+  | 'bill';
 
 /**
  * Permitted custom field data types.
  */
-export type CustomFieldDataType = 'string' | 'number' | 'boolean' | 'date' | 'select';
+export type CustomFieldDataType =
+  | 'string'
+  | 'number'
+  | 'currency'
+  | 'boolean'
+  | 'date'
+  | 'select';
+
+/**
+ * Interface representing a custom field grouping section card.
+ */
+export interface CustomFieldSectionRecord {
+  id: string;
+  operator_id: string;
+  entity_type: CustomFieldEntityType;
+  title: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
 
 /**
  * Custom field definition model representing an active schema rule.
@@ -27,6 +55,8 @@ export interface CustomFieldDefinition {
   id: string;
   /** Operator isolation identifier. */
   operator_id: string;
+  /** Optional grouping section card identifier. */
+  section_id?: string | null;
   /** Target entity domain type. */
   entity_type: CustomFieldEntityType;
   /** Programmatic field key used in JSON payload. */
@@ -35,8 +65,12 @@ export interface CustomFieldDefinition {
   field_label: string;
   /** Primitive or structured data type rule. */
   data_type: CustomFieldDataType;
+  /** Default value for UI forms. */
+  default_value?: string | null;
   /** JSON-serialized array of valid options for 'select' type. */
   options_json?: string | null;
+  /** Display sort order within UI forms. */
+  sort_order?: number;
   /** Boolean flag (1 or 0) indicating whether field is mandatory. */
   is_required: number;
   /** UTC creation epoch millisecond timestamp. */
@@ -45,6 +79,39 @@ export interface CustomFieldDefinition {
   updated_at: number;
   /** Soft-delete epoch millisecond timestamp. */
   deleted_at?: number | null;
+  /** Deserialized array of allowed options. */
+  options?: string[];
+  /** Optional joined title of the parent section card. */
+  section_title?: string | null;
+}
+
+/**
+ * Backward-compatibility alias for CustomFieldDefinition.
+ */
+export type CustomFieldDefinitionRecord = CustomFieldDefinition;
+
+/**
+ * Input for creating a new custom field section card.
+ */
+export interface CreateSectionInput {
+  entity_type: CustomFieldEntityType;
+  title: string;
+  sort_order?: number;
+}
+
+/**
+ * Input for creating a custom field definition.
+ */
+export interface CreateDefinitionInput {
+  section_id?: string | null;
+  entity_type: CustomFieldEntityType;
+  field_name: string;
+  field_label: string;
+  data_type: CustomFieldDataType;
+  options?: string[];
+  is_required?: boolean | number;
+  default_value?: string | null;
+  sort_order?: number;
 }
 
 /**
@@ -53,180 +120,304 @@ export interface CustomFieldDefinition {
 export interface CustomFieldValidationResult {
   /** True if all definition assertions pass; false otherwise. */
   valid: boolean;
-  /** Formatted and normalized custom field key-values (with dates formatted to YYYY-MM-DD). */
+  /** Formatted and normalized custom field key-values. */
   formatted: Record<string, any>;
-  /** List of validation error messages. */
+  /** Array of human-readable validation error messages. */
   errors: string[];
 }
 
-const ENTITY_SQL: Record<CustomFieldEntityType, { select: string; update: string }> = {
+const VALID_ENTITY_TYPES = new Set<CustomFieldEntityType>([
+  'property',
+  'building',
+  'unit',
+  'lease',
+  'contact',
+  'work_order',
+  'bill'
+]);
+
+const VALID_DATA_TYPES = new Set<CustomFieldDataType>([
+  'string',
+  'number',
+  'currency',
+  'boolean',
+  'date',
+  'select'
+]);
+
+const ENTITY_SQL: Record<string, { select: string; update: string }> = {
   property: {
-    select: 'SELECT * FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE properties SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   },
   building: {
-    select: 'SELECT * FROM buildings WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM buildings WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE buildings SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   },
   unit: {
-    select: 'SELECT * FROM units WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM units WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE units SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   },
   lease: {
-    select: 'SELECT * FROM leases WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM leases WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE leases SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   },
   contact: {
-    select: 'SELECT * FROM contacts WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM contacts WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE contacts SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   },
   work_order: {
-    select: 'SELECT * FROM work_orders WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    select: 'SELECT id, custom_fields FROM work_orders WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE work_orders SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  bill: {
+    select: 'SELECT id, custom_fields FROM bills WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE bills SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   }
 };
 
-const VALID_ENTITY_TYPES: Set<string> = new Set(['property', 'building', 'unit', 'lease', 'contact', 'work_order']);
-const VALID_DATA_TYPES: Set<string> = new Set(['string', 'number', 'boolean', 'date', 'select']);
-
 /**
- * Validates whether a calendar date conforms strictly to Gregorian YYYY-MM-DD.
- *
- * @param dateStr - Date string to evaluate.
- * @returns True if valid calendar date; false otherwise.
+ * Validates a candidate date string or timestamp against strict YYYY-MM-DD Gregorian calendar rules.
  */
-function isValidIsoDate(dateStr: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
-
-  const [yearStr, monthStr, dayStr] = dateStr.split('-');
-  const year = parseInt(yearStr!, 10);
-  const month = parseInt(monthStr!, 10);
-  const day = parseInt(dayStr!, 10);
-
-  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1000 || year > 9999) {
-    return false;
+function normalizeDateValue(raw: any): string | null {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    const year = d.getUTCFullYear();
+    if (year < 1000 || year > 9999) return null;
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
-  // Days in month check with leap year calculation
-  const daysInMonth = [31, (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return day <= daysInMonth[month - 1]!;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+
+  // Support ISO datetime strings (e.g., 2026-10-03T12:00:00Z)
+  if (trimmed.includes('T')) {
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+
+    // Strict validation of the calendar date components before 'T'
+    const datePartMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+    if (!datePartMatch) return null;
+    const strYear = parseInt(datePartMatch[1]!, 10);
+    const strMonth = parseInt(datePartMatch[2]!, 10);
+    const strDay = parseInt(datePartMatch[3]!, 10);
+
+    if (strYear < 1000 || strYear > 9999) return null;
+    if (strMonth < 1 || strMonth > 12) return null;
+
+    const daysInMonths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const isLeap = (strYear % 4 === 0 && strYear % 100 !== 0) || strYear % 400 === 0;
+    if (isLeap) {
+      daysInMonths[1] = 29;
+    }
+    if (strDay < 1 || strDay > daysInMonths[strMonth - 1]!) return null;
+
+    const year = d.getUTCFullYear();
+    if (year < 1000 || year > 9999) return null;
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) return null;
+
+  const year = parseInt(match[1]!, 10);
+  const month = parseInt(match[2]!, 10);
+  const day = parseInt(match[3]!, 10);
+
+  if (year < 1000 || year > 9999) return null;
+  if (month < 1 || month > 12) return null;
+
+  const daysInMonths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  if (isLeap) {
+    daysInMonths[1] = 29;
+  }
+
+  if (day < 1 || day > daysInMonths[month - 1]!) return null;
+
+  return trimmed;
 }
 
 /**
- * Normalizes candidate date inputs into strict YYYY-MM-DD format or returns null if invalid.
- *
- * @param value - Candidate date input (string or numeric timestamp).
- * @returns Standardized YYYY-MM-DD string or null.
- */
-function normalizeDateValue(value: any): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (isValidIsoDate(trimmed)) {
-      return trimmed;
-    }
-    // Attempt parse if full ISO string
-    if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) {
-        const yyyy = d.getUTCFullYear();
-        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-        const dd = String(d.getUTCDate()).padStart(2, '0');
-        const candidate = `${yyyy}-${mm}-${dd}`;
-        if (isValidIsoDate(candidate)) return candidate;
-      }
-    }
-    return null;
-  }
-
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-    const d = new Date(value);
-    if (!isNaN(d.getTime())) {
-      const yyyy = d.getUTCFullYear();
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
-      const candidate = `${yyyy}-${mm}-${dd}`;
-      if (isValidIsoDate(candidate)) return candidate;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Core Service governing Dynamic Custom Field Definitions and entity-level validation.
+ * Service managing dynamic custom field definitions, sections, and schema validation.
  */
 export class CustomFieldsService {
+  // --- Section Management ---
+
   /**
-   * List custom field definitions for the active operator, optionally filtered by entity type.
-   *
-   * @param entityType - Optional entity domain type filter.
-   * @returns Array of active CustomFieldDefinition records.
+   * List custom field sections for an entity type within the active operator context.
    */
-  public static listDefinitions(entityType?: CustomFieldEntityType): CustomFieldDefinition[] {
-    const operatorId = RequestContext.getOperatorId();
+  public static listSections(entityType?: CustomFieldEntityType, opId?: string): CustomFieldSectionRecord[] {
+    const operatorId = opId || RequestContext.tryGet()?.operatorId;
+    if (!operatorId) return [];
     const db = getDatabase();
 
-    let sql = 'SELECT * FROM custom_field_definitions WHERE operator_id = ? AND deleted_at IS NULL';
-    const params: any[] = [operatorId];
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='custom_field_sections'").get();
+    if (!tableCheck) return [];
 
     if (entityType) {
-      sql += ' AND entity_type = ?';
-      params.push(entityType);
+      return db.prepare(
+        'SELECT * FROM custom_field_sections WHERE operator_id = ? AND entity_type = ? AND deleted_at IS NULL ORDER BY sort_order ASC, title ASC'
+      ).all(operatorId, entityType) as unknown as CustomFieldSectionRecord[];
     }
-    sql += ' ORDER BY field_label ASC, created_at ASC';
 
-    return db.prepare(sql).all(...params) as unknown as CustomFieldDefinition[];
+    return db.prepare(
+      'SELECT * FROM custom_field_sections WHERE operator_id = ? AND deleted_at IS NULL ORDER BY entity_type ASC, sort_order ASC, title ASC'
+    ).all(operatorId) as unknown as CustomFieldSectionRecord[];
   }
 
   /**
-   * Retrieve a single custom field definition by ID within the active operator context.
-   *
-   * @param id - Unique UUIDv7 of the definition.
-   * @returns The definition entity or null if not found.
+   * Create a new custom field section card.
    */
-  public static getDefinitionById(id: string): CustomFieldDefinition | null {
-    const operatorId = RequestContext.getOperatorId();
+  public static createSection(input: CreateSectionInput, opId?: string): CustomFieldSectionRecord {
+    const operatorId = opId || RequestContext.getOperatorId();
     const db = getDatabase();
-    const row = db.prepare(`
-      SELECT * FROM custom_field_definitions
-      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).get(id, operatorId) as CustomFieldDefinition | undefined;
-    return row || null;
+    const id = generateUUIDv7();
+    const now = Date.now();
+
+    db.prepare(`
+      INSERT INTO custom_field_sections (
+        id, operator_id, entity_type, title, sort_order, created_at, updated_at, deleted_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+    `).run(id, operatorId, input.entity_type, input.title.trim(), input.sort_order ?? 0, now, now);
+
+    return db.prepare('SELECT * FROM custom_field_sections WHERE id = ?').get(id) as unknown as CustomFieldSectionRecord;
   }
 
   /**
-   * Retrieve a definition by entity type and field name within the active operator context.
-   *
-   * @param entityType - Entity domain type.
-   * @param fieldName - Programmatic field key.
-   * @returns The definition entity or null if not found.
+   * Delete a custom field section card.
    */
-  public static getDefinitionByName(entityType: CustomFieldEntityType, fieldName: string): CustomFieldDefinition | null {
-    const operatorId = RequestContext.getOperatorId();
+  public static deleteSection(sectionId: string, opId?: string): void {
+    const operatorId = opId || RequestContext.getOperatorId();
     const db = getDatabase();
-    const row = db.prepare(`
-      SELECT * FROM custom_field_definitions
-      WHERE operator_id = ? AND entity_type = ? AND field_name = ? AND deleted_at IS NULL
-    `).get(operatorId, entityType, fieldName) as CustomFieldDefinition | undefined;
-    return row || null;
+    const now = Date.now();
+
+    withTransaction((tx) => {
+      tx.prepare(`
+        UPDATE custom_field_sections SET deleted_at = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(now, now, sectionId, operatorId);
+
+      const colCheck = tx.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
+      if (colCheck.some((c) => c.name === 'section_id')) {
+        tx.prepare(`
+          UPDATE custom_field_definitions SET section_id = NULL, updated_at = ?
+          WHERE section_id = ? AND operator_id = ? AND deleted_at IS NULL
+        `).run(now, sectionId, operatorId);
+      }
+    }, db);
+  }
+
+  // --- Definition Management ---
+
+  /**
+   * List custom field definitions, optionally filtered by entity type.
+   */
+  public static listDefinitions(
+    entityType?: CustomFieldEntityType,
+    opId?: string
+  ): CustomFieldDefinition[] {
+    const operatorId = opId || RequestContext.tryGet()?.operatorId;
+    if (!operatorId) return [];
+    const db = getDatabase();
+
+    const colCheck = db.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
+    const hasSectionId = colCheck.some((c) => c.name === 'section_id');
+
+    let rows: any[];
+    if (hasSectionId) {
+      let sql = `
+        SELECT d.*, s.title as section_title
+        FROM custom_field_definitions d
+        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.operator_id = d.operator_id AND s.deleted_at IS NULL
+        WHERE d.operator_id = ? AND d.deleted_at IS NULL
+      `;
+      const params: any[] = [operatorId];
+      if (entityType) {
+        sql += ' AND d.entity_type = ?';
+        params.push(entityType);
+      }
+      sql += ' ORDER BY d.sort_order ASC, d.field_label ASC';
+      rows = db.prepare(sql).all(...params);
+    } else {
+      let sql = 'SELECT * FROM custom_field_definitions WHERE operator_id = ? AND deleted_at IS NULL';
+      const params: any[] = [operatorId];
+      if (entityType) {
+        sql += ' AND entity_type = ?';
+        params.push(entityType);
+      }
+      sql += ' ORDER BY created_at ASC';
+      rows = db.prepare(sql).all(...params);
+    }
+
+    return rows.map((r) => {
+      let options: string[] = [];
+      if (r.options_json) {
+        try {
+          options = JSON.parse(r.options_json);
+        } catch {
+          options = [];
+        }
+      }
+      return {
+        ...r,
+        options
+      };
+    });
+  }
+
+  /**
+   * Retrieve a single definition by its ID.
+   */
+  public static getDefinitionById(id: string, opId?: string): CustomFieldDefinition | null {
+    const operatorId = opId || RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const colCheck = db.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
+    const hasSectionId = colCheck.some((c) => c.name === 'section_id');
+
+    let row: any;
+    if (hasSectionId) {
+      row = db.prepare(`
+        SELECT d.*, s.title as section_title
+        FROM custom_field_definitions d
+        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.operator_id = d.operator_id AND s.deleted_at IS NULL
+        WHERE d.id = ? AND d.operator_id = ? AND d.deleted_at IS NULL
+      `).get(id, operatorId);
+    } else {
+      row = db.prepare(`
+        SELECT * FROM custom_field_definitions
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(id, operatorId);
+    }
+
+    if (!row) return null;
+
+    let options: string[] = [];
+    if (row.options_json) {
+      try {
+        options = JSON.parse(row.options_json);
+      } catch {
+        options = [];
+      }
+    }
+
+    return {
+      ...row,
+      options
+    };
   }
 
   /**
    * Create a new custom field definition.
-   *
-   * @param data - Creation payload.
-   * @returns The newly created definition record.
-   * @throws Error if validation fails or a duplicate definition name exists for the entity type.
    */
-  public static createDefinition(data: {
-    entity_type: CustomFieldEntityType;
-    field_name: string;
-    field_label: string;
-    data_type: CustomFieldDataType;
-    options?: string[];
-    is_required?: boolean | number;
-  }): CustomFieldDefinition {
-    const operatorId = RequestContext.getOperatorId();
+  public static createDefinition(data: CreateDefinitionInput, opId?: string): CustomFieldDefinition {
+    const operatorId = opId || RequestContext.getOperatorId();
     const db = getDatabase();
 
     if (!VALID_ENTITY_TYPES.has(data.entity_type)) {
@@ -244,7 +435,7 @@ export class CustomFieldsService {
 
     const cleanLabel = (data.field_label || '').trim();
     if (!cleanLabel) {
-      throw new Error('field_label is required');
+      throw new Error('field_label cannot be empty');
     }
 
     let optionsJson: string | null = null;
@@ -252,174 +443,268 @@ export class CustomFieldsService {
       if (!Array.isArray(data.options) || data.options.length === 0) {
         throw new Error('options array is required for select data type');
       }
-      const sanitizedOptions = data.options.map((opt) => String(opt).trim()).filter(Boolean);
-      if (sanitizedOptions.length === 0) {
-        throw new Error('select data type requires at least one non-empty option');
+      const cleaned = data.options.map((o) => String(o).trim()).filter(Boolean);
+      if (cleaned.length === 0) {
+        throw new Error('options array is required for select data type');
       }
-      optionsJson = JSON.stringify(sanitizedOptions);
+      optionsJson = JSON.stringify(cleaned);
     }
 
-    const isRequired = data.is_required === true || data.is_required === 1 ? 1 : 0;
-    const existing = CustomFieldsService.getDefinitionByName(data.entity_type, cleanFieldName);
+    if (data.section_id) {
+      const section = db.prepare(
+        'SELECT id, entity_type FROM custom_field_sections WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+      ).get(data.section_id, operatorId) as { id: string; entity_type: string } | undefined;
+      if (!section) {
+        throw new Error(`Custom field section "${data.section_id}" not found`);
+      }
+      if (section.entity_type !== data.entity_type) {
+        throw new Error(`Section entity_type "${section.entity_type}" does not match field entity_type "${data.entity_type}"`);
+      }
+    }
+
+    const existing = db.prepare(`
+      SELECT id FROM custom_field_definitions
+      WHERE operator_id = ? AND entity_type = ? AND field_name = ? AND deleted_at IS NULL
+    `).get(operatorId, data.entity_type, cleanFieldName);
+
     if (existing) {
-      const err: any = new Error(`A custom field definition with name "${cleanFieldName}" already exists for ${data.entity_type}`);
+      const err: any = new Error(`A custom field named "${cleanFieldName}" already exists for entity "${data.entity_type}"`);
       err.code = 'CONFLICT';
       throw err;
     }
 
     const id = generateUUIDv7();
     const now = Date.now();
+    const isRequired = data.is_required ? 1 : 0;
 
-    db.prepare(`
-      INSERT INTO custom_field_definitions (
-        id, operator_id, entity_type, field_name, field_label,
-        data_type, options_json, is_required, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, operatorId, data.entity_type, cleanFieldName, cleanLabel, data.data_type, optionsJson, isRequired, now, now);
+    const colCheck = db.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
+    const hasSectionId = colCheck.some((c) => c.name === 'section_id');
 
-    return CustomFieldsService.getDefinitionById(id)!;
+    if (hasSectionId) {
+      db.prepare(`
+        INSERT INTO custom_field_definitions (
+          id, operator_id, section_id, entity_type, field_name, field_label,
+          data_type, is_required, default_value, options_json, sort_order,
+          created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        id,
+        operatorId,
+        data.section_id || null,
+        data.entity_type,
+        cleanFieldName,
+        cleanLabel,
+        data.data_type,
+        isRequired,
+        data.default_value || null,
+        optionsJson,
+        data.sort_order ?? 0,
+        now,
+        now
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO custom_field_definitions (
+          id, operator_id, entity_type, field_name, field_label,
+          data_type, options_json, is_required, created_at, updated_at, deleted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).run(
+        id,
+        operatorId,
+        data.entity_type,
+        cleanFieldName,
+        cleanLabel,
+        data.data_type,
+        optionsJson,
+        isRequired,
+        now,
+        now
+      );
+    }
+
+    return CustomFieldsService.getDefinitionById(id, operatorId)!;
   }
 
   /**
    * Update an existing custom field definition.
-   *
-   * @param id - Definition ID to update.
-   * @param data - Partial fields to update.
-   * @returns Updated definition or null if not found.
    */
   public static updateDefinition(
     id: string,
-    data: Partial<{ field_label: string; is_required: boolean | number; options: string[] }>
+    data: Partial<CreateDefinitionInput>,
+    opId?: string
   ): CustomFieldDefinition | null {
-    const existing = CustomFieldsService.getDefinitionById(id);
+    const operatorId = opId || RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const existing = CustomFieldsService.getDefinitionById(id, operatorId);
     if (!existing) return null;
 
-    const operatorId = RequestContext.getOperatorId();
-    const db = getDatabase();
-    const now = Date.now();
-
-    const fieldLabel = data.field_label !== undefined ? data.field_label.trim() : existing.field_label;
-    if (!fieldLabel) {
+    const cleanLabel = data.field_label !== undefined ? data.field_label.trim() : existing.field_label;
+    if (!cleanLabel) {
       throw new Error('field_label cannot be empty');
     }
 
-    const isRequired = data.is_required !== undefined
-      ? (data.is_required === true || data.is_required === 1 ? 1 : 0)
-      : existing.is_required;
+    let isRequired = existing.is_required;
+    if (data.is_required !== undefined) {
+      isRequired = data.is_required ? 1 : 0;
+    }
 
-    let optionsJson = existing.options_json;
+    let optionsJson: string | null = existing.options_json ?? null;
     if (existing.data_type === 'select' && data.options !== undefined) {
       if (!Array.isArray(data.options) || data.options.length === 0) {
         throw new Error('options array is required for select data type');
       }
-      const sanitized = data.options.map((opt) => String(opt).trim()).filter(Boolean);
-      if (sanitized.length === 0) {
-        throw new Error('select data type requires at least one non-empty option');
+      const cleaned = data.options.map((o) => String(o).trim()).filter(Boolean);
+      if (cleaned.length === 0) {
+        throw new Error('options array is required for select data type');
       }
-      optionsJson = JSON.stringify(sanitized);
+      optionsJson = JSON.stringify(cleaned);
     }
 
-    db.prepare(`
-      UPDATE custom_field_definitions
-      SET field_label = ?, is_required = ?, options_json = ?, updated_at = ?
-      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).run(fieldLabel, isRequired, optionsJson ?? null, now, id, operatorId);
+    const now = Date.now();
 
-    return CustomFieldsService.getDefinitionById(id);
+    if (data.section_id) {
+      const section = db.prepare(
+        'SELECT id, entity_type FROM custom_field_sections WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+      ).get(data.section_id, operatorId) as { id: string; entity_type: string } | undefined;
+      if (!section) {
+        throw new Error(`Custom field section "${data.section_id}" not found`);
+      }
+      if (section.entity_type !== existing.entity_type) {
+        throw new Error(`Section entity_type "${section.entity_type}" does not match field entity_type "${existing.entity_type}"`);
+      }
+    }
+
+    const colCheck = db.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
+    const hasSectionId = colCheck.some((c) => c.name === 'section_id');
+
+    if (hasSectionId) {
+      const sectionId = data.section_id !== undefined ? data.section_id : existing.section_id;
+      const defaultValue = data.default_value !== undefined ? data.default_value : existing.default_value;
+      const sortOrder = data.sort_order !== undefined ? data.sort_order : existing.sort_order;
+
+      db.prepare(`
+        UPDATE custom_field_definitions
+        SET field_label = ?, is_required = ?, options_json = ?, section_id = ?, default_value = ?, sort_order = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(cleanLabel, isRequired, optionsJson ?? null, sectionId || null, defaultValue || null, sortOrder ?? 0, now, id, operatorId);
+    } else {
+      db.prepare(`
+        UPDATE custom_field_definitions
+        SET field_label = ?, is_required = ?, options_json = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(cleanLabel, isRequired, optionsJson ?? null, now, id, operatorId);
+    }
+
+    return CustomFieldsService.getDefinitionById(id, operatorId);
   }
 
   /**
-   * Soft-delete a custom field definition by ID within the active operator context.
-   *
-   * @param id - Unique definition ID.
-   * @returns True if deleted; false otherwise.
+   * Soft-delete a custom field definition.
    */
-  public static deleteDefinition(id: string): boolean {
-    const operatorId = RequestContext.getOperatorId();
+  public static deleteDefinition(id: string, opId?: string): boolean {
+    const operatorId = opId || RequestContext.getOperatorId();
     const db = getDatabase();
     const now = Date.now();
+
     const info = db.prepare(`
       UPDATE custom_field_definitions
       SET deleted_at = ?, updated_at = ?
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(now, now, id, operatorId);
+
     return info.changes > 0;
   }
 
+  // --- Validation and Persistence ---
+
   /**
-   * Validates a custom_fields payload against active definitions for an entity type.
-   *
-   * Standardizes date formats to strict YYYY-MM-DD.
-   *
-   * @param entityType - Entity domain type.
-   * @param customFields - Raw custom fields object from client payload.
-   * @param operatorId - Optional explicit operator context override.
-   * @returns Validation result with formatted values or error messages.
+   * Validate and format a candidate custom fields dictionary against active definitions.
    */
   public static validateAndFormat(
     entityType: CustomFieldEntityType,
-    customFields: Record<string, any> = {},
-    operatorId?: string
+    payload: Record<string, any>,
+    opId?: string
   ): CustomFieldValidationResult {
-    const activeOperatorId = operatorId || RequestContext.getOperatorId();
-    const db = getDatabase();
-
-    const definitions = db.prepare(`
-      SELECT * FROM custom_field_definitions
-      WHERE operator_id = ? AND entity_type = ? AND deleted_at IS NULL
-    `).all(activeOperatorId, entityType) as unknown as CustomFieldDefinition[];
-
-    const formatted: Record<string, any> = {};
+    const operatorId = opId || RequestContext.tryGet()?.operatorId;
     const errors: string[] = [];
+    const formatted: Record<string, any> = {};
 
-    // Safely copy non-defined fields while filtering prototype pollution keys
-    for (const [key, val] of Object.entries(customFields)) {
-      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-      formatted[key] = val;
+    if (!operatorId) {
+      return { valid: true, formatted: { ...payload }, errors: [] };
     }
 
+    const definitions = CustomFieldsService.listDefinitions(entityType, operatorId);
+    const defMap = new Map<string, CustomFieldDefinition>();
     for (const def of definitions) {
-      const val = customFields[def.field_name];
-      const isMissing = val === undefined || val === null || (typeof val === 'string' ? val.trim() === '' : false);
+      defMap.set(def.field_name, def);
+    }
 
-      if (def.is_required === 1 && isMissing) {
-        errors.push(`Custom field "${def.field_label}" (${def.field_name}) is required`);
+    // 1. Check required fields
+    for (const def of definitions) {
+      if (def.is_required) {
+        const val = payload[def.field_name];
+        if (
+          val === undefined ||
+          val === null ||
+          val === '' ||
+          (typeof val === 'string' && val.trim() === '')
+        ) {
+          errors.push(`Field '${def.field_label}' (${def.field_name}) is required.`);
+        }
+      }
+    }
+
+    // 2. Validate and cast supplied values
+    for (const [key, val] of Object.entries(payload)) {
+      if (val === undefined || val === null || val === '') {
         continue;
       }
 
-      if (isMissing) {
+      const def = defMap.get(key);
+      if (!def) {
+        formatted[key] = val;
         continue;
       }
 
       switch (def.data_type) {
         case 'string':
-          if (typeof val !== 'string') {
-            errors.push(`Custom field "${def.field_name}" must be a string`);
-          } else {
-            formatted[def.field_name] = val;
-          }
+          formatted[def.field_name] = String(val).trim();
           break;
 
-        case 'number':
-          if (typeof val !== 'number' || !Number.isFinite(val)) {
+        case 'number': {
+          const num = Number(val);
+          if (!Number.isFinite(num)) {
             errors.push(`Custom field "${def.field_name}" must be a valid finite number`);
           } else {
-            formatted[def.field_name] = val;
+            formatted[def.field_name] = num;
           }
           break;
+        }
+
+        case 'currency': {
+          if (typeof val === 'number') {
+            formatted[def.field_name] = Math.round(val);
+          } else {
+            const cleanStr = String(val).replace(/[$,]/g, '').trim();
+            const dollars = parseFloat(cleanStr);
+            if (isNaN(dollars)) {
+              errors.push(`Field '${def.field_label}' must be a valid currency amount.`);
+            } else {
+              formatted[def.field_name] = Math.round(dollars * 100);
+            }
+          }
+          break;
+        }
 
         case 'boolean':
-          if (typeof val !== 'boolean') {
-            errors.push(`Custom field "${def.field_name}" must be a boolean`);
-          } else {
-            formatted[def.field_name] = val;
-          }
+          formatted[def.field_name] = val === true || val === '1' || val === 1 || val === 'true' || val === 'on';
           break;
 
         case 'date': {
           const normalized = normalizeDateValue(val);
           if (!normalized) {
-            errors.push(`Custom field "${def.field_name}" must be a valid date in strict YYYY-MM-DD format`);
+            errors.push(`Field '${def.field_label}' must be a valid date in strict YYYY-MM-DD format.`);
           } else {
             formatted[def.field_name] = normalized;
           }
@@ -428,22 +713,29 @@ export class CustomFieldsService {
 
         case 'select': {
           let allowedOptions: string[] = [];
-          try {
-            allowedOptions = def.options_json ? JSON.parse(def.options_json) : [];
-          } catch {
-            allowedOptions = [];
+          if (def.options && def.options.length > 0) {
+            allowedOptions = def.options;
+          } else if (def.options_json) {
+            try {
+              allowedOptions = JSON.parse(def.options_json);
+            } catch {
+              allowedOptions = [];
+            }
           }
 
-          const stringVal = String(val);
-          if (!allowedOptions.includes(stringVal)) {
+          const strVal = String(val).trim();
+          if (allowedOptions.length > 0 && !allowedOptions.includes(strVal)) {
             errors.push(
-              `Custom field "${def.field_name}" value "${stringVal}" is invalid. Allowed options: ${allowedOptions.join(', ')}`
+              `Custom field "${def.field_name}" value "${strVal}" is invalid. Allowed options: ${allowedOptions.join(', ')}`
             );
           } else {
-            formatted[def.field_name] = stringVal;
+            formatted[def.field_name] = strVal;
           }
           break;
         }
+
+        default:
+          formatted[def.field_name] = val;
       }
     }
 
@@ -455,16 +747,18 @@ export class CustomFieldsService {
   }
 
   /**
+   * Alias for validateAndFormat for backward compatibility.
+   */
+  public static validateAndFormatCustomFields(
+    entityType: CustomFieldEntityType,
+    payload: Record<string, any>,
+    opId?: string
+  ): CustomFieldValidationResult {
+    return CustomFieldsService.validateAndFormat(entityType, payload, opId);
+  }
+
+  /**
    * Prepares, validates, and serializes a custom_fields payload for database storage.
-   *
-   * Validates types and definitions, merges with existing custom fields on update,
-   * and throws VALIDATION_ERROR on violation.
-   *
-   * @param entityType - Entity domain type.
-   * @param input - Candidate custom fields value (object, JSON string, or undefined).
-   * @param existingJson - Existing serialized custom_fields JSON on update (optional).
-   * @param operatorId - Optional explicit operator context override.
-   * @returns Serialized JSON string ready for persistence.
    */
   public static prepareForWrite(
     entityType: CustomFieldEntityType,
@@ -481,7 +775,6 @@ export class CustomFieldsService {
         }
         return existingValue || '{}';
       }
-      // On create, if undefined, validate empty object against required definitions
       const res = CustomFieldsService.validateAndFormat(entityType, {}, operatorId);
       if (!res.valid) {
         const err: any = new Error(res.errors.join('; '));
@@ -500,7 +793,6 @@ export class CustomFieldsService {
         err.statusCode = 400;
         throw err;
       }
-      // On create, treat null as empty object
       const res = CustomFieldsService.validateAndFormat(entityType, {}, operatorId);
       if (!res.valid) {
         const err: any = new Error(res.errors.join('; '));
@@ -561,11 +853,6 @@ export class CustomFieldsService {
 
   /**
    * Updates an entity's custom_fields JSON column after strict validation.
-   *
-   * @param entityType - Entity domain type.
-   * @param entityId - Unique UUIDv7 of the target entity.
-   * @param customFieldsPayload - Candidate custom field values.
-   * @returns Updated entity row and formatted custom fields.
    */
   public static updateEntityCustomFields(
     entityType: CustomFieldEntityType,
@@ -580,7 +867,10 @@ export class CustomFieldsService {
     const db = getDatabase();
     const sqlSet = ENTITY_SQL[entityType];
 
-    // Ensure entity exists and belongs to active operator
+    if (!sqlSet) {
+      throw new Error(`Unsupported entity type "${entityType}" for custom fields`);
+    }
+
     const entity = db.prepare(sqlSet.select).get(entityId, operatorId) as any;
 
     if (!entity) {

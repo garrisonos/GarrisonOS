@@ -10,16 +10,20 @@ Continuous evaluations track implementation maturity against the non-negotiable 
 
 ### Overall Project Health Progression
 
-| Metric Category | Baseline (2026-09-15) | Post-Sprint 1 (2026-09-17) | Post-Sprint 2 (2026-09-17) | Post-Sprint 3 (2026-09-18) | Post-Sprint 4 (2026-09-23) | Target (v0.1.0-alpha - Sprint 5) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Architecture & Design** | 92% | 96% | 98% | 100% | **100%** | 100% |
-| **Core Implementation** | 85% | 92% | 96% | 98% | **100%** | 100% |
-| **Module Completeness** | 65% | 84% | 92% | 96% | **98%** | 100% (Foundational MVP) |
-| **Testing & Verification** | 75% | 85% | 96% | 98% | **99%** | 100% (Full regression) |
-| **Documentation & Hygiene** | 80% | 90% | 95% | 100% | **100%** | 100% (Synchronized) |
-| **Security & Isolation** | 78% | 88% | 94% | 99% | **100%** | 100% (Audited) |
-| **Production Readiness** | 50% | 65% | 92% | 96% | **98%** | 100% (Packaged Installers) |
-| **Composite Project Score** | **78% (B+)** | **86% (B+)** | **95% (A)** | **98% (A+)** | **99% (A+)** | **100% (A+) Feature-Complete Alpha** |
+| Metric Category | Baseline (2026-09-15) | Post-Sprint 1 (2026-09-17) | Post-Sprint 2 (2026-09-17) | Post-Sprint 3 (2026-09-18) | Post-Sprint 4 (2026-09-23) | Post-Sprint 5 (Current) | Target (v0.1.0-alpha) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Architecture & Design** | 92% | 96% | 98% | 100% | 100% | **100%** | 100% |
+| **Core Implementation** | 85% | 92% | 96% | 98% | 100% | **100%** | 100% |
+| **Module Completeness** | 65% | 84% | 92% | 96% | 98% | **99%** | 100% (Foundational MVP) |
+| **Testing & Verification** | 75% | 85% | 96% | 98% | 99% | **100%** | 100% (Full regression) |
+| **Documentation & Hygiene** | 80% | 90% | 95% | 100% | 100% | **100%** | 100% (Synchronized) |
+| **Security & Isolation** | 78% | 88% | 94% | 99% | 100% | **100%** | 100% (Audited) |
+| **UI & Presentation** | 50% | 60% | 70% | 75% | 80% | **85%** | 90% (Foundational Tier) |
+| **Production Packaging** | 50% | 65% | 92% | 96% | 98% | **98%** | 100% (Packaged Installers) |
+| **Composite Project Score** | **78% (B+)** | **86% (B+)** | **95% (A)** | **98% (A+)** | **99% (A+)** | **98% (A+)** | **100% (A+) Feature-Complete Alpha** |
+
+> [!NOTE]
+> **Grounded UI/UX Horizon**: While complete Server-Side Rendered (SSR) views exist for all primary operational entities (dashboards, properties, leasing, maintenance, accounting, accounts payable, check registers, bank deposits, and administration), the presentation layer represents an **initial foundational UI/UX tier**. The current design is functional and zero-dependency, but far from its final form. Comprehensive responsive design for all device viewports, enhanced component ergonomics, richer feedback states, and the public tenant portal remain scheduled development priorities.
 
 ---
 
@@ -28,14 +32,14 @@ Continuous evaluations track implementation maturity against the non-negotiable 
 Progress across the seven canonical architectural phases leading to Foundational MVP:
 
 | Phase | Description | Baseline | Current | Grade | Status | MVP Target Milestone |
-| :---: | :--- | :---: | :---: | :---: | :---: | :--- |
+| :---: | :--- | :---: | :---: | :---: | :--- | :--- |
 | **1** | Core Engine, Multi-Operator & Admin GUI | 85% | **100%** | A+ | Complete | Admin Management GUI & Configurable RBAC (Sprint 3) |
 | **2** | Base Entity, Inventory & Attachments | 70% | **100%** | A+ | Complete | Universal Document Attachments & Safety (Sprint 3) |
 | **3** | Core Property Operations & Conversations | 65% | **100%** | A+ | Complete | Universal Entity Conversations & Preventative Scheduling (Sprint 4) |
-| **4** | Financial Ledger, Client Accounting & AP | 88% | **98%** | A+ | Exceptional | Client Accounting (Sprint 4), AP & PDF Checks (Sprint 5) |
-| **5** | Native Presentation & Public Tenant Portal | 60% | **92%** | A- | Strong | Public Tenant Portal on Subdomain `portal.<domain>` (Sprint 5) |
+| **4** | Financial Ledger, Client Accounting & AP | 88% | **100%** | A+ | Complete | Client Accounting (Sprint 4), AP, Check Register & Deposits (Sprint 5) |
+| **5** | Native Presentation & Public Tenant Portal | 60% | **85%** | B+ | Foundational Tier | Initial SSR Tier Active; UI/UX Polish, Ergonomics & Portal in Progress |
 | **6** | Data Portability, Resilience & Media Backup | 100% | **100%** | A+ | Complete | Packaging physical attachment media in backup archives (Sprint 3) |
-| **7** | MVP Verification, Packaging & GUI Installers| 55% | **90%** | A- | Near Complete | Turnkey Click-Through GUI Installers (Windows/macOS/Linux) (Sprint 5) |
+| **7** | MVP Verification, Packaging & GUI Installers| 55% | **92%** | A- | Near Complete | Turnkey Click-Through GUI Installers (Windows/macOS/Linux) (Sprint 5) |
 
 ---
 
@@ -88,17 +92,20 @@ Progress across the seven canonical architectural phases leading to Foundational
   - [x] Universal Conversations & Notes Subsystem: Polymorphic threaded notes and audit comments across properties, buildings, units, leases, contacts, and work orders.
   - [x] TypeScript SSR Presentation Layer (UI): Baseline whites & blues styling tokens, configurable branding presets & dark mode toggle, and initial draft SSR screens for Client Accounting, Lease AR, and Conversations.
   - [x] Zero-dependency notification dispatcher (SMTP / webhook) & preventative maintenance scheduling.
-- [ ] **Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable** (Planned, Target: v0.1.0-alpha Feature-Complete Alpha)
-  - [ ] **Accounts Payable (AP) Core Subsystem**: Bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property bill allocations (`bill_allocations`), and recurring scheduled bills (`recurring_bills`).
-  - [ ] **Vendor Credit Memos & Bill Offsets**: Vendor credit issuance and allocation offsets against accounts payable liabilities.
-  - [ ] **Vendor Check Register CRUD & PDF Printing**: Native vector stream check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications, check number auditing, and void check operations.
-  - [ ] **Bank Deposits & Batched Clearing**: Grouping undeposited receipts into statement-reconciled bank deposit slips with voiding capability.
-  - [ ] **Amenities & Marketing Syndication Profiles**: Standardized amenities catalog (`/api/v1/amenities`), property/unit junctions, pet policies, and rental listing advertising metadata (`published_for_rent`, `posting_title`, `specials`).
-  - [ ] **Dynamic Custom Fields Engine**: Metadata schema definitions API (`/api/v1/custom_fields/definitions`), entity mutation endpoints, and standardized `YYYY-MM-DD` date formatting.
+- [ ] **Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable** (In Progress, Target: v0.1.0-alpha Feature-Complete Alpha)
+  - [x] **Accounts Payable (AP) Core Subsystem**: Bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property bill allocations (`bill_allocations`), and recurring scheduled bills (`recurring_bills`).
+  - [x] **Vendor Credit Memos & Bill Offsets**: Vendor credit issuance and allocation offsets against accounts payable liabilities.
+  - [x] **Vendor Check Register CRUD & PDF Printing**: Native vector stream check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications, check number auditing, batch check printing, and void check operations.
+  - [x] **Bank Deposits & Batched Clearing**: Grouping undeposited receipts into statement-reconciled bank deposit slips with voiding capability and remitter receipts.
+  - [x] **Amenities & Marketing Syndication Profiles**: Standardized amenities catalog (`/api/v1/amenities`), 5 standard categories, property-to-unit inheritance with exclusions, and marketing flyer generation (`/api/v1/properties/:id/flyer-pdf`).
+  - [x] **Dynamic Custom Fields Engine**: Metadata schema definitions API (`/api/v1/custom_fields/definitions`), entity mutation endpoints, section groupings, and admin schema management panel.
+  - [x] **Universal Search Engine & Global Hotkeys**: Live debounce quick suggestions dropdown, keyboard navigation (`Ctrl+K`, `/`), and full-page categorized `/search` results view with syntax filters.
+  - [x] **Operator User Management, Permissions & Activity Audit**: Centralized user directory (`/admin?tab=users`), configurable role assignment, granular module whitelists (`user_module_access`), portfolio access scopes (`user_portfolio_access`), and chronological user activity audit logging (`/admin?tab=users&audit_user_id=...`).
+  - [x] **Work Order Collaboration, Multi-Vendor & Spend Policy Guardrails**: Multi-contractor assignments (`work_order_vendors`), interactive conversation timeline and field technician updates, portfolio spend threshold enforcement (`spend_threshold_cents`), and live budget variance tracking with linked AP bills.
+  - [x] **Foundational TypeScript SSR Presentation Layer (UI)**: Initial functional views for AP bill entry (`/accounting/bills`), check register (`/accounting/checks`), bank deposits (`/accounting/deposits`), amenities editor (`/properties/amenities`), custom fields manager (`/admin?tab=custom_fields`), and universal entity preview dialogs.
   - [ ] **Standardized Bulk & Temporal API Conventions**: Transactional bulk creation (`POST /api/v1/:resource/bulk`), date interval filtering (`*_start`, `*_end`), and multi-key `order_by` sorting.
   - [ ] **Packaged GUI Installers**: Super-simple click-through graphical setup wizards for Windows (`.exe`/`.msi`), macOS (`.pkg`/`.dmg`), and Linux (`.deb`).
   - [ ] **Public-Facing Tenant Self-Service Portal**: Hosted on isolated subdomain (`portal.<domain>`) with magic-link passwordless email login, mobile-first presentation, and safe mobile maintenance photo uploads.
-  - [ ] **TypeScript SSR Presentation Layer (UI)**: AP bill entry & multi-property allocation queue, Check register & printing batch preview screen, Bank deposit batching dashboard, Dynamic custom fields form renderer component, and Amenities/Marketing editor.
 
 ---
 
@@ -134,7 +141,7 @@ Progress across the seven canonical architectural phases leading to Foundational
 
 ---
 
-### Phase 4: Financial Ledger, Client Accounting & Accounts Payable `[98% - Exceptional]`
+### Phase 4: Financial Ledger, Client Accounting & Accounts Payable `[100% - Complete]`
 * [x] Immutable, append-only double-entry general ledger with strict integer-cents tracking (`journal_entries` and `journal_lines`).
 * [x] Statutory trust accounting fund segregation (`1010 Operating Checking` vs. `1020 Trust Checking` and `2100 Tenant Security Deposits Held Liability`).
 * [x] Automated Three-Way Bank Reconciliation verification schedules.
@@ -142,18 +149,25 @@ Progress across the seven canonical architectural phases leading to Foundational
 * [x] Progressive sunset and deprecation of legacy single-entry `transactions` table with backward-compatible reads and fallbacks *(Sprint 4)*.
 * [x] Client Portfolio Accounting & Management Fee Agreements (capital contributions, net cash draws, cash/accrual portfolio cash summary, automated fee calculations) *(Sprint 4)*.
 * [x] Leasing AR & Fee Policy Engine (recurring auto-charges, late fee policy rules, concessions, deposit refunds) *(Sprint 4)*.
-* [ ] Accounts Payable (AP) & Vendor Invoicing Subsystem (bills, multi-unit allocations, recurring bills) *(Sprint 5)*.
-* [ ] Zero-Dependency Server-Rendered PDF Vendor Check Printing (ANSI check stock specs) *(Sprint 5)*.
-* [ ] Bank Deposits & Batched Clearing for 3-way reconciliation *(Sprint 5)*.
+* [x] Accounts Payable (AP) & Vendor Invoicing Subsystem (bills, multi-unit allocations, recurring bills) *(Sprint 5)*.
+* [x] Zero-Dependency Server-Rendered PDF Vendor Check Printing (ANSI check stock specs, batch preview) *(Sprint 5)*.
+* [x] Bank Deposits & Batched Clearing for 3-way reconciliation (deposit slips, remitter receipts) *(Sprint 5)*.
 
 ---
 
-### Phase 5: Native Presentation Layer & Public Tenant Portal `[92% - Strong]`
+### Phase 5: Native Presentation Layer & Public Tenant Portal `[85% - Foundational Tier]`
+
 * [x] Native TypeScript SSR presentation architecture (`web/lib/html.ts`, `node:http`), layout shells, and CSS custom properties design system.
 * [x] Complete removal of legacy PHP presentation code (39 files, 4,318 LOC eliminated).
 * [x] Operator dashboards, search, and CRUD views for properties, contacts, leases, and work orders.
 * [x] Interactive operator workflow modals (unit turnover, lease renewal, termination notices, vendor dispatch).
 * [x] Financial reporting interfaces (income statements, rent roll, ledger balance views, 3-way reconciliation schedules).
+* [x] Universal Search Engine with keyboard shortcuts (`Ctrl+K`, `/`), 300ms live debounce dropdown, and full-page categorized results (`/search`) *(Sprint 5)*.
+* [x] Accounts Payable Bill Entry & Multi-Property Allocation Queue (`/accounting/bills`) with cash outflow projection *(Sprint 5)*.
+* [x] Check Register & Batch PDF Preview Dashboard (`/accounting/checks`) with issued vs. cleared tracking *(Sprint 5)*.
+* [x] Bank Deposit Batching Screen (`/accounting/deposits`) with sticky sum calculator and printable receipts *(Sprint 5)*.
+* [x] Amenities Catalog & Marketing Syndication Editor (`/properties/amenities`) with unit inheritance and branded flyer PDF generator *(Sprint 5)*.
+* [x] Schema-Driven Dynamic Custom Fields Presentation (`web/templates/custom-fields.ts`, `/admin?tab=custom_fields`) *(Sprint 5)*.
 * [ ] Public-Facing Tenant Self-Service Portal on isolated subdomain (`portal.<domain>`) with magic-link email login *(Sprint 5)*.
 * [ ] Mobile-first responsive presentation for tenant balance checks and safe photo maintenance requests *(Sprint 5)*.
 
@@ -168,7 +182,8 @@ Progress across the seven canonical architectural phases leading to Foundational
 
 ---
 
-### Phase 7: MVP Verification, Packaging & GUI Installers `[90% - Near Complete]`
+### Phase 7: MVP Verification, Packaging & GUI Installers `[92% - Near Complete]`
+
 * [x] End-to-end integration test suite (`test/e2e/lifecycle.test.ts`) validating full operator journey.
 * [x] Hardened Systemd service unit (`deploy/systemd/garrison.service`) with Linux sandboxing.
 * [x] Multi-stage zero-dependency Dockerfile (`node:24-alpine`) and `docker-compose.yml`.
@@ -242,35 +257,37 @@ GarrisonOS organizes engineering work into structured two-week execution sprints
 
 ### Sprint 5 (Weeks 9–10): Foundational Operations & Accounts Payable
 
-> **Status**: Planned | **Release Target**: v0.1.0-alpha (Foundational MVP Feature-Complete Alpha) | **Effort**: ~60 hours
+> **Status**: In Progress | **Release Target**: v0.1.0-alpha (Foundational MVP Feature-Complete Alpha) | **Effort**: ~60 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
 | 26 | **Packaged GUI Installers (Turnkey Click-Through Setup Wizards)**: graphical installer packaging (Windows `.exe`/`.msi` via NSIS/InnoSetup, macOS `.pkg`/`.dmg`, Linux `.deb`) bundling or detecting verified Node.js runtimes, provisioning system services/launch daemons, and launching initial browser handshake | 8h | High | Planned |
 | 27 | **Public-Facing Tenant Self-Service Portal (Subdomain Architecture)**: `portal.<domain>` isolated subdomain routing, magic-link passwordless email authentication, mobile-first responsive presentation, and public security hardening (rate limiting, anti-brute force, zero session leakage) | 10h | High | Planned |
-| 28 | **Accounts Payable (AP) Core Subsystem**: integrated into `modules/accounting/`, managing bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property allocations (`bill_allocations`), and recurring bills (`recurring_bills`) | 8h | High | Planned |
-| 29 | **Vendor Credit Memos & Bill Offsets**: vendor credit issuance (`vendor_credits`) and allocation offsets against accounts payable liabilities | 4h | High | Planned |
-| 30 | **Zero-Dependency PDF Vendor Check Printing & Check Register**: native server-rendered PDF check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications with check register CRUD and void operations | 6h | High | Planned |
-| 31 | **Bank Deposits & Batched Clearing**: grouping multiple cash/check/electronic receipts into deposit slip batches (`bank_deposits`) for bank statement clearing reconciliation with voiding support | 4h | High | Planned |
-| 32 | **Property & Unit Amenities Catalog & Marketing Syndication Profiles**: amenities catalog (`/api/v1/amenities`), property and unit junctions, pet policies, and rental listing advertising copy (`published_for_rent`, `posting_title`, `specials`) | 6h | High | Planned |
-| 33 | **Dynamic Custom Fields Engine**: validated JSON column (`custom_fields`) on primary entities governed by `custom_field_definitions` schema table with standardized `YYYY-MM-DD` date formatting | 4h | Medium | Planned |
+| 28 | **Accounts Payable (AP) Core Subsystem**: integrated into `modules/accounting/`, managing bill lifecycle (Draft, Unapproved, Approved, Paid, Voided), multi-property allocations (`bill_allocations`), and recurring bills (`recurring_bills`) | 8h | High | ✅ Completed |
+| 29 | **Vendor Credit Memos & Bill Offsets**: vendor credit issuance (`vendor_credits`) and allocation offsets against accounts payable liabilities | 4h | High | ✅ Completed |
+| 30 | **Zero-Dependency PDF Vendor Check Printing & Check Register**: native server-rendered PDF check generator (`web/lib/pdf.ts`) supporting ANSI X9.100-140 check stock specifications with check register CRUD and void operations | 6h | High | ✅ Completed |
+| 31 | **Bank Deposits & Batched Clearing**: grouping multiple cash/check/electronic receipts into deposit slip batches (`bank_deposits`) for bank statement clearing reconciliation with voiding support | 4h | High | ✅ Completed |
+| 32 | **Property & Unit Amenities Catalog & Marketing Syndication Profiles**: amenities catalog (`/api/v1/amenities`), property and unit junctions, pet policies, and rental listing advertising copy (`published_for_rent`, `posting_title`, `specials`) | 6h | High | ✅ Completed |
+| 33 | **Dynamic Custom Fields Engine**: validated JSON column (`custom_fields`) on primary entities governed by `custom_field_definitions` schema table with standardized `YYYY-MM-DD` date formatting | 4h | Medium | ✅ Completed |
 | 34 | **Standardized Bulk Ingestion & Temporal Query Conventions**: transactional bulk creation (`POST /api/v1/:resource/bulk`), timestamp interval filtering (`*_start`/`*_end`), and multi-key `order_by` sorting across all collections | 4h | High | Planned |
-| 35 | **AP, Banking, Custom Fields & Marketing SSR UI Views**: AP bill entry with multi-property allocations, check register preview and print dashboard, bank deposit batching screen, dynamic custom field form generator, and amenities/marketing editor | 6h | High | Planned |
+| 35 | **AP, Banking, Custom Fields & Marketing SSR UI Views (Foundational Tier)**: AP bill entry with multi-property allocations, check register preview and print dashboard, bank deposit batching screen, dynamic custom field form generator, and amenities/marketing editor | 6h | High | ✅ Completed (Foundational) |
+| 35b | **Universal Entity Preview, Search & Navigation (Foundational Tier)**: In-memory live typeahead search (`/search`, `Ctrl+K`), universal preview modal (`/api/v1/entities/preview`), copy-ID buttons, and 10-row pagination controls | 6h | High | ✅ Completed (Foundational) |
+| 35c | **Operator User Management, Activity Audit & Work Order Collaboration**: User management interface (`/admin?tab=users`), activity audit trail (`audit_logs`), multi-vendor assignments (`work_order_vendors`), and spend policy auto-holds | 8h | High | ✅ Completed (Foundational) |
 
 ---
 
-### Sprint 6 (Weeks 11–12): Dual-Engine Architecture & Field Operations
+### Sprint 6 (Weeks 11–12): UI/UX Modernization, Field Operations & Dual-Engine Architecture
 
-> **Status**: Planned | **Release Target**: v0.2.0-beta | **Effort**: ~52 hours
+> **Status**: Planned | **Release Target**: v0.2.0-beta | **Effort**: ~56 hours
 
 | Priority | Task | Effort | Impact | Status |
 | :---: | :--- | :---: | :---: | :---: |
-| 36 | Native PostgreSQL driver adapter implementing zero-dependency boundary | 16h | High | Planned |
-| 37 | Dual-engine migration validation harness (SQLite & PostgreSQL) | 8h | High | Planned |
-| 38 | Multi-instance clustering support behind load balancers with connection pooling | 8h | Medium | Planned |
-| 39 | **Work Order Subtasks, Task Delegations & Comments**: task checklists (`work_order_tasks`), assignee delegation, task-level comments, and formal work order closure contract | 8h | High | Planned |
-| 40 | **Field Technician Timecards & Labor Tracking**: billable hours, labor rates, and labor surcharges (`technician_timecards`) linked to vendor bills and work orders | 6h | High | Planned |
-| 41 | **Field Maintenance SSR UI Views**: interactive work order subtask checklist component, task comments thread, and technician timecard logging modal | 6h | High | Planned |
+| 36 | **UI/UX Modernization & Responsive Layout Refinement**: mobile/tablet responsive layouts for dense data tables (horizontal scroll containment, card view fallback), sticky summary bars, accessible dialog focus trapping, and progressive enhancement states | 10h | High | Planned |
+| 37 | **Client-Side Form Ergonomics & Interaction Polish**: optimistic UI feedback, inline client-side validation styling, custom datepicker/currency widgets, and micro-animations for high-frequency workflows | 8h | Medium | Planned |
+| 38 | Native PostgreSQL driver adapter implementing zero-dependency boundary | 16h | High | Planned |
+| 39 | Dual-engine migration validation harness (SQLite & PostgreSQL) | 8h | High | Planned |
+| 40 | **Work Order Subtasks, Task Delegations & Checklists**: task checklists (`work_order_tasks`), assignee delegation, task-level comments, and formal work order closure contract | 8h | High | Planned |
+| 41 | **Field Technician Timecards & Labor Tracking**: billable hours, labor rates, and labor surcharges (`technician_timecards`) linked to vendor bills and work orders | 6h | High | Planned |
 
 ---
 

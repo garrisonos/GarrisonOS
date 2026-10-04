@@ -7,6 +7,177 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> *Note on UI/UX Maturity*: The user interfaces and presentation views included in this milestone represent an initial foundational tier. While end-to-end operational workflows (search, previews, maintenance tracking, AP bill allocations, check printing, bank deposits, and administration) are fully functional, they serve as a baseline. Significant ongoing work remains on the development roadmap for comprehensive mobile/tablet responsiveness, refined component ergonomics, accessibility audits, and the public-facing tenant portal.
+
+- **Code Review Resolutions, Security Hardening & Defect Rectification**:
+  - **Security & Authorization Hardening (`api/preview.ts`, `api/server.ts`, `web/pages/admin.ts`)**:
+    - Enforced entity-level RBAC route permissions (`properties:view`, `leases:view`, `maintenance:view`, `accounting:view`, `contacts:view`) within the Universal Entity Preview API (`/api/v1/entities/preview`).
+    - Fixed universal search RBAC scoping by resolving caller's role from database and preventing unauthorized entity leakage.
+    - Sanitized XSS in JSON detail views within the admin panel via `escapeHtml()`, corrected SQL column aliasing (`user_id AS id`, `storage_quota_bytes AS quota`), and added `Backups & Snapshots` to the user module permissions whitelist.
+    - Sanitized DOM injections in screenshot automation and client JS to resolve CodeQL security alerts.
+  - **Accounts Payable & Banking Data Integrity (`modules/accounting/backend/ap.ts`, `routes.ts`, `web/lib/pdf.ts`, `database/seed.ts`)**:
+    - Added `recalcWorkOrderActualCost()` synchronization in AP bill creation, updates, and voids, keeping work order invoiced totals synchronized.
+    - Added vendor contact type and work order operator ownership validation guards to bill update handlers.
+    - Removed placeholder routing and account numbers (`123456789`/`987654321`) from check batch-pdf and deposit-slip routes, returning HTTP 400 `VALIDATION_ERROR` when missing.
+    - Unified PDF text escaping in `generateWorkOrderPdf` with the shared `escapePdfString` helper.
+    - Corrected seed bill statuses and allocation settled amounts for `INV-2026-881` and `INV-2026-302`.
+  - **Maintenance Operations & Spend Policy Safeguards (`modules/maintenance/backend/repository.ts`, `migrations/0004_work_order_vendors.sql`)**:
+    - Added `uq_wo_vendors_active` unique partial index preventing duplicate active vendor assignments.
+    - Enforced vendor W-9 verification and trade compatibility checks in `assignWorkOrderVendor`.
+    - Scoped portfolio queries to operator and active status, prevented cash double-counting, added fail-closed error handling in `evaluateSpendPolicy`, and cleared `hold_reason` when status transitions out of `on_hold`.
+    - Excluded voided bills (`b.status <> 'voided'`) from work order expense rollups and computed real monthly metrics.
+    - Added `normalizeCategory` supporting extended trade categories (`pest_control`, `make_ready`, `roofing`, `landscaping`).
+  - **Properties, Amenities & Marketing Syndication Alignment (`modules/properties/backend/`, `frontend/pages/amenities.ts`)**:
+    - Added `is_override` and `is_excluded` columns to `unit_amenities` and `contacts(id)` foreign key on `assigned_contact_id`.
+    - Wrapped amenity updates in transactional boundaries and ensured marketing syndication PUT routes enforce URL route IDs.
+    - Fixed default property redirect, address column aliases, portfolio authorization checks, and inherited amenity exclusion filters in amenities frontend.
+  - **Custom Fields Engine Robustness (`core/custom-fields.ts`, `api/server.ts`, frontend templates)**:
+    - Added `'bill'` to supported custom field entities and updated entity mapping in API routes.
+    - Scoped custom field section joins to `operator_id` and validated section existence, operator ownership, and entity type matching during definition creation/updates.
+    - Enforced strict 4-digit calendar year bounds (1000–9999) and ISO format support in date normalization.
+    - Rendered read-only custom field cards with `{ disabled: true }` across property, unit, lease, contact, and maintenance views.
+  - **Universal Search, UI Ergonomics & Browser Script Safety (`api/search.ts`, `web/pages/dashboard.ts`, `web/templates/pagination.ts`, `scripts/live-browser-tour.js`)**:
+    - Escaped wildcards (`%`, `_`, `\`) with `ESCAPE '\\'` in all search query SQL statements.
+    - Cleared stale `selectedPropertyId` when switching portfolios on the dashboard.
+    - Clamped pagination indices to `[1, totalPages]`.
+    - Deferred screenshot directory cleanup in `live-browser-tour.js` until after CDP connection is established.
+  - **CodeRabbit Review Resolutions & Secret Scanner Compliance**:
+    - Enforced strict calendar date component validation on ISO datetimes in `core/custom-fields.ts`, rejecting invalid calendar rollover dates.
+    - Updated `isTradeCompatible` in `modules/maintenance/backend/repository.ts` to normalize vendor specialties through `normalizeCategory`.
+    - Selected accessible property in `/properties/amenities` fallback redirect using `canAccessPortfolio`.
+    - Handled serialized `custom_fields` JSON strings safely across detail views in contacts, leases, properties, and maintenance show pages.
+    - Implemented full-register bounded pagination for check counting and next check number calculation in `/accounting/checks`.
+    - Staged browser tour screenshots in temporary directory, preserving published assets until verified completion.
+    - Cleared stale dashboard property selection when the active portfolio has zero properties.
+    - Formatted roadmap headings with MD022 compliance and registered test credential commit fingerprints in `.betterleaksignore`.
+
+- **User Management, Activity Audit Logs, Work Order Collaboration, Multi-Vendor Assignment & Spend Policy Auto-Hold**:
+  - **Operator User Management & Granular Permissions UI (`web/pages/admin.ts`, `api/server.ts`)**:
+    - Added dedicated `👥 Team & Permissions` tab to the Admin Dashboard featuring an Operator User Directory table displaying member name, email, role badge, permitted modules whitelist, and portfolio access scope.
+    - Added "+ Add Team Member" modal allowing operators to invite/create users with specified platform roles (`owner`, `manager`, `leasing_agent`, `maintenance`, `auditor`, etc.), module whitelists, and portfolio assignments.
+    - Added "Edit User & Permissions" modal allowing operators to adjust roles, module access checkboxes (`properties`, `leases`, `contacts`, `maintenance`, `accounting`), portfolio access scopes, and password resets.
+    - Added safe user deactivation handler with fail-closed checks preventing deletion of an organization's sole owner.
+  - **User Activity Audit Trail (`api/server.ts`, `web/pages/admin.ts`, `test/api/user-activity.test.ts`)**:
+    - Implemented automated audit logging for user creation, modification, and deletion in `api/server.ts` into `audit_logs` capturing actor ID, entity ID, changes JSON, and client IP address.
+    - Added `GET /api/v1/users/:id/activity` REST endpoint returning chronological audit history for any active or former team member.
+    - Added "Audit Activity" action in User Directory rendering a dedicated chronological activity trail card with colored action badges (`CREATE`, `UPDATE`, `DELETE`), timestamps, and expandable structured changes previews.
+  - **Work Order Status Updates, Comments & Notes Timeline (`modules/maintenance/frontend/pages/show.ts`, `repository.ts`)**:
+    - Embedded the universal `renderConversationsWidget` on the work order detail page, providing an interactive section for technician updates, team comments, and private internal notes.
+    - Added automated operational audit notices posted to the work order conversation thread upon vendor assignments, removals, and spend threshold auto-holds.
+  - **Multi-Vendor & Specialist Linking on Work Orders (`modules/maintenance/backend/migrations/0004_work_order_vendors.sql`, `repository.ts`, `routes.ts`, `web/lib/pdf.ts`, `show.ts`)**:
+    - Created `work_order_vendors` junction table with operator isolation, recording vendor contact ID, trade role (e.g., Primary Contractor, Subcontractor, Diagnostic Specialist), assignment notes, and assignment timestamps.
+    - Added repository methods `assignWorkOrderVendor`, `listWorkOrderVendors`, and `removeWorkOrderVendor` with REST endpoints `GET /api/v1/maintenance/work-orders/:id/vendors`, `POST /api/v1/maintenance/work-orders/:id/vendors`, and `DELETE /api/v1/maintenance/work-orders/:id/vendors/:vendorContactId`.
+    - Added "Assigned Contractors & Specialists" card with table and "+ Link Contractor" modal on work order show page.
+    - Updated printable field technician dispatch PDF (`generateWorkOrderPdf`) to display multi-contractor rosters and specialty trades.
+  - **Automated Spend Threshold & Available Funds Auto-Hold (`modules/properties/backend/migrations/0004_portfolio_spend_threshold.sql`, `modules/maintenance/backend/repository.ts`, `show.ts`, `test/work_order_advanced.test.ts`)**:
+    - Added `spend_threshold_cents` column to `portfolios` table to configure per-portfolio expenditure limits.
+    - Added `hold_reason` column to `work_orders` table to persist policy rationale.
+    - Implemented `MaintenanceRepository.evaluateSpendPolicy(propertyId, estimatedCostCents)` to evaluate portfolio permissible spend limits and verify available operating cash in portfolio bank accounts and capital contributions.
+    - Automatically transitions work order status to `on_hold` with descriptive `hold_reason` whenever estimated expense exceeds permissible spend thresholds or available operating funds.
+    - Rendered an amber alert banner on the work order detail page explaining the auto-hold reason and financial boundaries.
+  - **Seed Dataset Expansion & Visual Tour Refresh (`database/seed.ts`, `scripts/live-browser-tour.js`, `docs/visual-tour.md`)**:
+    - Expanded default 50-unit seed portfolio to include portfolio spend thresholds ($1,500, $2,500, and $5,000), realistic team members (`leasing_agent`, `maintenance`, `auditor`) with portfolio and module permissions, and audit log entries across entity lifecycles.
+    - Seeded emergency work order with multi-contractor assignments (`work_order_vendors`), interactive field conversation notes, and linked AP expense bills demonstrating budget variance rollups.
+    - Seeded high-priority commercial chiller work order automatically placed on hold due to exceeding portfolio spend threshold limits.
+    - Updated live CDP browser tour script and refreshed all 36 screenshots in `docs/assets/screenshots/` and `docs/visual-tour.md`, including dedicated captures for auto-held work orders (`13b`), operator team permissions (`29`), and user activity audit trails (`30`).
+
+- **Work Order Expense Linking, Budget Variance Tracking, Field Dispatch PDF & Vendor Validation Invariants**:
+  - **Work Order Expense Linking & AP Invariants (`modules/accounting/backend/ap.ts`, `routes.ts`, `modules/maintenance/backend/repository.ts`)**:
+    - Linked accounts payable vendor bills directly to work orders via `work_order_id` in database and API contracts.
+    - Implemented strict vendor invariant in `AccountsPayableRepository.createBill`: payees associated with expense bills must exist in `contacts` with `contact_type === 'vendor'`, failing closed with validation errors if missing or non-vendor.
+    - Automatically synced `work_orders.actual_cost_cents` on bill creation and updates based on total non-voided invoiced bills.
+    - Added `MaintenanceRepository.getWorkOrderExpenses(workOrderId)` returning itemized vendor bills, total invoiced cents, total paid cents, remaining variance, utilization percentage, and over-budget status.
+    - Exposed `GET /api/v1/maintenance/work-orders/:id/expenses` REST endpoint.
+  - **Printable Field Technician Dispatch PDF Generator (`web/lib/pdf.ts`, `modules/maintenance/backend/routes.ts`)**:
+    - Created zero-dependency vector PDF 1.4 generator `generateWorkOrderPdf(data)` in `web/lib/pdf.ts` formatted for standard Letter-sized printing.
+    - Renders ticket headers, priority and status badges, full property address, unit identifier, permission to enter badges, key/lockbox access notes, resident/occupant contact details, assigned vendor details, issue scope instructions, field checklist checkboxes, parts & van materials expense tracking log, labor hours, technician signature line, and resident sign-off.
+    - Exposed `GET /api/v1/maintenance/work-orders/:id/pdf` streaming inline printable PDF dispatch sheets for field technicians to carry in their vans.
+  - **Comprehensive & Editable Work Order Detail Page (`modules/maintenance/frontend/pages/show.ts`)**:
+    - Added real-time Budget & Expense Tracking section featuring 4 KPI tiles (Authorized Budget, Total Invoiced, Remaining Variance with over-budget warning badges, and Disbursed/Paid), a dynamic budget progress bar, and an itemized linked bills table.
+    - Added "🖨️ Printable Work Order PDF" action button for immediate field dispatch printing.
+    - Added "✏️ Edit Details" modal dialog enabling complete in-place editing of title, trade category, priority, status, assigned vendor, scheduled date, authorized budget, entry permissions, lockbox notes, and scope description.
+    - Added "💰 + Log Expense Bill" modal allowing managers to record contractor invoices and materials costs directly against the work order with vendor selection and GL expense account mapping.
+  - **Accounts Payable Bill Entry & Lease Quick-Search (`modules/accounting/frontend/pages/bills.ts`)**:
+    - Replaced free-text vendor input with a structured dropdown populated with registered vendors (verifying W-9 status).
+    - Added linked work order selector to associate bills with active maintenance tickets.
+    - Replaced raw Lease UUID text inputs in multi-property splits with a searchable lease quick-selector displaying property name, unit number, and lease ID, automatically filtered by selected property.
+    - Added interactive client script for real-time allocation penny balancing and dynamic multi-split row additions.
+
+- **Universal Entity Preview Modal, Accurate Filter Counts & Ticket ID Entropy**:
+  - **Universal Entity Clickable Previews & Seamless Modal Transitions (`api/preview.ts`, `web/public/js/app.js`, `web/public/css/style.css`)**:
+    - Created backend service `api/preview.ts` (`GET /api/v1/entities/preview?id=...`) providing structured entity summaries for properties, units, leases, contacts, work orders, bills, vendor checks, bank deposits, and transactions with strict operator isolation.
+    - Added global click handler in `web/public/js/app.js` and universal modal `#universal-entity-preview-modal`:
+      - Clicks on entities in the main view display a summary preview modal with metadata key-values, status badges, and an "Open Full View ↗" action.
+      - Clicks on entity links or references *inside* an open modal immediately close the modal dialog and navigate the main view directly to the entity's full page without stacking modal layers.
+      - Automatic DOM observer scans raw UUID text representations and wraps them as `.entity-clickable` targets.
+  - **Accurate Dropdown Counts & Scoped Filtering (`web/pages/dashboard.ts`, modules)**:
+    - Enriched `listPortfolios()` and `listProperties()` with live unit and property counts (`Name (N Properties • M Units)`, `Name (N Units)`).
+    - Updated filtering dropdowns across Dashboard, Properties, Maintenance, Leases, and Accounting to display accurate record counts on options and status pills (`Draft (N)`, `Approved (N)`, etc.).
+    - Handled portfolio filter resolution across dashboard occupancy, rent-roll, maintenance metrics, transactions, and work orders.
+  - **Maintenance Ticket ID Entropy**:
+    - Replaced millisecond prefix slicing (`#01a0fc11`) with unique trailing entropy identifiers (`WO-${id.slice(-6).toUpperCase()}`) across maintenance lists, detail views, and dashboard widgets.
+
+- **Executive Portfolio Dashboard Redesign, SVG Visualizations & Admin Expansion**:
+  - **Executive Portfolio Dashboard (`web/pages/dashboard.ts`)**:
+    - Implemented live Portfolio & Property filter bar with automatic page refresh and filter reset.
+    - Added configurable Headline Metric Focus Presets: `Overview`, `Occupancy`, `Financial`, and `Maintenance`.
+    - Integrated pure SVG zero-dependency Donut Charts for Bedroom Type Occupancy Breakdown (Studio, 1-Bed, 2-Bed, 3+ Bed) and Rent Collection vs. Delinquency Ratio.
+    - Resolved excessive vertical scrolling by bounding Recent Cash Activity and Pending Repairs tables to 5 items max and arranging them in a responsive side-by-side grid (`.grid-2-col`).
+  - **Universal Table Styling & Polish (`web/public/css/style.css`, `modules/accounting/frontend/pages/checks.ts`)**:
+    - Added universal styling rules for `table`, `.table`, and `.data-table` enforcing full width, border collapse, consistent vertical-align middle, and uniform cell padding.
+    - Polished Check Register table headers, fixed column proportions, right-aligned monetary values, and centered status badges.
+  - **Admin Panel Polish & Tab Expansion (`web/pages/admin.ts`)**:
+    - Eliminated horizontal scroll bar on `.tabs-bar` with responsive flex-wrap.
+    - Implemented all 5 comprehensive tabs: Telemetry & System Health, Branding & Appearance, Custom Fields Schema, Database Backups & Snapshots (with SHA-256 copy actions and downloads), and Loaded System Modules.
+
+- **UI Usability Hardening — Pagination, Scoped Property Filtering, Dark Mode Modals & Seed Dataset Expansion**:
+  - **Reusable Pagination Component (`web/templates/pagination.ts`)**:
+    - Implemented accessible SSR pagination component `renderPagination` with query string preservation, page limit bounding, single-page summary fallback, and navigation buttons.
+    - Integrated pagination across 10 core views to prevent excessive vertical scrolling: Properties (`/properties`, 10/page), Leases (`/leases`, 10/page), Contacts (`/contacts`, 10/page), Maintenance (`/maintenance`, 10/page), Preventative Maintenance (`/maintenance/preventative`, 10/page), Accounting Transactions (`/accounting`, 15/page), AP Bills (`/accounting/bills`, 10/page), Check Register (`/accounting/checks`, 10/page), Bank Deposits History (`/accounting/deposits?tab=history`, 10/page), and Rent Roll (`/accounting/rent-roll`, 10 units/page).
+  - **Portfolio & Property Scoped Filtering**:
+    - Added portfolio filter dropdown to Properties Index.
+    - Added property filter dropdowns to Leases, Maintenance, Preventative Maintenance, Accounting Ledger, AP Bills, and Rent Roll.
+    - Added bank account filter dropdown to Check Register.
+    - Added contact type filter pills (Tenants, Owners, Vendors, Prospects) to Contacts Directory.
+    - Enhanced Portfolio Rent Roll to dynamically recalculate summary metric cards (total units, total monthly rent, deposits held, open balance) scoped to the selected property.
+  - **Dark Mode Modal Styling & High-Contrast Form Controls**:
+    - Hardened `<dialog>`, `.modal`, `.modal-box`, `.modal-content`, and modal forms in `web/public/css/style.css` with 100% opaque `var(--bg-surface)` backgrounds and high-contrast text tokens.
+    - Styled `.form-control` and `.form-control-sm` inputs with dark mode background and border tokens, resolving unstyled browser-default transparent backgrounds and unreadable dark text on dark surfaces.
+  - **Comprehensive Seed Dataset Expansion (`database/seed.ts`)**:
+    - Populated all system data types: 6 custom field sections, 14 field definitions, entity custom field values across all properties, units, leases, contacts, and work orders.
+    - Populated 10 amenities, 9 amenity assignments, 1 active syndication portal configuration.
+    - Populated 5 AP bills across draft, approved, paid, and overdue statuses with multi-unit allocations.
+    - Populated 3 physical vendor checks (`cleared`, `printed`, `draft`) and 1 vendor credit memo ($250.00).
+    - Populated 5 tenant payment receipts into 1030 Undeposited Funds, batching 3 into 2 cleared deposits and leaving 2 unbatched ($3,850.00) in the queue.
+    - Populated 2 system backup snapshots with SHA-256 integrity checksums.
+    - Preserved 1099-NEC tax reporting invariants by restricting Form 1099 payments strictly to settled cash disbursements.
+
+- **Sprint 5 Foundational MVP — Batch 5C: SSR UI Presentation Layer (Task 35) & Universal Search Engine**:
+  - **Universal Search Engine & Global Topbar Search**:
+    - Created `api/search.ts` providing full multi-category search across properties, units, contacts, leases, bills, checks, and deposits with wildcard and prefix matching, token parsing (`type:`, `status:`, `vendor:`, `amount:`), relevance scoring, operator isolation, and RBAC permission filtering.
+    - Added `/api/v1/search` endpoint and full-page `/search` results view (`web/pages/search.ts`) with category tabs (`All`, `Properties & Units`, `People & Leases`, `Financials`, `Maintenance`), syntax filtering, empty states, and permission notices.
+    - Updated top navigation header (`web/templates/header.ts`) with interactive search bar, keyboard shortcut hint (`Ctrl+K` / `/`), 300ms debounce live suggestions dropdown, and arrow key navigation.
+  - **AP Bill Entry & Multi-Property Allocation Queue (`/accounting/bills`)**:
+    - Implemented interactive SSR view in `modules/accounting/frontend/pages/bills.ts` featuring bill status badges (`draft`, `approved`, `paid`, `voided`), status breakdown count and dollar distribution cards, 30-day cash outflow calendar projection, missing recurring bills alert banner, and dynamic multi-row allocation creation modal with penny balancing and credit card clearing support.
+  - **Check Register & Batch PDF Preview Dashboard (`/accounting/checks`)**:
+    - Implemented interactive SSR view in `modules/accounting/frontend/pages/checks.ts` with bank account selection, status filtering (issued vs. cleared tracking), batch check selector, modal `<iframe>` PDF preview, transactional check voiding, and auto-increment check numbering.
+    - Added `/api/v1/accounting/checks/batch-pdf` endpoint rendering multi-page ANSI X9.100-140 check batches via zero-dependency vector PDF 1.4 generation.
+  - **Bank Deposit Batching Screen (`/accounting/deposits`)**:
+    - Implemented SSR view in `modules/accounting/frontend/pages/deposits.ts` featuring undeposited funds queue (GL 1030), sticky sum calculator, batched deposit creation, deposit history with voiding capability, and modal PDF slip/receipt preview.
+    - Added endpoints `/api/v1/accounting/deposits/:id/pdf` for official vector deposit slips and `/api/v1/accounting/deposits/receipts/:id/pdf` for printable customer remitter receipts.
+  - **Amenities & Marketing Syndication Editor (`/properties/amenities`)**:
+    - Added migration `0003_amenities_and_syndication.sql` and backend service `modules/properties/backend/amenities.ts` defining standard amenities across 5 categories (Community, Unit, Accessibility, Pet, Eco-Friendly), property-to-unit inheritance with exclusion/override flags, and syndication configurations.
+    - Implemented SSR editor in `modules/properties/frontend/pages/amenities.ts` for property and unit amenities, unit inheritance overrides, syndication portal toggles, and marketing flyer download.
+    - Added `/api/v1/properties/:id/flyer-pdf` endpoint rendering branded vector PDF marketing flyers with property specs, unit matrix, and amenity badges.
+  - **Dynamic Custom Fields Subsystem (`web/templates/custom-fields.ts`)**:
+    - Added migration `0009_custom_fields.sql` and core engine `core/custom-fields.ts` supporting schema-driven custom fields with typed inputs (`string`, `number`, `currency`, `date`, `boolean`, `select`), JSON validation, and entity grouping.
+    - Created reusable SSR template `renderCustomFieldSections` and admin management tab (`/admin?tab=custom_fields`).
+    - Added endpoints `/api/v1/custom_fields/sections` and `/api/v1/custom_fields/definitions` with RBAC authorization (`system:manage`).
+  - **Agentic DOM Attributes & Accessibility**:
+    - Added semantic `data-entity`, `data-id`, `data-status`, `data-amount-cents`, `data-category`, and clipboard action buttons (`data-action="copy-id"`) across all presentation tables and cards.
+  - **Automated Test Coverage**:
+    - Added test suites across `modules/properties/test/amenities.test.ts`, `modules/accounting/test/checks_batch_pdf.test.ts`, `modules/accounting/test/deposits_batch.test.ts`, `web/test/custom_fields.test.ts`, and `api/test/search.test.ts` maintaining 100% test pass rate across 55 test suites.
+
 - **Sprint 5 MVP Enhancement — Batch 5B: Inventory, Catalog & Engine Enhancements (Tasks 32, 33, 34)**:
   - **Task 32 (Property & Unit Amenities Catalog & Syndication Profiles)**:
     - Added database migration `0003_amenities_and_marketing.sql` establishing tables `amenities`, `property_amenities`, and `unit_amenities`.

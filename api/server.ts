@@ -30,6 +30,8 @@ import {
   hasPermission,
   loadOperatorRoleOverrides
 } from '../core/rbac.js';
+import { UniversalSearchService } from './search.js';
+import { EntityPreviewService } from './preview.js';
 import { CustomFieldsService, CustomFieldEntityType } from '../core/custom-fields.js';
 import { handleBulkIngestion } from './bulk.js';
 
@@ -885,6 +887,22 @@ export function createRouter(serverPort: number = PORT): Router {
       }
     }, db);
 
+    const auditCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'").get();
+    if (auditCheck) {
+      db.prepare(`
+        INSERT INTO audit_logs (id, operator_id, user_id, entity_type, entity_id, action, changes_json, ip_address, created_at)
+        VALUES (?, ?, ?, 'user', ?, 'create', ?, ?, ?)
+      `).run(
+        generateUUIDv7(),
+        operatorId,
+        callerId,
+        newUserId,
+        JSON.stringify({ email: cleanEmail, role: cleanRole, first_name: cleanFirst, last_name: cleanLast }),
+        req.socket?.remoteAddress || '127.0.0.1',
+        now
+      );
+    }
+
     const createdUser = {
       id: newUserId,
       operator_id: operatorId,
@@ -956,7 +974,7 @@ export function createRouter(serverPort: number = PORT): Router {
   });
 
   // Update subuser
-  router.put('/api/v1/users/:id', async (req, res) => {
+  const handleUpdateUser = async (req: any, res: any) => {
     const operatorId = RequestContext.tryGet()?.operatorId || req.operatorId;
     const callerId = RequestContext.tryGet()?.userId || req.userId;
     if (!operatorId || !callerId) {
@@ -1033,6 +1051,22 @@ export function createRouter(serverPort: number = PORT): Router {
         .run(hash, now, targetUser.id);
     }
 
+    const auditCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'").get();
+    if (auditCheck) {
+      db.prepare(`
+        INSERT INTO audit_logs (id, operator_id, user_id, entity_type, entity_id, action, changes_json, ip_address, created_at)
+        VALUES (?, ?, ?, 'user', ?, 'update', ?, ?, ?)
+      `).run(
+        generateUUIDv7(),
+        operatorId,
+        callerId,
+        targetUser.id,
+        JSON.stringify({ role: cleanRole, first_name, last_name, has_password_reset: Boolean(password) }),
+        req.socket?.remoteAddress || '127.0.0.1',
+        now
+      );
+    }
+
     const updated = db.prepare(`
       SELECT id, operator_id, email, first_name, last_name, role, is_system_user, created_at, updated_at
       FROM users WHERE id = ?
@@ -1053,7 +1087,9 @@ export function createRouter(serverPort: number = PORT): Router {
         updated_at: updated.updated_at
       }
     });
-  });
+  };
+  router.put('/api/v1/users/:id', handleUpdateUser);
+  router.patch('/api/v1/users/:id', handleUpdateUser);
 
   // Delete subuser
   router.delete('/api/v1/users/:id', (req, res) => {
@@ -1080,8 +1116,8 @@ export function createRouter(serverPort: number = PORT): Router {
     }
 
     const targetUser = db.prepare(
-      'SELECT id, role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
-    ).get(req.params.id!, operatorId) as { id: string; role: string } | undefined;
+      'SELECT id, role, email FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+    ).get(req.params.id!, operatorId) as { id: string; role: string; email: string } | undefined;
 
     if (!targetUser) {
       return errorResponse(res, 'NOT_FOUND', 'User not found', 404);
@@ -1099,7 +1135,108 @@ export function createRouter(serverPort: number = PORT): Router {
 
     const now = Date.now();
     db.prepare('UPDATE users SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, targetUser.id);
+
+    const auditCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'").get();
+    if (auditCheck) {
+      db.prepare(`
+        INSERT INTO audit_logs (id, operator_id, user_id, entity_type, entity_id, action, changes_json, ip_address, created_at)
+        VALUES (?, ?, ?, 'user', ?, 'delete', ?, ?, ?)
+      `).run(
+        generateUUIDv7(),
+        operatorId,
+        callerId,
+        targetUser.id,
+        JSON.stringify({ deleted_user_id: targetUser.id, email: targetUser.email, role: targetUser.role }),
+        req.socket?.remoteAddress || '127.0.0.1',
+        now
+      );
+    }
+
     successResponse(res, { deleted: true });
+  });
+
+  // Get user activity audit trail
+  router.get('/api/v1/users/:id/activity', (req, res) => {
+    const operatorId = RequestContext.tryGet()?.operatorId || req.operatorId;
+    const callerId = RequestContext.tryGet()?.userId || req.userId;
+    if (!operatorId || !callerId) {
+      return errorResponse(res, 'FORBIDDEN', 'Authentication required', 403);
+    }
+
+    const db = getDatabase();
+    const caller = db.prepare(
+      'SELECT role, is_system_user FROM users WHERE id = ? AND deleted_at IS NULL'
+    ).get(callerId) as { role: string; is_system_user?: number } | undefined;
+
+    if (!caller) {
+      return errorResponse(res, 'FORBIDDEN', 'User inactive or not authorized', 403);
+    }
+
+    const overrides = loadOperatorRoleOverrides(operatorId, db);
+    const hasAdminAccess = caller.is_system_user === 1 ||
+      ['system_owner', 'system_manager', 'owner', 'manager', 'auditor'].includes(caller.role) ||
+      hasPermission(caller.role, 'system:admin', overrides);
+
+    if (!hasAdminAccess && callerId !== req.params.id) {
+      return errorResponse(res, 'FORBIDDEN', 'Access denied to user activity audit log', 403);
+    }
+
+    const targetUser = db.prepare(`
+      SELECT id, operator_id, email, first_name, last_name, role, is_system_user, created_at, updated_at, deleted_at
+      FROM users
+      WHERE id = ? AND operator_id = ?
+    `).get(req.params.id!, operatorId) as any;
+
+    if (!targetUser) {
+      return errorResponse(res, 'NOT_FOUND', 'User not found', 404);
+    }
+
+    const auditTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'").get();
+    let activity: any[] = [];
+
+    if (auditTableExists) {
+      const rows = db.prepare(`
+        SELECT id, operator_id, user_id, entity_type, entity_id, action, changes_json, ip_address, created_at
+        FROM audit_logs
+        WHERE operator_id = ? AND (user_id = ? OR (entity_type = 'user' AND entity_id = ?))
+        ORDER BY created_at DESC
+        LIMIT 200
+      `).all(operatorId, targetUser.id, targetUser.id) as any[];
+
+      activity = rows.map((r) => {
+        let changes = null;
+        if (r.changes_json) {
+          try {
+            changes = JSON.parse(r.changes_json);
+          } catch {
+            changes = r.changes_json;
+          }
+        }
+        return {
+          id: r.id,
+          operator_id: r.operator_id,
+          user_id: r.user_id,
+          entity_type: r.entity_type,
+          entity_id: r.entity_id,
+          action: r.action,
+          changes,
+          ip_address: r.ip_address || '127.0.0.1',
+          created_at: r.created_at
+        };
+      });
+    }
+
+    successResponse(res, {
+      user: {
+        id: targetUser.id,
+        email: targetUser.email,
+        first_name: targetUser.first_name,
+        last_name: targetUser.last_name,
+        role: targetUser.role
+      },
+      activity,
+      total: activity.length
+    });
   });
 
   // ==========================================
@@ -1286,6 +1423,121 @@ export function createRouter(serverPort: number = PORT): Router {
     successResponse(res, { deleted: true });
   });
 
+  // Universal Search Endpoint
+  router.getBatchSafe('/api/v1/search', (req, res) => {
+    const q = typeof req.query['q'] === 'string' ? req.query['q'] : '';
+    const rawLimit = req.query['limit'];
+    let limit = 3;
+    if (rawLimit !== undefined) {
+      const parsed = Number(rawLimit);
+      if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 50) {
+        return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "limit" must be a positive integer between 1 and 50', 400);
+      }
+      limit = parsed;
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId;
+    const db = getDatabase();
+    const user = userId && userId !== 'system'
+      ? db.prepare('SELECT role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL').get(userId, operatorId) as { role: string } | undefined
+      : undefined;
+
+    let userRole = (req as any).userRole || (RequestContext.tryGet() as any)?.role;
+    if (!userRole) {
+      if (userId === 'system') {
+        userRole = 'owner';
+      } else if (user?.role) {
+        userRole = user.role;
+      } else {
+        return errorResponse(res, 'FORBIDDEN', 'User not authorized or inactive', 403);
+      }
+    }
+
+    try {
+      const results = UniversalSearchService.search(q, userRole, limit, operatorId);
+      successResponse(res, results);
+    } catch (err: any) {
+      errorResponse(res, 'SEARCH_FAILED', err.message || 'Universal search failed', 500);
+    }
+  });
+
+  // Universal Entity Preview Endpoint (for modal summary popup)
+  router.getBatchSafe('/api/v1/entities/preview', (req, res) => {
+    const rawId = req.query['id'];
+    if (typeof rawId !== 'string' || !rawId.trim() || rawId.trim().length > 64) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'Query parameter "id" must be a valid entity identifier string', 400);
+    }
+    const id = rawId.trim();
+    const typeHint = typeof req.query['type'] === 'string' && req.query['type'].trim()
+      ? req.query['type'].trim()
+      : undefined;
+
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || req.userId;
+    if (!userId) {
+      return errorResponse(res, 'UNAUTHORIZED', 'Authentication is required to preview entities', 401);
+    }
+
+    const db = getDatabase();
+    const user = userId !== 'system'
+      ? db.prepare('SELECT role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL').get(userId, operatorId) as { role: string } | undefined
+      : undefined;
+
+    const contextRole = (req as any).userRole || (RequestContext.tryGet() as any)?.role;
+    if (userId !== 'system' && !user?.role && !contextRole) {
+      return errorResponse(res, 'FORBIDDEN', 'User not authorized or inactive', 403);
+    }
+
+    try {
+      const preview = EntityPreviewService.getPreview(id, typeHint);
+      if (!preview) {
+        return errorResponse(res, 'NOT_FOUND', `Entity with ID "${id}" was not found`, 404);
+      }
+      successResponse(res, preview);
+    } catch (err: any) {
+      errorResponse(res, 'PREVIEW_FAILED', err.message || 'Failed to fetch entity preview', 500);
+    }
+  });
+  const handleListSections = (req: any, res: any) => {
+    const entityType = typeof req.query['entity_type'] === 'string' ? req.query['entity_type'] as CustomFieldEntityType : undefined;
+    try {
+      const sections = CustomFieldsService.listSections(entityType);
+      successResponse(res, sections);
+    } catch (err: any) {
+      errorResponse(res, 'FETCH_FAILED', err.message, 500);
+    }
+  };
+  router.getBatchSafe('/api/v1/custom_fields/sections', handleListSections);
+  router.getBatchSafe('/api/v1/custom-fields/sections', handleListSections);
+
+  const handleCreateSection = (req: any, res: any) => {
+    const { entity_type, title, sort_order } = req.body || {};
+    if (!entity_type || !title) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'entity_type and title are required', 400);
+    }
+    try {
+      const section = CustomFieldsService.createSection({ entity_type, title, sort_order });
+      successResponse(res, section, 201);
+    } catch (err: any) {
+      errorResponse(res, 'CREATION_FAILED', err.message, 400);
+    }
+  };
+  router.post('/api/v1/custom_fields/sections', requirePermission('system:admin'), handleCreateSection);
+  router.post('/api/v1/custom-fields/sections', requirePermission('system:admin'), handleCreateSection);
+
+  const handleDeleteSection = (req: any, res: any) => {
+    try {
+      CustomFieldsService.deleteSection(req.params.id!);
+      successResponse(res, { deleted: true });
+    } catch (err: any) {
+      errorResponse(res, 'DELETE_FAILED', err.message, 400);
+    }
+  };
+  router.delete('/api/v1/custom_fields/sections/:id', requirePermission('system:admin'), handleDeleteSection);
+  router.delete('/api/v1/custom-fields/sections/:id', requirePermission('system:admin'), handleDeleteSection);
+
+  // Dynamic Custom Fields: Definitions
   // --- Bulk Transactional Ingestion ---
   router.post('/api/v1/:resource/bulk', (req, res) => {
     handleBulkIngestion(req, res);
@@ -1307,7 +1559,7 @@ export function createRouter(serverPort: number = PORT): Router {
   router.get('/api/v1/custom-fields/definitions', handleListDefinitions);
 
   const handleCreateDefinition = (req: any, res: any) => {
-    const { entity_type, field_name, field_label, data_type, options, is_required } = req.body || {};
+    const { section_id, entity_type, field_name, field_label, data_type, options, is_required, default_value, sort_order } = req.body || {};
     if (!entity_type || !field_name || !field_label || !data_type) {
       return errorResponse(
         res,
@@ -1319,12 +1571,15 @@ export function createRouter(serverPort: number = PORT): Router {
 
     try {
       const definition = CustomFieldsService.createDefinition({
+        section_id,
         entity_type: entity_type.toLowerCase() as CustomFieldEntityType,
         field_name,
         field_label,
         data_type: data_type.toLowerCase(),
         options,
-        is_required
+        is_required,
+        default_value,
+        sort_order
       });
       successResponse(res, { definition }, 201);
     } catch (err: any) {
@@ -1390,7 +1645,9 @@ export function createRouter(serverPort: number = PORT): Router {
       contacts: 'contact',
       work_order: 'work_order',
       work_orders: 'work_order',
-      maintenance: 'work_order'
+      maintenance: 'work_order',
+      bill: 'bill',
+      bills: 'bill'
     };
 
     const entityType = typeMap[rawType || ''];
@@ -1413,6 +1670,7 @@ export function createRouter(serverPort: number = PORT): Router {
   });
 
   return router;
+
 }
 
 /**

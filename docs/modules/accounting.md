@@ -214,17 +214,29 @@ State laws establish strict statutory windows within which an itemized statement
 
 ## 7. Accounts Payable, Banking & Client Accounting Engine
 
-### 7.1. Vendor Invoicing & Split Allocations
-Vendor bills represent formal obligations to pay third-party service providers. Bills support split line allocations across multiple properties, units, and GL expense accounts. Approving a bill posts a balanced double-entry transaction debiting the specified expense accounts and crediting Accounts Payable (`#2010`).
+### 7.1. Vendor Invoicing, Split Allocations & Cash Outflow Projection
+Vendor bills represent formal obligations to pay third-party service providers. Bills support split line allocations across multiple properties, units, and GL expense accounts, as well as direct association with maintenance work orders via `work_order_id`. Approving a bill posts a balanced double-entry transaction debiting the specified expense accounts and crediting Accounts Payable (`#2010`). The AP Bill Entry & Multi-Property Allocation Queue (`/accounting/bills`) features:
+* **Status Badges & Metrics**: Status cards displaying bill counts and dollar values across `draft`, `approved`, and `paid` states.
+* **30-Day Cash Outflow Calendar**: Rolling chronological projection of payable amounts due over the next 30 days to facilitate liquidity planning.
+* **Recurring Bills Alert Banner**: Flags overdue scheduled recurring bill templates where expected invoices have not yet been posted.
+* **Split Allocation Modal**: Dynamic multi-row split line allocator with real-time balance comparison and penny balancing against invoice subtotal and tax amounts, supporting both AP liability and credit card clearing accounts.
+* **Work Order Expense Integration**: Bills linked to work orders automatically update `work_orders.actual_cost_cents`, synchronizing real-time contractor invoices with authorized budget estimates and triggering over-budget alerts when actual costs exceed authorized limits.
 
-### 7.2. Check Register & MICR Printing
-Physical checks printed through GarrisonOS adhere to standard MICR layout guidelines (top voucher, middle voucher, bottom check). Voiding a printed check automatically reverses the cash disbursement, restores the unpaid balances on the associated bills, and posts an audit log entry.
+### 7.2. Check Register & Batch PDF Check Printing
+Physical checks printed through GarrisonOS adhere to standard ANSI X9.100-140 layout guidelines (top voucher, middle voucher, bottom check) rendered via zero-dependency pure Node.js vector PDF 1.4 generation (`web/lib/pdf.ts`).
+* **Check Register Dashboard (`/accounting/checks`)**: Displays issued checks with real-time status filtering (`draft`, `printed`, `cleared`, `voided`, `reissued`), bank account selection, and issued vs. cleared tracking for bank reconciliation.
+* **Batch Printing (`GET /api/v1/accounting/checks/batch-pdf`)**: Operators select multiple checks to generate a consolidated multi-page PDF document ready for standard 3-up check stock.
+* **Transactional Voiding**: Voiding a check automatically restores the outstanding balance on settled bills, posts an equal and opposite reversing journal entry (Dr 1010 Bank / Cr 2010 AP), and logs an audit trail.
 
 ### 7.3. Vendor Credit Memos
 Supplier rebates, overpayment adjustments, and vendor concessions are tracked as vendor credit memos. Credits may be partially or fully applied against outstanding vendor bills, reducing the remaining cash disbursement liability.
 
-### 7.4. Bank Deposit Batching
+### 7.4. Bank Deposit Batching, Slips & Remitter Receipts
 Customer and tenant payments initially accumulate in `1030 Undeposited Funds`. The Bank Deposit workflow bundles multiple receipts into a single bank statement batch, debiting `1010 Operating Checking` and crediting `1030 Undeposited Funds` to mirror physical bank deposits.
+* **Deposit Batching Dashboard (`/accounting/deposits`)**: Real-time queue of undeposited receipts with a sticky sum calculator showing selected item counts and aggregate deposit dollar values.
+* **Deposit Slip PDF (`GET /api/v1/accounting/deposits/:id/pdf`)**: Generates an official vector PDF deposit slip listing bank account details, reference numbers, itemized cash and check rows, and certification signature lines.
+* **Remitter Receipt PDF (`GET /api/v1/accounting/deposits/receipts/:id/pdf`)**: Generates customer-facing payment receipts with payer details, payment method, allocated lease/invoice numbers, and transaction timestamps.
+* **Batch Voiding**: Voiding a deposit slip reverses the GL clearing entry and returns all constituent payments back to the `1030 Undeposited Funds` queue without modifying the underlying tenant payments.
 
 ### 7.5. Client Accounting & Automated Management Fees
 For third-party property management operators, GarrisonOS segregates property revenues by client portfolio. Capital contributions record owner equity infusions, while owner draws track periodic profit distributions. Management fee agreements automatically calculate operator earned revenue based on collected rent percentages or unit counts, posting monthly entries debiting client operating expenses (`#5070 Management Fees Expense`) and crediting Accounts Payable (`#2010 Accounts Payable`).

@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderPagination } from '../../../../web/templates/pagination.js';
 
 function formatDate(epochMs: number): string {
   try {
@@ -19,6 +20,9 @@ function formatCurrency(cents: number): string {
 export async function handle(ctx: PageContext): Promise<PageResult> {
   const typeFilter = ctx.query['type'] || '';
   const categoryFilter = ctx.query['category'] || '';
+  const propertyFilter = ctx.query['property_id'] || '';
+  const page = Math.max(1, parseInt(ctx.query['page'] || '1', 10) || 1);
+  const limit = 15;
   const csrfToken = ctx.session.getCsrfToken();
   let error: string | null = null;
 
@@ -63,6 +67,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     const params = new URLSearchParams();
     if (typeFilter) params.set('transaction_type', typeFilter);
     if (categoryFilter) params.set('category', categoryFilter);
+    if (propertyFilter) params.set('property_id', propertyFilter);
     const queryStr = params.toString() ? `?${params.toString()}` : '';
 
     const res = await ctx.api.get(`/api/v1/accounting/transactions${queryStr}`);
@@ -74,12 +79,26 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     error = error || err.message;
   }
 
+  const filteredTransactions = propertyFilter
+    ? transactions.filter((t) => t.property_id === propertyFilter)
+    : transactions;
+
+  const total = filteredTransactions.length;
+  const paginatedTransactions = filteredTransactions.slice((page - 1) * limit, page * limit);
+
   const errorAlert = error
     ? html`<div class="alert alert-danger" style="margin-bottom: 1.5rem;">${error}</div>`
     : raw('');
 
-  const transactionRows = transactions.length > 0
-    ? transactions.map((t) => {
+  const txByProperty = new Map<string, number>();
+  for (const t of transactions) {
+    if (t.property_id) {
+      txByProperty.set(t.property_id, (txByProperty.get(t.property_id) || 0) + 1);
+    }
+  }
+
+  const transactionRows = paginatedTransactions.length > 0
+    ? paginatedTransactions.map((t) => {
         let badgeClass = 'badge-info';
         if (t.transaction_type === 'payment') badgeClass = 'badge-success';
         else if (t.transaction_type === 'charge') badgeClass = 'badge-warning';
@@ -98,11 +117,11 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         }
 
         return html`
-          <tr>
+          <tr data-entity="transaction" data-id="${t.id}">
             <td>${formatDate(t.transaction_date)}</td>
             <td><span class="badge ${badgeClass}">${typeFormatted}</span></td>
             <td>${catFormatted}</td>
-            <td>${t.description}</td>
+            <td><a href="/accounting?id=${encodeURIComponent(t.id)}" data-entity-id="${t.id}" data-entity-type="transaction"><strong>${t.description}</strong></a></td>
             <td>${t.payment_method ? t.payment_method.toUpperCase() : '—'}</td>
             <td>${amountHtml}</td>
           </tr>
@@ -114,8 +133,17 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         </tr>
       `];
 
-  const propertyOptions = properties.map((p) => html`<option value="${p.id}">${p.name}</option>`);
+  const propertyOptions = properties.map((p) => html`<option value="${p.id}">${p.name} (${txByProperty.get(p.id) || 0})</option>`);
   const today = new Date().toISOString().split('T')[0];
+
+  const buildTypeUrl = (type: string, propId: string) => {
+    const params = new URLSearchParams();
+    if (type) params.set('type', type);
+    if (categoryFilter) params.set('category', categoryFilter);
+    if (propId) params.set('property_id', propId);
+    const qs = params.toString();
+    return `/accounting${qs ? `?${qs}` : ''}`;
+  };
 
   const content = html`
     <div class="page-header">
@@ -136,17 +164,32 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     ${errorAlert}
 
     <!-- Filters Bar -->
-    <div class="filter-bar card">
+    <div class="filter-bar card" style="display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap;">
       <div class="filter-pills">
-        <a href="/accounting" class="filter-pill ${!typeFilter ? 'active' : ''}">All</a>
-        <a href="/accounting?type=payment" class="filter-pill ${typeFilter === 'payment' ? 'active' : ''}">Payments</a>
-        <a href="/accounting?type=charge" class="filter-pill ${typeFilter === 'charge' ? 'active' : ''}">Charges</a>
-        <a href="/accounting?type=expense" class="filter-pill ${typeFilter === 'expense' ? 'active' : ''}">Expenses</a>
-        <a href="/accounting?type=deposit_inflow" class="filter-pill ${typeFilter === 'deposit_inflow' ? 'active' : ''}">Deposits</a>
+        <a href="${buildTypeUrl('', propertyFilter)}" class="filter-pill ${!typeFilter ? 'active' : ''}">All</a>
+        <a href="${buildTypeUrl('payment', propertyFilter)}" class="filter-pill ${typeFilter === 'payment' ? 'active' : ''}">Payments</a>
+        <a href="${buildTypeUrl('charge', propertyFilter)}" class="filter-pill ${typeFilter === 'charge' ? 'active' : ''}">Charges</a>
+        <a href="${buildTypeUrl('expense', propertyFilter)}" class="filter-pill ${typeFilter === 'expense' ? 'active' : ''}">Expenses</a>
+        <a href="${buildTypeUrl('deposit_inflow', propertyFilter)}" class="filter-pill ${typeFilter === 'deposit_inflow' ? 'active' : ''}">Deposits</a>
       </div>
+
+      <form method="GET" action="/accounting" style="display: flex; gap: 0.5rem; align-items: center; margin: 0;">
+        ${typeFilter ? html`<input type="hidden" name="type" value="${typeFilter}">` : raw('')}
+        ${categoryFilter ? html`<input type="hidden" name="category" value="${categoryFilter}">` : raw('')}
+        <select class="form-select form-input-sm" name="property_id" onchange="this.form.submit()" style="max-width: 260px;">
+          <option value="">All Properties (${transactions.length})</option>
+          ${properties.map((p) => html`
+            <option value="${p.id}" ${propertyFilter === p.id ? 'selected' : ''}>${p.name} (${txByProperty.get(p.id) || 0})</option>
+          `)}
+        </select>
+        ${propertyFilter ? html`<a href="${buildTypeUrl(typeFilter, '')}" class="btn btn-sm btn-secondary">Clear</a>` : raw('')}
+      </form>
     </div>
 
     <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Ledger Entries (${total})</h2>
+      </div>
       <div class="table-responsive">
         <table class="data-table">
           <thead>
@@ -164,6 +207,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           </tbody>
         </table>
       </div>
+      ${renderPagination({
+        page,
+        limit,
+        total,
+        baseUrl: '/accounting',
+        queryParams: { type: typeFilter, category: categoryFilter, property_id: propertyFilter }
+      })}
     </div>
 
     <!-- Modal: Record Transaction -->

@@ -34,6 +34,22 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
   RequestContext.run({ operatorId: OPERATOR_ID, correlationId: `seed-${now}` }, () => {
     withTransaction((tx) => {
     // 1. Clean existing demo data in safe reverse dependency order
+    try { tx.prepare('DELETE FROM marketing_syndication WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM property_amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM unit_amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM amenities WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM amenity_definitions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM custom_field_definitions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM custom_field_sections WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM vendor_check_allocations WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM vendor_checks WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM vendor_credit_allocations WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM vendor_credits WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM bill_allocations WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM recurring_bills WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM bills WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM bank_deposit_lines WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM bank_deposits WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM operator_branding WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM conversation_messages WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM conversation_participants WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
@@ -50,10 +66,11 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     try { tx.prepare('DELETE FROM late_fee_policies WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM quickbooks_export_logs WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('UPDATE journal_entries SET reversed_by_entry_id = NULL WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM transactions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM journal_lines WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM journal_entries WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM chart_of_accounts WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
-    try { tx.prepare('DELETE FROM transactions WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM work_order_vendors WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM work_orders WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM lease_contacts WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM leases WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
@@ -66,6 +83,7 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
     try { tx.prepare('DELETE FROM user_portfolio_access WHERE user_id IN (SELECT id FROM users WHERE operator_id = ?)').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM user_module_access WHERE user_id IN (SELECT id FROM users WHERE operator_id = ?)').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM users WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
+    try { tx.prepare('DELETE FROM backups WHERE operator_id = ?').run(OPERATOR_ID); } catch {}
     try { tx.prepare('DELETE FROM operators WHERE id = ?').run(OPERATOR_ID); } catch {}
 
     // 2. Create Operator Account & Default Institutional Branding
@@ -120,28 +138,37 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
       VALUES (?, ?, 'operator@garrisonos.local', ?, 'Alexander', 'Garrison', 'owner', 1, 0, ?, ?)
     `).run(userId, OPERATOR_ID, passwordHash, now, now);
 
-    // 4. Create 3 Portfolios
+    // 4. Create 3 Portfolios with Spend Thresholds
     const portfolio1Id = generateUUIDv7();
     const portfolio2Id = generateUUIDv7();
     const portfolio3Id = generateUUIDv7();
 
     tx.prepare(`
-      INSERT INTO portfolios (id, operator_id, name, tax_id, notes, created_at, updated_at)
-      VALUES (?, ?, 'Blue Ridge Residential LLC', 'XX-XXX4819', 'Single family residential and luxury townhomes', ?, ?),
-             (?, ?, 'Piedmont Multifamily Holdings', 'XX-XXX9201', 'Duplexes and garden apartments portfolio', ?, ?),
-             (?, ?, 'Downtown Lofts & Commercial', 'XX-XXX6632', 'High-density urban residential lofts and commercial assets', ?, ?)
+      INSERT INTO portfolios (id, operator_id, name, tax_id, notes, spend_threshold_cents, created_at, updated_at)
+      VALUES (?, ?, 'Blue Ridge Residential LLC', 'XX-XXX4819', 'Single family residential and luxury townhomes', 150000, ?, ?),
+             (?, ?, 'Piedmont Multifamily Holdings', 'XX-XXX9201', 'Duplexes and garden apartments portfolio', 250000, ?, ?),
+             (?, ?, 'Downtown Lofts & Commercial', 'XX-XXX6632', 'High-density urban residential lofts and commercial assets', 500000, ?, ?)
     `).run(
       portfolio1Id, OPERATOR_ID, now, now,
       portfolio2Id, OPERATOR_ID, now, now,
       portfolio3Id, OPERATOR_ID, now, now
     );
 
-    // 4b. Create Subuser (Leasing Agent scoped to Piedmont)
+    // 4b. Create Team Members (Leasing Agent, Maintenance Coordinator, Financial Auditor)
     const subuserId = generateUUIDv7();
+    const maintUserId = generateUUIDv7();
+    const auditorUserId = generateUUIDv7();
+
     tx.prepare(`
       INSERT INTO users (id, operator_id, email, password_hash, first_name, last_name, role, token_version, is_system_user, created_at, updated_at)
-      VALUES (?, ?, 'leasing@garrisonos.local', ?, 'Sarah', 'Jenkins', 'leasing_agent', 1, 0, ?, ?)
-    `).run(subuserId, OPERATOR_ID, passwordHash, now, now);
+      VALUES (?, ?, 'leasing@garrisonos.local', ?, 'Sarah', 'Jenkins', 'leasing_agent', 1, 0, ?, ?),
+             (?, ?, 'maintenance@garrisonos.local', ?, 'Elena', 'Rostova', 'maintenance', 1, 0, ?, ?),
+             (?, ?, 'auditor@garrisonos.local', ?, 'David', 'Miller', 'auditor', 1, 0, ?, ?)
+    `).run(
+      subuserId, OPERATOR_ID, passwordHash, now - (30 * 86400000), now,
+      maintUserId, OPERATOR_ID, passwordHash, now - (20 * 86400000), now,
+      auditorUserId, OPERATOR_ID, passwordHash, now - (10 * 86400000), now
+    );
 
     tx.prepare(`
       INSERT INTO user_portfolio_access (id, operator_id, user_id, portfolio_id, created_at)
@@ -154,6 +181,72 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         VALUES (?, ?, ?, ?, ?)
       `).run(generateUUIDv7(), OPERATOR_ID, subuserId, mod, now);
     }
+
+    for (const mod of ['properties', 'maintenance', 'contacts']) {
+      tx.prepare(`
+        INSERT INTO user_module_access (id, operator_id, user_id, module_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(generateUUIDv7(), OPERATOR_ID, maintUserId, mod, now);
+    }
+
+    for (const mod of ['properties', 'leases', 'accounting']) {
+      tx.prepare(`
+        INSERT INTO user_module_access (id, operator_id, user_id, module_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(generateUUIDv7(), OPERATOR_ID, auditorUserId, mod, now);
+    }
+
+    // Seed realistic audit log entries
+    const auditStmt = tx.prepare(`
+      INSERT INTO audit_logs (id, operator_id, user_id, entity_type, entity_id, action, changes_json, ip_address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // Sarah Jenkins audit entries
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, userId, 'user', subuserId, 'create',
+      JSON.stringify({ email: 'leasing@garrisonos.local', role: 'leasing_agent', first_name: 'Sarah', last_name: 'Jenkins' }),
+      '127.0.0.1', now - (30 * 86400000)
+    );
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, userId, 'user', subuserId, 'update',
+      JSON.stringify({ allowed_portfolios: [portfolio2Id], allowed_modules: ['properties', 'leases', 'maintenance'] }),
+      '127.0.0.1', now - (29 * 86400000)
+    );
+
+    // Elena Rostova audit entries
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, userId, 'user', maintUserId, 'create',
+      JSON.stringify({ email: 'maintenance@garrisonos.local', role: 'maintenance', first_name: 'Elena', last_name: 'Rostova' }),
+      '127.0.0.1', now - (20 * 86400000)
+    );
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, maintUserId, 'user', maintUserId, 'login',
+      JSON.stringify({ method: 'password', session: 'active' }),
+      '127.0.0.1', now - (5 * 86400000)
+    );
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, maintUserId, 'work_order', generateUUIDv7(), 'update',
+      JSON.stringify({ action_detail: 'dispatch_vendor', vendor: 'Apex Plumbing Services', priority: 'emergency' }),
+      '127.0.0.1', now - (2 * 86400000)
+    );
+
+    // David Miller audit entries
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, userId, 'user', auditorUserId, 'create',
+      JSON.stringify({ email: 'auditor@garrisonos.local', role: 'auditor', first_name: 'David', last_name: 'Miller' }),
+      '127.0.0.1', now - (10 * 86400000)
+    );
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, auditorUserId, 'user', auditorUserId, 'login',
+      JSON.stringify({ method: 'password', session: 'active' }),
+      '127.0.0.1', now - (8 * 86400000)
+    );
+    auditStmt.run(
+      generateUUIDv7(), OPERATOR_ID, auditorUserId, 'audit_report', generateUUIDv7(), 'create',
+      JSON.stringify({ report: 'q3_operating_cash_reconciliation', status: 'verified' }),
+      '127.0.0.1', now - (3 * 86400000)
+    );
 
     // 5. Create 7 Vendors with Trades, W-9 and Tax Classifications
     const vendorPlumbingId = generateUUIDv7();
@@ -689,31 +782,58 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
       );
     }
 
-    // 11. Create 8 Diverse Work Orders
+    // 11. Create 9 Diverse Work Orders (Including Multi-Vendor & Spend Policy Auto-Hold)
+    const wo1Id = generateUUIDv7(); // Master Bathroom Toilet Leak (Emergency, Multi-Vendor, Linked Bill)
+    const wo2Id = generateUUIDv7(); // HVAC AC Unit Buzzing
+    const wo3Id = generateUUIDv7(); // Electrical Panel
+    const wo4Id = generateUUIDv7(); // Turnover Make-Ready
+    const wo5Id = generateUUIDv7(); // Cabinet Hinge Loose
+    const wo6Id = generateUUIDv7(); // Foundation Stabilization
+    const wo7Id = generateUUIDv7(); // Garbage Disposal Replacement
+    const wo8Id = generateUUIDv7(); // Screen Door Latch
+    const woHoldId = generateUUIDv7(); // Commercial Chiller Overhaul (AUTO-HELD via Spend Limit Policy)
+
     tx.prepare(`
       INSERT INTO work_orders (
         id, operator_id, property_id, unit_id, title, description,
         status, priority, category, permission_to_enter, vendor_contact_id,
-        scheduled_date, completed_date, estimated_cost_cents, actual_cost_cents, created_at, updated_at
+        scheduled_date, completed_date, estimated_cost_cents, actual_cost_cents,
+        hold_reason, created_at, updated_at
       ) VALUES
-        (?, ?, ?, ?, 'Master Bathroom Toilet Leak', 'Water leaking onto bathroom floor from tank flange seal. Urgent fix.', 'in_progress', 'emergency', 'plumbing', 1, ?, ?, NULL, 25000, 0, ?, ?),
-        (?, ?, ?, ?, 'HVAC AC Unit Making Buzzing Noise', 'Air conditioning compressor outside vibrating loud when running.', 'assigned', 'high', 'hvac', 1, ?, ?, NULL, 35000, 0, ?, ?),
-        (?, ?, ?, ?, 'Main Electrical Panel Breaker Tripping', 'Kitchen dedicated circuit breaker tripping under load.', 'in_progress', 'high', 'electrical', 1, ?, ?, NULL, 28000, 0, ?, ?),
-        (?, ?, ?, ?, 'Turnover Make-Ready: Broadview 4-Plex Unit 201', 'Full make-ready turnover: deep clean, lock rekeying, touch-up painting.', 'assigned', 'medium', 'cosmetic', 1, ?, ?, NULL, 45000, 0, ?, ?),
-        (?, ?, ?, ?, 'Kitchen Cabinet Hinge Loose', 'Upper cabinet door hinge over sink is loose and sagging.', 'open', 'low', 'other', 1, NULL, NULL, NULL, 9500, 0, ?, ?),
-        (?, ?, ?, ?, 'Foundation & Subfloor Stabilization', 'Crawlspace beam reinforcement and floor leveling following inspection.', 'in_progress', 'high', 'structural', 1, ?, ?, NULL, 180000, 0, ?, ?),
-        (?, ?, ?, ?, 'Garbage Disposal Replacement', 'Disposal motor seized. Replaced with new 3/4 HP continuous-feed unit.', 'completed', 'medium', 'appliance', 1, ?, ?, ?, 16500, 16500, ?, ?),
-        (?, ?, ?, ?, 'Screen Door Latch Sticking', 'Front storm door handle sticking. Resident resolved latch independently.', 'cancelled', 'low', 'other', 1, NULL, NULL, NULL, 6000, 0, ?, ?)
+        (?, ?, ?, ?, 'Master Bathroom Toilet Leak', 'Water leaking onto bathroom floor from tank flange seal. Urgent plumbing and moisture dryout required.', 'in_progress', 'emergency', 'plumbing', 1, ?, ?, NULL, 25000, 145000, NULL, ?, ?),
+        (?, ?, ?, ?, 'HVAC AC Unit Making Buzzing Noise', 'Air conditioning compressor outside vibrating loud when running.', 'assigned', 'high', 'hvac', 1, ?, ?, NULL, 35000, 0, NULL, ?, ?),
+        (?, ?, ?, ?, 'Main Electrical Panel Breaker Tripping', 'Kitchen dedicated circuit breaker tripping under load.', 'in_progress', 'high', 'electrical', 1, ?, ?, NULL, 28000, 0, NULL, ?, ?),
+        (?, ?, ?, ?, 'Turnover Make-Ready: Broadview 4-Plex Unit 201', 'Full make-ready turnover: deep clean, lock rekeying, touch-up painting.', 'assigned', 'medium', 'cosmetic', 1, ?, ?, NULL, 45000, 0, NULL, ?, ?),
+        (?, ?, ?, ?, 'Kitchen Cabinet Hinge Loose', 'Upper cabinet door hinge over sink is loose and sagging.', 'open', 'low', 'other', 1, NULL, NULL, NULL, 9500, 0, NULL, ?, ?),
+        (?, ?, ?, ?, 'Foundation & Subfloor Stabilization', 'Crawlspace beam reinforcement and floor leveling following inspection.', 'in_progress', 'high', 'structural', 1, ?, ?, NULL, 180000, 0, NULL, ?, ?),
+        (?, ?, ?, ?, 'Garbage Disposal Replacement', 'Disposal motor seized. Replaced with new 3/4 HP continuous-feed unit.', 'completed', 'medium', 'appliance', 1, ?, ?, ?, 16500, 16500, NULL, ?, ?),
+        (?, ?, ?, ?, 'Screen Door Latch Sticking', 'Front storm door handle sticking. Resident resolved latch independently.', 'cancelled', 'low', 'other', 1, NULL, NULL, NULL, 6000, 0, NULL, ?, ?),
+        (?, ?, ?, NULL, 'Commercial Chiller & Cooling Tower Overhaul', 'Complete rebuild of rooftop centrifugal chiller and cooling tower pump system.', 'on_hold', 'high', 'hvac', 1, ?, ?, NULL, 850000, 0, 'Estimated cost ($8500.00) exceeds portfolio ''Downtown Lofts & Commercial'' permissible spend threshold of $5000.00', ?, ?)
     `).run(
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.propertyId, occupiedUnits[0]!.unitId, vendorPlumbingId, now + 3600000, now - 7200000, now,
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[1]!.propertyId, occupiedUnits[1]!.unitId, vendorHvacId, now + 86400000, now - 86400000, now,
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[3]!.propertyId, occupiedUnits[3]!.unitId, vendorElectricId, now + 172800000, now - 14400000, now,
-      generateUUIDv7(), OPERATOR_ID, fourPlexPropId, fourPlexTurnoverUnitId, vendorMakeReadyId, now + 86400000, now - 3600000, now,
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[5]!.propertyId, occupiedUnits[5]!.unitId, now - 18000000, now,
-      generateUUIDv7(), OPERATOR_ID, sycamorePropId, sycamoreHoldUnitId, vendorGeneralId, now + 259200000, now - (3 * 86400000), now,
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[2]!.propertyId, occupiedUnits[2]!.unitId, vendorApplianceId, now - (6 * 86400000), now - (5 * 86400000), now - (7 * 86400000), now - (5 * 86400000),
-      generateUUIDv7(), OPERATOR_ID, occupiedUnits[4]!.propertyId, occupiedUnits[4]!.unitId, now - (4 * 86400000), now - (2 * 86400000)
+      wo1Id, OPERATOR_ID, occupiedUnits[0]!.propertyId, occupiedUnits[0]!.unitId, vendorPlumbingId, now + 3600000, now - 7200000, now,
+      wo2Id, OPERATOR_ID, occupiedUnits[1]!.propertyId, occupiedUnits[1]!.unitId, vendorHvacId, now + 86400000, now - 86400000, now,
+      wo3Id, OPERATOR_ID, occupiedUnits[3]!.propertyId, occupiedUnits[3]!.unitId, vendorElectricId, now + 172800000, now - 14400000, now,
+      wo4Id, OPERATOR_ID, fourPlexPropId, fourPlexTurnoverUnitId, vendorMakeReadyId, now + 86400000, now - 3600000, now,
+      wo5Id, OPERATOR_ID, occupiedUnits[5]!.propertyId, occupiedUnits[5]!.unitId, now - 18000000, now,
+      wo6Id, OPERATOR_ID, sycamorePropId, sycamoreHoldUnitId, vendorGeneralId, now + 259200000, now - (3 * 86400000), now,
+      wo7Id, OPERATOR_ID, occupiedUnits[2]!.propertyId, occupiedUnits[2]!.unitId, vendorApplianceId, now - (6 * 86400000), now - (5 * 86400000), now - (7 * 86400000), now - (5 * 86400000),
+      wo8Id, OPERATOR_ID, occupiedUnits[4]!.propertyId, occupiedUnits[4]!.unitId, now - (4 * 86400000), now - (2 * 86400000),
+      woHoldId, OPERATOR_ID, loftsPropId, vendorHvacId, now + 86400000, now - 18000000, now
     );
+
+    // Multi-Vendor Links for Work Orders
+    const wovStmt = tx.prepare(`
+      INSERT INTO work_order_vendors (id, operator_id, work_order_id, vendor_contact_id, role, notes, assigned_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // wo1: Plumber + Dryout Specialist
+    wovStmt.run(generateUUIDv7(), OPERATOR_ID, wo1Id, vendorPlumbingId, 'Lead Plumbing Contractor', 'Disassemble tank flange and replace ring seal', now - 7200000, now - 7200000);
+    wovStmt.run(generateUUIDv7(), OPERATOR_ID, wo1Id, vendorGeneralId, 'Remediation Specialist', 'Inspect subfloor moisture and deploy drying blowers', now - 3600000, now - 3600000);
+
+    // woHold: HVAC Specialist + High Voltage Electrician
+    wovStmt.run(generateUUIDv7(), OPERATOR_ID, woHoldId, vendorHvacId, 'Mechanical Specialist', '40-ton centrifugal compressor rebuild', now - 18000000, now - 18000000);
+    wovStmt.run(generateUUIDv7(), OPERATOR_ID, woHoldId, vendorElectricId, 'High-Voltage Electrician', 'Isolate 480V 3-phase feeder disconnect', now - 14400000, now - 14400000);
 
     // 12. Preventative Maintenance Schedules
     tx.prepare(`
@@ -752,6 +872,39 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
       INSERT INTO conversation_messages (id, operator_id, conversation_id, body, created_at)
       VALUES (?, ?, ?, 'Resident requested moving from Stall 12 to Stall 14 closer to building entrance.', ?)
     `).run(generateUUIDv7(), OPERATOR_ID, conv2Id, now - 3600000);
+
+    // Conversations for Work Orders
+    const wo1ConvId = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
+      VALUES (?, ?, 'work_order', ?, 'Field Progress Updates & Diagnostic Notes', 0, ?, ?)
+    `).run(wo1ConvId, OPERATOR_ID, wo1Id, now - 7200000, now - 1800000);
+
+    tx.prepare(`
+      INSERT INTO conversation_messages (id, operator_id, conversation_id, author_user_id, author_contact_id, body, created_at)
+      VALUES
+        (?, ?, ?, NULL, ?, 'Arrived on site. Shut off water angle stop. Subfloor is structurally sound; replacing wax gasket and brass bolts.', ?),
+        (?, ?, ?, ?, NULL, 'Approved. Please check ceiling drywall of unit below before restoring water pressure.', ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, wo1ConvId, vendorPlumbingId, now - 5400000,
+      generateUUIDv7(), OPERATOR_ID, wo1ConvId, userId, now - 1800000
+    );
+
+    const woHoldConvId = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at)
+      VALUES (?, ?, 'work_order', ?, 'Spend Policy Auto-Hold Notice', 1, ?, ?)
+    `).run(woHoldConvId, OPERATOR_ID, woHoldId, now - 18000000, now - 7200000);
+
+    tx.prepare(`
+      INSERT INTO conversation_messages (id, operator_id, conversation_id, author_user_id, author_contact_id, body, created_at)
+      VALUES
+        (?, ?, ?, NULL, NULL, '⚠️ Work Order automatically placed ON HOLD:\nEstimated cost ($8500.00) exceeds portfolio ''Downtown Lofts & Commercial'' permissible spend threshold of $5000.00', ?),
+        (?, ?, ?, ?, NULL, 'Estimates reviewed. Requesting portfolio owner capital authorization prior to approving contractor mobilization.', ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, woHoldConvId, now - 18000000,
+      generateUUIDv7(), OPERATOR_ID, woHoldConvId, userId, now - 7200000
+    );
 
     // 14. Client Accounting Capital Contributions & Owner Distributions
     const clientOwnerContactId = generateUUIDv7();
@@ -856,6 +1009,533 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         percentage_bps, flat_fee_cents, fee_gl_account_id, pass_through_expenses, created_at
       ) VALUES (?, ?, ?, 'percentage_collected_revenue', 800, 0, ?, 1, ?)
     `).run(generateUUIDv7(), OPERATOR_ID, portfolio1Id, mgmtFeeGl, now);
+
+    // =========================================================================
+    // 15. Dynamic Custom Field Sections & Definitions + Populating Entities
+    // =========================================================================
+    const propSecId = generateUUIDv7();
+    const bldgSecId = generateUUIDv7();
+    const unitSecId = generateUUIDv7();
+    const leaseSecId = generateUUIDv7();
+    const contactSecId = generateUUIDv7();
+    const woSecId = generateUUIDv7();
+
+    tx.prepare(`
+      INSERT INTO custom_field_sections (id, operator_id, entity_type, title, sort_order, created_at, updated_at)
+      VALUES
+        (?, ?, 'property', 'Building & Access Security', 1, ?, ?),
+        (?, ?, 'building', 'Building Systems & Compliance', 1, ?, ?),
+        (?, ?, 'unit', 'Unit Mechanical & Specifications', 1, ?, ?),
+        (?, ?, 'lease', 'Compliance & Policy Verification', 1, ?, ?),
+        (?, ?, 'contact', 'Emergency & Verification', 1, ?, ?),
+        (?, ?, 'work_order', 'Access & Vendor Dispatch', 1, ?, ?)
+    `).run(
+      propSecId, OPERATOR_ID, now, now,
+      bldgSecId, OPERATOR_ID, now, now,
+      unitSecId, OPERATOR_ID, now, now,
+      leaseSecId, OPERATOR_ID, now, now,
+      contactSecId, OPERATOR_ID, now, now,
+      woSecId, OPERATOR_ID, now, now
+    );
+
+    tx.prepare(`
+      INSERT INTO custom_field_definitions (
+        id, operator_id, section_id, entity_type, field_name, field_label,
+        data_type, is_required, default_value, options_json, sort_order, created_at, updated_at
+      ) VALUES
+        -- Property
+        (?, ?, ?, 'property', 'gate_code', 'Gate Access Code', 'string', 0, '9876', NULL, 1, ?, ?),
+        (?, ?, ?, 'property', 'lockbox_code', 'Master Lockbox Code', 'string', 0, '1234', NULL, 2, ?, ?),
+        (?, ?, ?, 'property', 'roof_replacement_year', 'Roof Replacement Year', 'number', 0, '2019', NULL, 3, ?, ?),
+        -- Building
+        (?, ?, ?, 'building', 'fire_sprinkler_cert', 'Fire Sprinkler Certification', 'string', 0, 'CERT-2025-A', NULL, 1, ?, ?),
+        (?, ?, ?, 'building', 'elevator_contract', 'Elevator Maintenance Contract', 'string', 0, 'ELEV-9948', NULL, 2, ?, ?),
+        -- Unit
+        (?, ?, ?, 'unit', 'hvac_filter_size', 'HVAC Filter Size', 'string', 0, '16x25x1', NULL, 1, ?, ?),
+        (?, ?, ?, 'unit', 'water_heater_sn', 'Water Heater Serial #', 'string', 0, 'WH-884920', NULL, 2, ?, ?),
+        (?, ?, ?, 'unit', 'paint_color_code', 'Interior Paint Code', 'string', 0, 'SW 7005 Pure White', NULL, 3, ?, ?),
+        -- Lease
+        (?, ?, ?, 'lease', 'renters_insurance_policy', 'Insurance Policy #', 'string', 0, 'POL-99281', NULL, 1, ?, ?),
+        (?, ?, ?, 'lease', 'pet_deposit_cleared', 'Pet Deposit Cleared', 'boolean', 0, '1', NULL, 2, ?, ?),
+        -- Contact
+        (?, ?, ?, 'contact', 'emergency_contact_phone', 'Emergency Contact Phone', 'string', 0, '(555) 019-9283', NULL, 1, ?, ?),
+        (?, ?, ?, 'contact', 'id_verification_status', 'ID Verification Status', 'select', 0, 'verified', '["verified", "pending", "exempt"]', 2, ?, ?),
+        -- Work Order
+        (?, ?, ?, 'work_order', 'access_instructions', 'Entry Permission & Alarm', 'string', 0, 'Alarm disarm: 4421. Dog in crate.', NULL, 1, ?, ?),
+        (?, ?, ?, 'work_order', 'safety_hazard_noted', 'Safety Hazard Noted', 'boolean', 0, '0', NULL, 2, ?, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, propSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, bldgSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, bldgSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, unitSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, leaseSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, leaseSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, contactSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, contactSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, woSecId, now, now,
+      generateUUIDv7(), OPERATOR_ID, woSecId, now, now
+    );
+
+    // Populate custom field values across entities
+    tx.prepare(`
+      UPDATE properties SET custom_fields = json_object(
+        'gate_code', '9876',
+        'lockbox_code', '1234',
+        'roof_replacement_year', 2019
+      ) WHERE operator_id = ?
+    `).run(OPERATOR_ID);
+
+    tx.prepare(`
+      UPDATE units SET custom_fields = json_object(
+        'hvac_filter_size', '16x25x1',
+        'water_heater_sn', 'WH-884920',
+        'paint_color_code', 'SW 7005 Pure White'
+      ) WHERE operator_id = ?
+    `).run(OPERATOR_ID);
+
+    tx.prepare(`
+      UPDATE leases SET custom_fields = json_object(
+        'renters_insurance_policy', 'POL-99281',
+        'pet_deposit_cleared', 1
+      ) WHERE operator_id = ?
+    `).run(OPERATOR_ID);
+
+    tx.prepare(`
+      UPDATE contacts SET custom_fields = json_object(
+        'emergency_contact_phone', '(555) 019-9283',
+        'id_verification_status', 'verified'
+      ) WHERE operator_id = ?
+    `).run(OPERATOR_ID);
+
+    tx.prepare(`
+      UPDATE work_orders SET custom_fields = json_object(
+        'access_instructions', 'Alarm disarm: 4421. Dog in crate.',
+        'safety_hazard_noted', 0
+      ) WHERE operator_id = ?
+    `).run(OPERATOR_ID);
+
+    // =========================================================================
+    // 16. Amenities Catalog, Property Assignments, and Marketing Syndication
+    // =========================================================================
+    const amPool = generateUUIDv7();
+    const amGym = generateUUIDv7();
+    const amRoof = generateUUIDv7();
+    const amEv = generateUUIDv7();
+    const amPackage = generateUUIDv7();
+    const amWasher = generateUUIDv7();
+    const amStainless = generateUUIDv7();
+    const amThermostat = generateUUIDv7();
+    const amPetPark = generateUUIDv7();
+    const amSolar = generateUUIDv7();
+
+    tx.prepare(`
+      INSERT INTO amenities (id, operator_id, category, name, description, created_at, updated_at)
+      VALUES
+        (?, ?, 'community', 'Resort-Style Swimming Pool', 'Resort-Style Swimming Pool', ?, ?),
+        (?, ?, 'community', '24/7 Fitness Center', '24/7 Fitness Center', ?, ?),
+        (?, ?, 'community', 'Rooftop Terrace & BBQ Lounge', 'Rooftop Terrace & BBQ Lounge', ?, ?),
+        (?, ?, 'community', 'Electric Vehicle Charging Stations', 'Electric Vehicle Charging Stations', ?, ?),
+        (?, ?, 'community', 'Package Concierge Hub', 'Package Concierge Hub', ?, ?),
+        (?, ?, 'unit', 'In-Unit Washer/Dryer', 'In-Unit Washer/Dryer', ?, ?),
+        (?, ?, 'unit', 'Stainless Steel Appliances', 'Stainless Steel Appliances', ?, ?),
+        (?, ?, 'unit', 'Smart Thermostat', 'Smart Thermostat', ?, ?),
+        (?, ?, 'pet', 'Bark Park & Agility Course', 'Bark Park & Agility Course', ?, ?),
+        (?, ?, 'eco', 'Solar-Powered Common Areas', 'Solar-Powered Common Areas', ?, ?)
+    `).run(
+      amPool, OPERATOR_ID, now, now,
+      amGym, OPERATOR_ID, now, now,
+      amRoof, OPERATOR_ID, now, now,
+      amEv, OPERATOR_ID, now, now,
+      amPackage, OPERATOR_ID, now, now,
+      amWasher, OPERATOR_ID, now, now,
+      amStainless, OPERATOR_ID, now, now,
+      amThermostat, OPERATOR_ID, now, now,
+      amPetPark, OPERATOR_ID, now, now,
+      amSolar, OPERATOR_ID, now, now
+    );
+
+    tx.prepare(`
+      INSERT INTO amenity_definitions (id, operator_id, category, name, icon, is_custom, created_at, updated_at)
+      VALUES
+        (?, ?, 'community', 'Resort-Style Swimming Pool', 'waves', 0, ?, ?),
+        (?, ?, 'community', '24/7 Fitness Center', 'dumbbell', 0, ?, ?),
+        (?, ?, 'community', 'Rooftop Terrace & BBQ Lounge', 'sun', 0, ?, ?),
+        (?, ?, 'community', 'Electric Vehicle Charging Stations', 'zap', 0, ?, ?),
+        (?, ?, 'community', 'Package Concierge Hub', 'package', 0, ?, ?),
+        (?, ?, 'unit', 'In-Unit Washer/Dryer', 'disc', 0, ?, ?),
+        (?, ?, 'unit', 'Stainless Steel Appliances', 'shield', 0, ?, ?),
+        (?, ?, 'unit', 'Smart Thermostat', 'thermometer', 0, ?, ?),
+        (?, ?, 'pet', 'Bark Park & Agility Course', 'heart', 0, ?, ?),
+        (?, ?, 'eco', 'Solar-Powered Common Areas', 'sun', 0, ?, ?)
+    `).run(
+      amPool, OPERATOR_ID, now, now,
+      amGym, OPERATOR_ID, now, now,
+      amRoof, OPERATOR_ID, now, now,
+      amEv, OPERATOR_ID, now, now,
+      amPackage, OPERATOR_ID, now, now,
+      amWasher, OPERATOR_ID, now, now,
+      amStainless, OPERATOR_ID, now, now,
+      amThermostat, OPERATOR_ID, now, now,
+      amPetPark, OPERATOR_ID, now, now,
+      amSolar, OPERATOR_ID, now, now
+    );
+
+    // Assign amenities to properties
+    tx.prepare(`
+      INSERT INTO property_amenities (id, operator_id, property_id, amenity_id, created_at)
+      VALUES
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, thPropId, amPool, now,
+      generateUUIDv7(), OPERATOR_ID, thPropId, amGym, now,
+      generateUUIDv7(), OPERATOR_ID, thPropId, amPetPark, now,
+      generateUUIDv7(), OPERATOR_ID, loftsPropId, amGym, now,
+      generateUUIDv7(), OPERATOR_ID, loftsPropId, amRoof, now,
+      generateUUIDv7(), OPERATOR_ID, loftsPropId, amEv, now
+    );
+
+    // Assign unit-level amenities
+    tx.prepare(`
+      INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, created_at)
+      VALUES
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?),
+        (?, ?, ?, ?, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.unitId, amWasher, now,
+      generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.unitId, amStainless, now,
+      generateUUIDv7(), OPERATOR_ID, occupiedUnits[0]!.unitId, amThermostat, now
+    );
+
+    // Marketing syndication
+    tx.prepare(`
+      INSERT INTO marketing_syndication (
+        id, operator_id, property_id, unit_id, headline, description,
+        advertised_rent_cents, target_deposit_cents, available_date, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'Charming Mountain View Townhome', 'Spacious 3-bedroom luxury townhome with modern appliances and private patio.', 190000, 190000, ?, 'active', ?, ?)
+    `).run(generateUUIDv7(), OPERATOR_ID, thPropId, occupiedUnits[0]!.unitId, now + (14 * 86400000), now, now);
+
+    // =========================================================================
+    // 17. Accounts Payable (AP Bills), Allocations & General Ledger Postings
+    // =========================================================================
+    const apGl = glAccountMap.get('accounts_payable') || glAccountMap.get('2010');
+    if (!apGl) throw new Error('Accounts Payable GL account (2010) not found in seed.');
+    const repairsGl = glAccountMap.get('repairs') || glAccountMap.get('5100');
+    if (!repairsGl) throw new Error('Repairs GL account (5100) not found in seed.');
+    const cleaningGl = glAccountMap.get('cleaning_maintenance') || glAccountMap.get('5030');
+    if (!cleaningGl) throw new Error('Cleaning & Maintenance GL account (5030) not found in seed.');
+    const undepositedGl = glAccountMap.get('undeposited_funds') || glAccountMap.get('1030');
+    if (!undepositedGl) throw new Error('Undeposited Funds GL account (1030) not found in seed.');
+    const rentIncomeGl = glAccountMap.get('rent') || glAccountMap.get('4010');
+    if (!rentIncomeGl) throw new Error('Rental Income GL account (4010) not found in seed.');
+
+    const bill1Id = generateUUIDv7(); // Approved
+    const bill2Id = generateUUIDv7(); // Draft
+    const bill3Id = generateUUIDv7(); // Approved
+    const bill4Id = generateUUIDv7(); // Paid
+    const bill5Id = generateUUIDv7(); // Approved (Overdue)
+
+    tx.prepare(`
+      INSERT INTO bills (
+        id, operator_id, vendor_id, work_order_id, invoice_number, invoice_date, due_date,
+        payment_terms, reference_number, subtotal_cents, tax_cents,
+        total_amount_cents, amount_paid_cents, status, approved_by, approved_at,
+        notes, created_at, updated_at
+      ) VALUES
+        -- Bill 1: Apex Plumbing (Linked to Emergency Work Order wo1Id)
+        (?, ?, ?, ?, 'INV-2026-881', ?, ?, 'net_30', 'PO-8810', 145000, 0, 145000, 145000, 'paid', ?, ?, 'Emergency pipe leak & bathroom flange replacement', ?, ?),
+        -- Bill 2: VoltMaster Electric (Draft)
+        (?, ?, ?, NULL, 'INV-2026-904', ?, ?, 'net_15', 'PO-9041', 280000, 0, 280000, 0, 'draft', NULL, NULL, 'Commercial panel submetering installation', ?, ?),
+        -- Bill 3: Hawkins General Repair (Approved Multi-Property Split)
+        (?, ?, ?, NULL, 'INV-2026-302', ?, ?, 'net_30', 'PO-3022', 320000, 0, 320000, 0, 'approved', ?, ?, 'Quarterly exterior siding and deck restoration across 3 properties', ?, ?),
+        -- Bill 4: CoolAir Climate Systems (Paid)
+        (?, ?, ?, NULL, 'INV-2026-440', ?, ?, 'due_on_receipt', 'PO-4403', 185000, 0, 185000, 185000, 'paid', ?, ?, 'Dual heat pump seasonal service overhaul', ?, ?),
+        -- Bill 5: Blue Ridge Pro Painters (Approved Overdue)
+        (?, ?, ?, NULL, 'INV-2026-105', ?, ?, 'net_15', 'PO-1054', 450000, 0, 450000, 0, 'approved', ?, ?, 'Complete exterior trim and townhome building paint', ?, ?)
+    `).run(
+      bill1Id, OPERATOR_ID, vendorPlumbingId, wo1Id, now - (15 * 86400000), now + (15 * 86400000), userId, now - (10 * 86400000), now - (15 * 86400000), now,
+      bill2Id, OPERATOR_ID, vendorElectricId, now - (2 * 86400000), now + (5 * 86400000), now - (2 * 86400000), now,
+      bill3Id, OPERATOR_ID, vendorGeneralId, now - (20 * 86400000), now + (10 * 86400000), userId, now - (18 * 86400000), now - (20 * 86400000), now,
+      bill4Id, OPERATOR_ID, vendorHvacId, now - (35 * 86400000), now - (5 * 86400000), userId, now - (30 * 86400000), now - (35 * 86400000), now,
+      bill5Id, OPERATOR_ID, vendorPaintingId, now - (25 * 86400000), now - (10 * 86400000), userId, now - (20 * 86400000), now - (25 * 86400000), now
+    );
+
+    // Bill allocations
+    tx.prepare(`
+      INSERT INTO bill_allocations (
+        id, operator_id, bill_id, portfolio_id, property_id, unit_id,
+        gl_account_id, amount_cents, amount_settled_cents, description, created_at
+      ) VALUES
+        -- Bill 1 Allocations ($850 / $600)
+        (?, ?, ?, ?, ?, ?, ?, 85000, 85000, 'Master bathroom flange repair', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 60000, 60000, 'Main water sewer camera inspection', ?),
+        -- Bill 2 Allocations ($2,800)
+        (?, ?, ?, ?, ?, NULL, ?, 280000, 0, 'Lofts panel upgrade & breaker rewiring', ?),
+        -- Bill 3 Allocations ($1,200 / $1,000 / $1,000)
+        (?, ?, ?, ?, ?, NULL, ?, 120000, 0, 'Highland Pines deck refinishing', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 100000, 0, 'Oakwood Terraces exterior siding powerwash', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 100000, 0, 'Downtown Lofts common area maintenance', ?),
+        -- Bill 4 Allocations ($1,850)
+        (?, ?, ?, ?, ?, NULL, ?, 185000, 185000, 'Dual heat pump system overhaul', ?),
+        -- Bill 5 Allocations ($4,500)
+        (?, ?, ?, ?, ?, NULL, ?, 450000, 0, 'Townhome exterior paint and weather sealing', ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, bill1Id, portfolio1Id, occupiedUnits[0]!.propertyId, occupiedUnits[0]!.unitId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill1Id, portfolio2Id, fourPlexPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill2Id, portfolio3Id, loftsPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill3Id, portfolio1Id, thPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill3Id, portfolio2Id, fourPlexPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill3Id, portfolio3Id, loftsPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill4Id, portfolio2Id, fourPlexPropId, repairsGl, now,
+      generateUUIDv7(), OPERATOR_ID, bill5Id, portfolio1Id, thPropId, cleaningGl, now
+    );
+
+    // GL Postings for approved & paid bills
+    JournalService.postEntry({
+      date_ms: now - (10 * 86400000),
+      memo: 'Approved AP Bill INV-2026-881 (Apex Plumbing Services)',
+      source_type: 'bill',
+      source_id: bill1Id,
+      lines: [
+        { account_id: repairsGl, debit_cents: 145000, credit_cents: 0, description: 'Plumbing Repair Expense' },
+        { account_id: apGl, debit_cents: 0, credit_cents: 145000, contact_id: vendorPlumbingId, description: 'Accounts Payable Accrual' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: now - (18 * 86400000),
+      memo: 'Approved AP Bill INV-2026-302 (Hawkins General Repair)',
+      source_type: 'bill',
+      source_id: bill3Id,
+      lines: [
+        { account_id: repairsGl, debit_cents: 320000, credit_cents: 0, description: 'Multi-property maintenance expense' },
+        { account_id: apGl, debit_cents: 0, credit_cents: 320000, contact_id: vendorGeneralId, description: 'Accounts Payable Accrual' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: now - (30 * 86400000),
+      memo: 'Approved AP Bill INV-2026-440 (CoolAir Climate Systems)',
+      source_type: 'bill',
+      source_id: bill4Id,
+      lines: [
+        { account_id: repairsGl, debit_cents: 185000, credit_cents: 0, description: 'Heat Pump Overhaul Expense' },
+        { account_id: apGl, debit_cents: 0, credit_cents: 185000, contact_id: vendorHvacId, description: 'Accounts Payable Accrual' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: now - (20 * 86400000),
+      memo: 'Approved AP Bill INV-2026-105 (Blue Ridge Pro Painters)',
+      source_type: 'bill',
+      source_id: bill5Id,
+      lines: [
+        { account_id: cleaningGl, debit_cents: 450000, credit_cents: 0, description: 'Exterior Repainting Expense' },
+        { account_id: apGl, debit_cents: 0, credit_cents: 450000, contact_id: vendorPaintingId, description: 'Accounts Payable Accrual' }
+      ]
+    }, tx);
+
+    // =========================================================================
+    // 18. Vendor Checks & Disbursements
+    // =========================================================================
+    const check1Id = generateUUIDv7(); // Cleared
+    const check2Id = generateUUIDv7(); // Printed
+    const check3Id = generateUUIDv7(); // Draft
+
+    tx.prepare(`
+      INSERT INTO vendor_checks (
+        id, operator_id, bank_account_id, vendor_id, check_number, check_date,
+        amount_cents, payee_name, memo, status, cleared_at, created_at, updated_at
+      ) VALUES
+        (?, ?, ?, ?, '1001', ?, 185000, 'CoolAir Climate Systems', 'Disbursement for INV-2026-440', 'cleared', ?, ?, ?),
+        (?, ?, ?, ?, '1002', ?, 145000, 'Apex Plumbing Services', 'Disbursement for INV-2026-881', 'printed', NULL, ?, ?),
+        (?, ?, ?, ?, '1003', ?, 160000, 'Hawkins General Repair', 'Partial payment for INV-2026-302', 'draft', NULL, ?, ?)
+    `).run(
+      check1Id, OPERATOR_ID, operatingBankGl, vendorHvacId, now - (10 * 86400000), now - (3 * 86400000), now - (10 * 86400000), now,
+      check2Id, OPERATOR_ID, operatingBankGl, vendorPlumbingId, now - (4 * 86400000), now - (4 * 86400000), now,
+      check3Id, OPERATOR_ID, operatingBankGl, vendorGeneralId, now - 86400000, now - 86400000, now
+    );
+
+    tx.prepare(`
+      INSERT INTO vendor_check_allocations (id, operator_id, check_id, bill_id, allocated_amount_cents, created_at)
+      VALUES
+        (?, ?, ?, ?, 185000, ?),
+        (?, ?, ?, ?, 145000, ?),
+        (?, ?, ?, ?, 160000, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, check1Id, bill4Id, now,
+      generateUUIDv7(), OPERATOR_ID, check2Id, bill1Id, now,
+      generateUUIDv7(), OPERATOR_ID, check3Id, bill3Id, now
+    );
+
+    // GL Postings for checks
+    JournalService.postEntry({
+      date_ms: now - (10 * 86400000),
+      memo: 'Vendor Check #1001 to CoolAir Climate Systems',
+      source_type: 'vendor_check',
+      source_id: check1Id,
+      lines: [
+        { account_id: apGl, debit_cents: 185000, credit_cents: 0, contact_id: vendorHvacId, description: 'Settle AP Bill INV-2026-440' },
+        { account_id: operatingBankGl, debit_cents: 0, credit_cents: 185000, contact_id: vendorHvacId, description: 'Operating Account Check Disbursement' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: now - (4 * 86400000),
+      memo: 'Vendor Check #1002 to Apex Plumbing Services',
+      source_type: 'vendor_check',
+      source_id: check2Id,
+      lines: [
+        { account_id: apGl, debit_cents: 145000, credit_cents: 0, contact_id: vendorPlumbingId, description: 'Settle AP Bill INV-2026-881' },
+        { account_id: operatingBankGl, debit_cents: 0, credit_cents: 145000, contact_id: vendorPlumbingId, description: 'Operating Account Check Disbursement' }
+      ]
+    }, tx);
+
+    // =========================================================================
+    // 19. Vendor Credits & Memos
+    // =========================================================================
+    const credId = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO vendor_credits (
+        id, operator_id, vendor_id, credit_number, credit_date,
+        total_amount_cents, remaining_amount_cents, gl_account_id,
+        reason, reference_number, status, created_at, updated_at
+      ) VALUES (?, ?, ?, 'CR-2026-01', ?, 25000, 25000, ?, 'Overcharge discount on plumbing fittings returned to supply house', 'RET-8810', 'open', ?, ?)
+    `).run(credId, OPERATOR_ID, vendorPlumbingId, now - (7 * 86400000), repairsGl, now - (7 * 86400000), now);
+
+    // =========================================================================
+    // 20. Undeposited Funds Receipts & Bank Deposits
+    // =========================================================================
+    // Post 5 incoming tenant payment journal entries debited to 1030 Undeposited Funds
+    const receipt1 = JournalService.postEntry({
+      date_ms: now - (5 * 86400000),
+      memo: 'Rent Payment Check #4401 - Unit TH-1',
+      source_type: 'payment',
+      lines: [
+        { account_id: undepositedGl, debit_cents: 190000, credit_cents: 0, property_id: thPropId, description: 'Undeposited Rent Check #4401' },
+        { account_id: rentIncomeGl, debit_cents: 0, credit_cents: 190000, property_id: thPropId, description: 'Rental Income Inflow' }
+      ]
+    }, tx);
+
+    const receipt2 = JournalService.postEntry({
+      date_ms: now - (5 * 86400000),
+      memo: 'Rent Payment Check #4402 - Unit TH-2',
+      source_type: 'payment',
+      lines: [
+        { account_id: undepositedGl, debit_cents: 190000, credit_cents: 0, property_id: thPropId, description: 'Undeposited Rent Check #4402' },
+        { account_id: rentIncomeGl, debit_cents: 0, credit_cents: 190000, property_id: thPropId, description: 'Rental Income Inflow' }
+      ]
+    }, tx);
+
+    const receipt3 = JournalService.postEntry({
+      date_ms: now - (4 * 86400000),
+      memo: 'Rent Payment Money Order #901 - Grand Central Lofts #101',
+      source_type: 'payment',
+      lines: [
+        { account_id: undepositedGl, debit_cents: 185000, credit_cents: 0, property_id: loftsPropId, description: 'Undeposited Rent Money Order' },
+        { account_id: rentIncomeGl, debit_cents: 0, credit_cents: 185000, property_id: loftsPropId, description: 'Rental Income Inflow' }
+      ]
+    }, tx);
+
+    // Undeposited receipts remaining in queue (2 unbatched receipts)
+    JournalService.postEntry({
+      date_ms: now - 86400000,
+      memo: 'Rent Check #5512 - 425 Highland Ave',
+      source_type: 'payment',
+      lines: [
+        { account_id: undepositedGl, debit_cents: 220000, credit_cents: 0, property_id: occupiedUnits[3]!.propertyId, description: 'Undeposited Rent Check #5512' },
+        { account_id: rentIncomeGl, debit_cents: 0, credit_cents: 220000, property_id: occupiedUnits[3]!.propertyId, description: 'Rental Income Inflow' }
+      ]
+    }, tx);
+
+    JournalService.postEntry({
+      date_ms: now - (12 * 3600000),
+      memo: 'Rent Check #3091 - 509 Willow Creek Way',
+      source_type: 'payment',
+      lines: [
+        { account_id: undepositedGl, debit_cents: 165000, credit_cents: 0, property_id: occupiedUnits[4]!.propertyId, description: 'Undeposited Rent Check #3091' },
+        { account_id: rentIncomeGl, debit_cents: 0, credit_cents: 165000, property_id: occupiedUnits[4]!.propertyId, description: 'Rental Income Inflow' }
+      ]
+    }, tx);
+
+    // Group receipts 1 & 2 into Bank Deposit 1 ($3,800.00)
+    const deposit1Id = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO bank_deposits (
+        id, operator_id, bank_account_id, deposit_date, total_amount_cents,
+        deposit_reference, memo, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 380000, 'DEP-2026-0901', 'Highland Pines rent batch deposit #1', 'cleared', ?, ?)
+    `).run(deposit1Id, OPERATOR_ID, operatingBankGl, now - (3 * 86400000), now - (3 * 86400000), now);
+
+    tx.prepare(`
+      INSERT INTO bank_deposit_lines (id, operator_id, bank_deposit_id, source_entry_id, amount_cents, created_at)
+      VALUES
+        (?, ?, ?, ?, 190000, ?),
+        (?, ?, ?, ?, 190000, ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, deposit1Id, receipt1.id, now,
+      generateUUIDv7(), OPERATOR_ID, deposit1Id, receipt2.id, now
+    );
+
+    JournalService.postEntry({
+      date_ms: now - (3 * 86400000),
+      memo: 'Bank Deposit DEP-2026-0901 (Batch clearing 2 receipts to checking)',
+      source_type: 'bank_deposit',
+      source_id: deposit1Id,
+      lines: [
+        { account_id: operatingBankGl, debit_cents: 380000, credit_cents: 0, description: 'Deposit Cleared to Operating Checking' },
+        { account_id: undepositedGl, debit_cents: 0, credit_cents: 380000, description: 'Clear 1030 Undeposited Receipts' }
+      ]
+    }, tx);
+
+    // Group receipt 3 into Bank Deposit 2 ($1,850.00)
+    const deposit2Id = generateUUIDv7();
+    tx.prepare(`
+      INSERT INTO bank_deposits (
+        id, operator_id, bank_account_id, deposit_date, total_amount_cents,
+        deposit_reference, memo, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 185000, 'DEP-2026-0902', 'Grand Central Lofts weekly rent batch', 'cleared', ?, ?)
+    `).run(deposit2Id, OPERATOR_ID, operatingBankGl, now - (2 * 86400000), now - (2 * 86400000), now);
+
+    tx.prepare(`
+      INSERT INTO bank_deposit_lines (id, operator_id, bank_deposit_id, source_entry_id, amount_cents, created_at)
+      VALUES (?, ?, ?, ?, 185000, ?)
+    `).run(generateUUIDv7(), OPERATOR_ID, deposit2Id, receipt3.id, now);
+
+    JournalService.postEntry({
+      date_ms: now - (2 * 86400000),
+      memo: 'Bank Deposit DEP-2026-0902 (Batch clearing 1 receipt to checking)',
+      source_type: 'bank_deposit',
+      source_id: deposit2Id,
+      lines: [
+        { account_id: operatingBankGl, debit_cents: 185000, credit_cents: 0, description: 'Deposit Cleared to Operating Checking' },
+        { account_id: undepositedGl, debit_cents: 0, credit_cents: 185000, description: 'Clear 1030 Undeposited Receipts' }
+      ]
+    }, tx);
+
+    // =========================================================================
+    // 21. System Backups
+    // =========================================================================
+    tx.prepare(`
+      INSERT INTO backups (
+        id, operator_id, backup_type, filename, relative_path,
+        file_size_bytes, checksum_sha256, status, created_at
+      ) VALUES
+        (?, ?, 'full_system', 'garrisonos-backup-20260930-full.sqlite3.gz', 'backups/garrisonos-backup-20260930-full.sqlite3.gz', 4210840, 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'completed', ?),
+        (?, ?, 'operator_data', 'garrisonos-backup-20261001-daily.sqlite3.gz', 'backups/garrisonos-backup-20261001-daily.sqlite3.gz', 1845200, 'ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb', 'completed', ?)
+    `).run(
+      generateUUIDv7(), OPERATOR_ID, now - (2 * 86400000),
+      generateUUIDv7(), OPERATOR_ID, now - 86400000
+    );
   }, db);
   });
 }

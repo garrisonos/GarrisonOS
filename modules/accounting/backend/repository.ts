@@ -30,6 +30,7 @@ export interface CreateTransactionData {
 export interface RentRollItem {
   lease_id: string;
   property_id: string;
+  portfolio_id?: string | null;
   property_name: string;
   unit_id: string;
   unit_number: string;
@@ -50,6 +51,8 @@ export class AccountingRepository {
     start_date?: number;
     end_date?: number;
     qb_unexported_only?: boolean;
+    limit?: number;
+    portfolio?: string;
   }): TransactionRecord[] {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
@@ -64,6 +67,13 @@ export class AccountingRepository {
     if (filter?.property_id) {
       sql += ' AND property_id = ?';
       params.push(filter.property_id);
+    }
+    if (filter?.portfolio) {
+      sql += ` AND property_id IN (
+        SELECT id FROM properties
+        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE operator_id = ? AND name = ? AND deleted_at IS NULL)) AND deleted_at IS NULL
+      )`;
+      params.push(operatorId, filter.portfolio, operatorId, filter.portfolio);
     }
     if (filter?.unit_id) {
       sql += ' AND unit_id = ?';
@@ -90,6 +100,12 @@ export class AccountingRepository {
     }
 
     sql += ' ORDER BY transaction_date DESC, created_at DESC';
+
+    if (filter?.limit && filter.limit > 0) {
+      sql += ' LIMIT ?';
+      params.push(filter.limit);
+    }
+
     return db.prepare(sql).all(...params) as unknown as TransactionRecord[];
   }
 
@@ -478,6 +494,7 @@ export class AccountingRepository {
       SELECT
         l.id as lease_id,
         p.id as property_id,
+        p.portfolio_id,
         p.name as property_name,
         u.id as unit_id,
         u.unit_number,

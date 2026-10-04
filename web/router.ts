@@ -23,10 +23,13 @@ import * as LoginPage from './pages/login.js';
 import * as SetupPage from './pages/setup.js';
 import * as AdminPage from './pages/admin.js';
 
+import * as SearchPage from './pages/search.js';
+
 // Import module page handlers
 import * as PropertiesIndex from '../modules/properties/frontend/pages/index.js';
 import * as PropertiesShow from '../modules/properties/frontend/pages/show.js';
 import * as PropertiesEdit from '../modules/properties/frontend/pages/edit.js';
+import * as PropertiesAmenities from '../modules/properties/frontend/pages/amenities.js';
 
 import * as ContactsIndex from '../modules/contacts/frontend/pages/index.js';
 import * as ContactsShow from '../modules/contacts/frontend/pages/show.js';
@@ -39,6 +42,9 @@ import * as MaintenanceShow from '../modules/maintenance/frontend/pages/show.js'
 import * as MaintenancePreventative from '../modules/maintenance/frontend/pages/preventative.js';
 
 import * as AccountingIndex from '../modules/accounting/frontend/pages/index.js';
+import * as AccountingBills from '../modules/accounting/frontend/pages/bills.js';
+import * as AccountingChecks from '../modules/accounting/frontend/pages/checks.js';
+import * as AccountingDeposits from '../modules/accounting/frontend/pages/deposits.js';
 import * as AccountingClient from '../modules/accounting/frontend/pages/client-accounting.js';
 import * as AccountingCOA from '../modules/accounting/frontend/pages/chart-of-accounts.js';
 import * as AccountingGL from '../modules/accounting/frontend/pages/general-ledger.js';
@@ -111,10 +117,13 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
   '/login': LoginPage.handle,
   '/setup': SetupPage.handle,
   '/admin': AdminPage.handle,
+  '/admin/custom-fields': AdminPage.handle,
+  '/search': SearchPage.handle,
 
   '/properties': PropertiesIndex.handle,
   '/properties/show': PropertiesShow.handle,
   '/properties/edit': PropertiesEdit.handle,
+  '/properties/amenities': PropertiesAmenities.handle,
 
   '/contacts': ContactsIndex.handle,
   '/contacts/show': ContactsShow.handle,
@@ -127,6 +136,9 @@ const ROUTE_TABLE: Record<string, PageHandler> = {
   '/maintenance/preventative': MaintenancePreventative.handle,
 
   '/accounting': AccountingIndex.handle,
+  '/accounting/bills': AccountingBills.handle,
+  '/accounting/checks': AccountingChecks.handle,
+  '/accounting/deposits': AccountingDeposits.handle,
   '/accounting/client-accounting': AccountingClient.handle,
   '/accounting/chart-of-accounts': AccountingCOA.handle,
   '/accounting/general-ledger': AccountingGL.handle,
@@ -195,6 +207,25 @@ export class WebRouter {
     let handler: PageHandler | null | undefined = Object.hasOwn(ROUTE_TABLE, rawPath)
       ? ROUTE_TABLE[rawPath]
       : null;
+
+    // Parameterized route resolution
+    if (!handler) {
+      const propAmenitiesMatch = /^\/properties\/([^\/]+)\/amenities$/.exec(rawPath);
+      if (propAmenitiesMatch && propAmenitiesMatch[1]) {
+        const propId = decodeURIComponent(propAmenitiesMatch[1]);
+        ctx.query['property_id'] = propId;
+        ctx.query['id'] = propId;
+        handler = PropertiesAmenities.handle;
+      }
+
+      const unitAmenitiesMatch = /^\/properties\/units\/([^\/]+)\/amenities$/.exec(rawPath);
+      if (unitAmenitiesMatch && unitAmenitiesMatch[1]) {
+        const unitId = decodeURIComponent(unitAmenitiesMatch[1]);
+        ctx.query['unit_id'] = unitId;
+        ctx.query['id'] = unitId;
+        handler = PropertiesAmenities.handle;
+      }
+    }
 
     // Fallback: Dynamic module page resolution
     if (!handler) {

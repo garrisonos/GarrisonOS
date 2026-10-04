@@ -9,10 +9,34 @@ HookRegistry.registerNavigation({
 });
 
 HookRegistry.registerNavigation({
+  label: 'Bills & AP',
+  route: '/accounting/bills',
+  icon: 'file-text',
+  order: 41,
+  section: 'financial'
+});
+
+HookRegistry.registerNavigation({
+  label: 'Check Register',
+  route: '/accounting/checks',
+  icon: 'dollar-sign',
+  order: 42,
+  section: 'financial'
+});
+
+HookRegistry.registerNavigation({
+  label: 'Bank Deposits',
+  route: '/accounting/deposits',
+  icon: 'database',
+  order: 43,
+  section: 'financial'
+});
+
+HookRegistry.registerNavigation({
   label: 'General Ledger',
   route: '/accounting/general-ledger',
   icon: 'book',
-  order: 41,
+  order: 44,
   section: 'financial'
 });
 
@@ -20,7 +44,7 @@ HookRegistry.registerNavigation({
   label: 'Trial Balance',
   route: '/accounting/trial-balance',
   icon: 'file-bar-chart',
-  order: 42,
+  order: 45,
   section: 'financial'
 });
 
@@ -28,7 +52,7 @@ HookRegistry.registerNavigation({
   label: 'Rent Roll',
   route: '/accounting/rent-roll',
   icon: 'list',
-  order: 43,
+  order: 46,
   section: 'financial'
 });
 
@@ -36,7 +60,7 @@ HookRegistry.registerNavigation({
   label: 'Schedule E Tax',
   route: '/accounting/schedule-e',
   icon: 'file-bar-chart',
-  order: 44,
+  order: 47,
   section: 'financial'
 });
 
@@ -44,7 +68,7 @@ HookRegistry.registerNavigation({
   label: 'QuickBooks Sync',
   route: '/accounting/quickbooks',
   icon: 'file-text',
-  order: 45,
+  order: 48,
   section: 'financial'
 });
 
@@ -52,7 +76,7 @@ HookRegistry.registerNavigation({
   label: 'Chart of Accounts',
   route: '/accounting/chart-of-accounts',
   icon: 'file-text',
-  order: 46,
+  order: 49,
   section: 'financial'
 });
 
@@ -60,7 +84,7 @@ HookRegistry.registerNavigation({
   label: 'Client Accounting',
   route: '/accounting/client-accounting',
   icon: 'file-bar-chart',
-  order: 47,
+  order: 50,
   section: 'financial'
 });
 

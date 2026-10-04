@@ -15,7 +15,7 @@ import { AccountsPayableRepository } from './ap.js';
 import { VendorCreditsRepository } from './vendor_credits.js';
 import { VendorChecksRepository } from './checks.js';
 import { BankDepositsRepository } from './bank_deposits.js';
-import { generateCheckPdf } from '../../../web/lib/pdf.js';
+import { generateCheckPdf, generateBatchCheckPdf, generateDepositSlipPdf, generateRemitterReceiptPdf } from '../../../web/lib/pdf.js';
 
 /**
  * Strict integer query parameter parser that validates bounds and rejects NaN.
@@ -113,17 +113,27 @@ function requireAuth(req: ApiRequest, res: ServerResponse): boolean {
  */
 export function registerRoutes(router: Router): void {
   // --- Rent Roll ---
-  router.getBatchSafe('/api/v1/accounting/rent-roll', (_req, res) => {
-    const rentRoll = AccountingRepository.getRentRoll();
+  router.getBatchSafe('/api/v1/accounting/rent-roll', (req, res) => {
+    const propertyId = req.query.property_id || undefined;
+    const portfolio = req.query.portfolio || undefined;
+    let rentRoll = AccountingRepository.getRentRoll();
+    if (propertyId) {
+      rentRoll = rentRoll.filter(r => r.property_id === propertyId);
+    }
+    if (portfolio) {
+      rentRoll = rentRoll.filter(r => r.portfolio_id === portfolio);
+    }
     const totalScheduledRentCents = rentRoll.reduce((sum, r) => sum + r.monthly_rent_cents, 0);
     const totalDelinquencyCents = rentRoll.reduce((sum, r) => sum + Math.max(0, r.balance_cents), 0);
+    const delinquentUnitsCount = rentRoll.filter(r => r.balance_cents > 0).length;
 
     successResponse(res, {
       rentRoll,
       summary: {
         totalUnits: rentRoll.length,
         totalScheduledRentCents,
-        totalDelinquencyCents
+        totalDelinquencyCents,
+        delinquentUnitsCount
       }
     });
   });
@@ -217,15 +227,19 @@ export function registerRoutes(router: Router): void {
     if (startRes.hasError) return;
     const endRes = parseIntegerParam(req, res, 'end_date', { min: 1 });
     if (endRes.hasError) return;
+    const limitRes = parseIntegerParam(req, res, 'limit', { min: 1, max: 1000 });
+    if (limitRes.hasError) return;
 
     const transactions = AccountingRepository.listTransactions({
       lease_id: req.query.lease_id,
       property_id: req.query.property_id,
+      portfolio: req.query.portfolio,
       unit_id: req.query.unit_id,
       transaction_type: req.query.transaction_type,
       category: req.query.category,
       start_date: startRes.value,
-      end_date: endRes.value
+      end_date: endRes.value,
+      limit: limitRes.value
     });
     successResponse(res, { transactions });
   });
@@ -915,6 +929,7 @@ export function registerRoutes(router: Router): void {
       const result = AccountsPayableRepository.listBills({
         status: req.query.status as any,
         vendor_id: req.query.vendor_id,
+        work_order_id: req.query.work_order_id,
         property_id: req.query.property_id,
         portfolio_id: req.query.portfolio_id,
         due_date_start: dueStart,
@@ -1300,6 +1315,67 @@ export function registerRoutes(router: Router): void {
     }
   });
 
+  router.get('/api/v1/accounting/checks/batch-pdf', requirePermission('accounting:view'), (req, res) => {
+    const rawIds = typeof req.query['ids'] === 'string' ? req.query['ids'].split(',').map((s) => s.trim()).filter(Boolean) : [];
+    if (rawIds.length === 0) {
+      return errorResponse(res, 'VALIDATION_ERROR', 'ids query parameter with at least one check ID is required', 400);
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const opRow = db.prepare('SELECT name FROM operators WHERE id = ? AND deleted_at IS NULL').get(operatorId) as { name: string } | undefined;
+
+    const payerName = (typeof req.query['payer_name'] === 'string' && req.query['payer_name'].trim()) || opRow?.name || 'GarrisonOS Management';
+    const payerAddress = (typeof req.query['payer_address'] === 'string' && req.query['payer_address'].trim()) || '100 Main St, Suite 200';
+    const bankRouting = (typeof req.query['bank_routing'] === 'string' && req.query['bank_routing'].trim()) || undefined;
+    const bankAccountNumber = (typeof req.query['bank_account_number'] === 'string' && req.query['bank_account_number'].trim()) || undefined;
+
+    try {
+      const checksData: any[] = [];
+      for (const id of rawIds) {
+        const check = VendorChecksRepository.getCheckById(id);
+        if (!check) continue;
+
+        const checkDateStr = new Date(check.check_date).toISOString().slice(0, 10);
+        const billsData = (check.allocations || []).map((a) => ({
+          invoice_number: a.invoice_number || 'N/A',
+          invoice_date: a.invoice_date ? new Date(a.invoice_date).toISOString().slice(0, 10) : checkDateStr,
+          amount_cents: a.total_amount_cents || a.allocated_amount_cents,
+          allocated_cents: a.allocated_amount_cents,
+          description: `Bill ${a.invoice_number || ''}`
+        }));
+
+        checksData.push({
+          check_number: check.check_number,
+          check_date: checkDateStr,
+          amount_cents: check.amount_cents,
+          payee_name: check.payee_name,
+          memo: check.memo,
+          bank_name: check.bank_account_name || 'Operating Checking',
+          bank_routing: bankRouting,
+          bank_account_number: bankAccountNumber,
+          payer_name: payerName,
+          payer_address: payerAddress,
+          bills: billsData
+        });
+      }
+
+      if (checksData.length === 0) {
+        return errorResponse(res, 'NOT_FOUND', 'No valid checks found for the provided IDs', 404);
+      }
+
+      const pdfBuffer = generateBatchCheckPdf(checksData);
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline; filename="batch-checks.pdf"',
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_GENERATION_FAILED', err.message, 500);
+    }
+  });
+
   router.post('/api/v1/accounting/checks/:id/void', requirePermission('accounting:manage'), (req, res) => {
     const check = VendorChecksRepository.getCheckById(req.params.id!);
     if (!check) {
@@ -1395,5 +1471,89 @@ export function registerRoutes(router: Router): void {
       errorResponse(res, 'VOID_FAILED', err.message, 400);
     }
   });
+
+  router.get('/api/v1/accounting/deposits/:id/pdf', requirePermission('accounting:view'), (req, res) => {
+    const deposit = BankDepositsRepository.getDepositById(req.params.id!);
+    if (!deposit) {
+      return errorResponse(res, 'NOT_FOUND', 'Bank deposit not found', 404);
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const opRow = db.prepare('SELECT name FROM operators WHERE id = ? AND deleted_at IS NULL').get(operatorId) as { name: string } | undefined;
+
+    try {
+      const items = (deposit.lines || []).map((line: any) => ({
+        receipt_id: line.source_entry_id,
+        remitter_name: line.remitter_name || 'Tenant / Remitter',
+        payment_method: line.payment_method || 'Check',
+        reference: line.reference || line.id?.slice(0, 8),
+        amount_cents: line.amount_cents
+      }));
+
+      const pdfBuffer = generateDepositSlipPdf({
+        deposit_number: (deposit as any).deposit_number || deposit.id.slice(0, 8),
+        deposit_date: new Date(deposit.deposit_date).toISOString().slice(0, 10),
+        bank_name: deposit.bank_account_name || 'Operating Checking',
+        bank_routing: (deposit as any).bank_routing_number || undefined,
+        bank_account_number: (deposit as any).bank_account_number || undefined,
+        payer_name: opRow?.name || 'GarrisonOS Management',
+        memo: deposit.memo,
+        total_amount_cents: deposit.total_amount_cents,
+        items
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="deposit-slip-${(deposit as any).deposit_number || deposit.id.slice(0, 8)}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_FAILED', err.message, 500);
+    }
+  });
+
+  router.get('/api/v1/accounting/deposits/receipts/:id/pdf', requirePermission('accounting:view'), (req, res) => {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const row = db.prepare(`
+      SELECT bdl.*, bd.deposit_date, bd.deposit_number
+      FROM bank_deposit_lines bdl
+      JOIN bank_deposits bd ON bdl.bank_deposit_id = bd.id
+      WHERE bdl.operator_id = ? AND (bdl.id = ? OR bdl.source_entry_id = ?) AND bdl.deleted_at IS NULL
+    `).get(operatorId, req.params.id!, req.params.id!) as any;
+
+    if (!row) {
+      return errorResponse(res, 'NOT_FOUND', 'Receipt line not found', 404);
+    }
+
+    const opRow = db.prepare('SELECT name FROM operators WHERE id = ? AND deleted_at IS NULL').get(operatorId) as { name: string } | undefined;
+
+    try {
+      const pdfBuffer = generateRemitterReceiptPdf({
+        receipt_number: row.id.slice(0, 8).toUpperCase(),
+        receipt_date: new Date(row.deposit_date).toISOString().slice(0, 10),
+        operator_name: opRow?.name || 'GarrisonOS Management',
+        remitter_name: row.remitter_name || 'Remitter',
+        property_name: 'Property Portfolio',
+        payment_method: row.payment_method || 'Check',
+        reference: row.reference,
+        amount_cents: row.amount_cents,
+        memo: `Bank Deposit ${row.deposit_number || ''}`
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="receipt-${row.id.slice(0, 8)}.pdf"`,
+        'Content-Length': pdfBuffer.length
+      });
+      res.end(pdfBuffer);
+    } catch (err: any) {
+      errorResponse(res, 'PDF_FAILED', err.message, 500);
+    }
+  });
 }
+
 

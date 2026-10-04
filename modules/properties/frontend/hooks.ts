@@ -8,6 +8,14 @@ HookRegistry.registerNavigation({
   section: 'portfolio'
 });
 
+HookRegistry.registerNavigation({
+  label: 'Amenities Catalog',
+  route: '/properties/amenities',
+  icon: 'list',
+  order: 15,
+  section: 'portfolio'
+});
+
 HookRegistry.registerDashboardCard('/api/v1/properties/metrics/occupancy', (res: any) => {
   try {
     if (!res || res.success !== true) {

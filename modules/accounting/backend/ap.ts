@@ -240,14 +240,28 @@ export class AccountsPayableRepository {
       );
     }
 
-    // Verify vendor belongs to operator
+    // Verify vendor belongs to operator and has contact_type = 'vendor'
     const vendorRow = db.prepare(`
-      SELECT id, COALESCE(company_name, first_name || ' ' || last_name) AS name FROM contacts
+      SELECT id, contact_type, COALESCE(company_name, first_name || ' ' || last_name) AS name FROM contacts
       WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).get(input.vendor_id, operatorId);
+    `).get(input.vendor_id, operatorId) as any;
 
     if (!vendorRow) {
       throw new Error(`Vendor contact "${input.vendor_id}" not found or unauthorized.`);
+    }
+
+    if (vendorRow.contact_type !== 'vendor') {
+      throw new Error(`Contact "${input.vendor_id}" is not a vendor (contact_type is "${vendorRow.contact_type}"). Expenses must be associated with an existing vendor contact.`);
+    }
+
+    if (input.work_order_id) {
+      const woRow = db.prepare(`
+        SELECT id FROM work_orders
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(input.work_order_id, operatorId);
+      if (!woRow) {
+        throw new Error(`Work order "${input.work_order_id}" not found or unauthorized.`);
+      }
     }
 
     // Verify GL accounts exist and belong to operator
@@ -347,6 +361,10 @@ export class AccountsPayableRepository {
         );
       }
 
+      if (input.work_order_id) {
+        AccountsPayableRepository.recalcWorkOrderActualCost(tx, input.work_order_id, operatorId, now);
+      }
+
       return this.getBillById(billId)!;
     };
 
@@ -401,6 +419,7 @@ export class AccountsPayableRepository {
   public static listBills(filters: {
     status?: BillStatus;
     vendor_id?: string;
+    work_order_id?: string;
     property_id?: string;
     portfolio_id?: string;
     due_date_start?: number;
@@ -423,6 +442,10 @@ export class AccountsPayableRepository {
     if (filters.vendor_id) {
       whereClauses.push('b.vendor_id = ?');
       params.push(filters.vendor_id);
+    }
+    if (filters.work_order_id) {
+      whereClauses.push('b.work_order_id = ?');
+      params.push(filters.work_order_id);
     }
     if (filters.due_date_start !== undefined) {
       whereClauses.push('b.due_date >= ?');
@@ -501,6 +524,16 @@ export class AccountsPayableRepository {
   }
 
   /**
+   * List all bills associated with a given work order.
+   *
+   * @param workOrderId - Target work order identifier.
+   * @returns Array of bill records linked to the work order.
+   */
+  public static listBillsByWorkOrder(workOrderId: string): BillRecord[] {
+    return this.listBills({ work_order_id: workOrderId, limit: 100 }).bills;
+  }
+
+  /**
    * Update an existing draft or pending bill.
    *
    * @param id - Bill identifier.
@@ -524,11 +557,24 @@ export class AccountsPayableRepository {
     const vendorId = input.vendor_id || existing.vendor_id;
     if (input.vendor_id && input.vendor_id !== existing.vendor_id) {
       const vendorRow = db.prepare(`
-        SELECT id FROM contacts
+        SELECT id, contact_type FROM contacts
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-      `).get(input.vendor_id, operatorId);
+      `).get(input.vendor_id, operatorId) as any;
       if (!vendorRow) {
         throw new Error(`Vendor contact "${input.vendor_id}" not found or unauthorized.`);
+      }
+      if (vendorRow.contact_type !== 'vendor') {
+        throw new Error(`Contact "${input.vendor_id}" is not a vendor (contact_type is "${vendorRow.contact_type}"). Expenses must be associated with an existing vendor contact.`);
+      }
+    }
+
+    if (input.work_order_id) {
+      const woRow = db.prepare(`
+        SELECT id FROM work_orders
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).get(input.work_order_id, operatorId);
+      if (!woRow) {
+        throw new Error(`Work order "${input.work_order_id}" not found or unauthorized.`);
       }
     }
 
@@ -663,6 +709,15 @@ export class AccountsPayableRepository {
             now
           );
         }
+      }
+
+      // Recalculate actual costs on affected work order(s)
+      const effectiveWorkOrderId = input.work_order_id !== undefined ? input.work_order_id : existing.work_order_id;
+      if (existing.work_order_id) {
+        AccountsPayableRepository.recalcWorkOrderActualCost(tx, existing.work_order_id, operatorId, now);
+      }
+      if (effectiveWorkOrderId && effectiveWorkOrderId !== existing.work_order_id) {
+        AccountsPayableRepository.recalcWorkOrderActualCost(tx, effectiveWorkOrderId, operatorId, now);
       }
 
       return this.getBillById(id)!;
@@ -807,6 +862,10 @@ export class AccountsPayableRepository {
         UPDATE bills SET status = 'voided', updated_at = ?
         WHERE id = ? AND operator_id = ?
       `).run(now, id, operatorId);
+
+      if (bill.work_order_id) {
+        AccountsPayableRepository.recalcWorkOrderActualCost(tx, bill.work_order_id, operatorId, now);
+      }
 
       return this.getBillById(id)!;
     });
@@ -1049,5 +1108,32 @@ export class AccountsPayableRepository {
 
     (generatedBills as any).failures = failures;
     return generatedBills;
+  }
+
+  /**
+   * Recalculates actual cost on a work order by summing all linked non-voided bills.
+   *
+   * @param tx - Active database transaction.
+   * @param workOrderId - Target work order ID.
+   * @param operatorId - Scoped operator ID.
+   * @param now - Current timestamp.
+   */
+  private static recalcWorkOrderActualCost(
+    tx: DatabaseSync,
+    workOrderId: string | null | undefined,
+    operatorId: string,
+    now: number
+  ): void {
+    if (!workOrderId) return;
+    const totalExpensesRow = tx.prepare(`
+      SELECT COALESCE(SUM(total_amount_cents), 0) AS total
+      FROM bills
+      WHERE work_order_id = ? AND operator_id = ? AND deleted_at IS NULL AND status <> 'voided'
+    `).get(workOrderId, operatorId) as any;
+    const totalExpenses = (totalExpensesRow?.total || 0);
+    tx.prepare(`
+      UPDATE work_orders SET actual_cost_cents = ?, updated_at = ?
+      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).run(totalExpenses, now, workOrderId, operatorId);
   }
 }

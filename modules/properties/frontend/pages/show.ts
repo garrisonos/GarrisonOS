@@ -1,6 +1,7 @@
 import { PageContext, PageResult } from '../../../../web/lib/page-context.js';
 import { html, raw, SafeHtml } from '../../../../web/lib/html.js';
 import { csrfField, validateCsrf } from '../../../../web/lib/csrf.js';
+import { renderCustomFields } from '../../../../web/templates/custom-fields.js';
 
 /**
  * Handles presentation requests for viewing a single property detail page,
@@ -149,14 +150,20 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         }
 
         return html`
-          <tr>
-            <td><strong>Unit ${u.unit_number}</strong></td>
+          <tr data-entity="unit" data-id="${u.id}" data-status="${u.status}" data-amount-cents="${u.market_rent_cents}">
+            <td>
+              <strong>Unit ${u.unit_number}</strong>
+              <button class="btn-icon" data-action="copy-id" data-copy-value="${u.id}" title="Copy Unit ID" style="margin-left: 0.35rem; font-size: 0.75rem; background: transparent; border: none; cursor: pointer;">📋</button>
+            </td>
             <td><span class="badge ${statusClass}">${statusFormatted}</span></td>
             <td>${u.bedrooms} bd / ${Number(u.bathrooms).toFixed(1)} ba</td>
             <td>${u.square_feet ? `${u.square_feet.toLocaleString()} sqft` : '—'}</td>
             <td><strong>$${((u.market_rent_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>/mo</td>
             <td>$${(((u.target_deposit_cents || 0) / 100)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td>${statusActionBtn}</td>
+            <td style="display: flex; gap: 0.35rem; align-items: center;">
+              <a href="/properties/units/${encodeURIComponent(u.id)}/amenities" class="btn btn-sm btn-secondary" title="Unit Amenities & Overrides">Amenities</a>
+              ${statusActionBtn}
+            </td>
           </tr>
         `;
       })
@@ -169,19 +176,28 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   const propTypeFormatted = (property.property_type || '').replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
 
   const content = html`
-    <div class="page-header">
+    <div class="page-header" data-entity="property" data-id="${property.id}">
       <div>
         <a href="/properties" class="text-muted">← Back to Properties</a>
-        <h1 class="page-title">${property.name}</h1>
+        <h1 class="page-title">
+          ${property.name}
+          <button class="btn-icon" data-action="copy-id" data-copy-value="${property.id}" title="Copy Property ID" style="margin-left: 0.5rem; font-size: 0.85rem; background: transparent; border: none; cursor: pointer;">📋</button>
+        </h1>
         <p class="page-subtitle">
           ${property.address_line1}, ${property.city}, ${property.state} ${property.postal_code}
           • <span class="badge">${propTypeFormatted}</span>
         </p>
       </div>
-      <button class="btn btn-primary" onclick="document.getElementById('addUnitModal').showModal()">+ Add Unit</button>
+      <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+        <a href="/properties/amenities?property_id=${encodeURIComponent(id)}" class="btn btn-secondary">✨ Amenities & Marketing</a>
+        <a href="/api/v1/properties/${encodeURIComponent(id)}/flyer-pdf" target="_blank" class="btn btn-secondary">📄 Marketing Flyer</a>
+        <button class="btn btn-primary" onclick="document.getElementById('addUnitModal').showModal()">+ Add Unit</button>
+      </div>
     </div>
 
     ${errorAlert}
+
+    ${renderCustomFields('property', typeof property.custom_fields === 'string' ? JSON.parse(property.custom_fields || '{}') : property.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <div class="card">
       <div class="card-header">

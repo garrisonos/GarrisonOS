@@ -3,6 +3,7 @@ import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
+import { WorkOrderDispatchPdfData } from '../../../web/lib/pdf.js';
 import { CustomFieldsService } from '../../../core/custom-fields.js';
 
 /**
@@ -28,7 +29,7 @@ export interface WorkOrder {
   /** Urgency level of the work order. */
   priority: 'low' | 'medium' | 'high' | 'emergency';
   /** Trade or domain classification. */
-  category: 'plumbing' | 'electrical' | 'hvac' | 'appliance' | 'structural' | 'cosmetic' | 'pest' | 'other';
+  category: 'plumbing' | 'electrical' | 'hvac' | 'appliance' | 'structural' | 'cosmetic' | 'pest' | 'pest_control' | 'make_ready' | 'roofing' | 'landscaping' | 'other';
   /** 1 if technician has permission to enter, 0 otherwise. */
   permission_to_enter: number;
   /** Access instructions or lockbox codes. */
@@ -51,6 +52,8 @@ export interface WorkOrder {
   updated_at: number;
   /** Soft-deletion timestamp in epoch milliseconds, or null if active. */
   deleted_at?: number | null;
+  /** Reason explaining why work order was automatically or manually placed on hold. */
+  hold_reason?: string | null;
   /** Dynamic custom fields serialized as a JSON string or object. */
   custom_fields?: Record<string, any> | string;
 }
@@ -67,7 +70,101 @@ export interface WorkOrderWithDetails extends WorkOrder {
   vendor_name?: string;
   /** Full name of the requesting contact. */
   requested_by_name?: string;
+  /** All assigned vendors and subcontractors. */
+  assigned_vendors?: WorkOrderVendor[];
 }
+
+/**
+ * Vendor or contractor linked to a work order.
+ */
+export interface WorkOrderVendor {
+  /** Unique junction record ID. */
+  id: string;
+  /** Operator isolation identifier. */
+  operator_id: string;
+  /** Work order identifier. */
+  work_order_id: string;
+  /** Contact ID of the vendor. */
+  vendor_contact_id: string;
+  /** Vendor display name. */
+  vendor_name?: string;
+  /** Vendor company name. */
+  company_name?: string;
+  /** Vendor specialty/trade. */
+  vendor_specialty?: string;
+  /** Vendor email. */
+  email?: string;
+  /** Vendor phone. */
+  phone?: string;
+  /** Role in the work order (e.g. contractor, primary, specialist). */
+  role: string;
+  /** Optional operational notes or scope. */
+  notes?: string | null;
+  /** Timestamp when vendor was assigned in epoch milliseconds. */
+  assigned_at: number;
+  /** Record creation timestamp. */
+  created_at: number;
+  /** Soft-deletion timestamp. */
+  deleted_at?: number | null;
+}
+ 
+ /**
+  * Itemized bill record linked to a work order.
+  */
+ export interface WorkOrderLinkedBill {
+   /** Unique bill identifier. */
+   id: string;
+   /** Vendor contact identifier. */
+   vendor_id: string;
+   /** Vendor contact full name. */
+   vendor_name: string;
+   /** Optional vendor company name. */
+   vendor_company?: string | null;
+   /** Vendor invoice number. */
+   invoice_number: string;
+   /** Invoice date timestamp in epoch milliseconds. */
+   invoice_date: number;
+   /** Due date timestamp in epoch milliseconds. */
+   due_date: number;
+   /** Total billed amount in integer cents. */
+   total_amount_cents: number;
+   /** Settled or paid amount in integer cents. */
+   amount_paid_cents: number;
+   /** Bill approval or settlement status. */
+   status: string;
+   /** Created timestamp in epoch milliseconds. */
+   created_at: number;
+ }
+ 
+ /**
+  * Budget vs actual expenses rollup for a work order.
+  */
+ export interface WorkOrderBudgetSummary {
+   /** Estimated or authorized budget in integer cents. */
+   estimated_cost_cents: number;
+   /** Recorded actual cost in integer cents. */
+   actual_cost_cents: number;
+   /** Sum total of all invoiced bills in integer cents. */
+   total_invoiced_cents: number;
+   /** Sum total of all disbursed bill payments in integer cents. */
+   total_paid_cents: number;
+   /** Remaining variance (estimated - invoiced) in integer cents. Positive = under budget, negative = over budget. */
+   remaining_variance_cents: number;
+   /** True if total invoiced bills exceed estimated budget and budget is greater than 0. */
+   is_over_budget: boolean;
+   /** Percentage of budget consumed (0-100+). */
+   percent_utilized: number;
+ }
+ 
+ /**
+  * Complete expense report for a work order.
+  */
+ export interface WorkOrderExpensesResult {
+   /** Aggregated budget metrics. */
+   budget: WorkOrderBudgetSummary;
+   /** Array of itemized bills linked to this work order. */
+   bills: WorkOrderLinkedBill[];
+ }
 
 export type PreventativeScheduleCategory =
   | 'hvac'
@@ -227,6 +324,23 @@ export class MaintenanceRepository {
   }
 
   /**
+   * Normalizes extended work order categories to database column supported values.
+   *
+   * @param cat - Category name to normalize.
+   * @returns Canonical database category string.
+   */
+  public static normalizeCategory(cat?: string | null): string {
+    if (!cat) return 'other';
+    const mapping: Record<string, string> = {
+      pest_control: 'pest',
+      make_ready: 'cosmetic',
+      roofing: 'structural',
+      landscaping: 'other'
+    };
+    return mapping[cat] || cat;
+  }
+
+  /**
    * Determine if a vendor's trade specialty is compatible with a work order category.
    *
    * @param vendorSpecialty - Declared trade specialty of vendor.
@@ -235,12 +349,13 @@ export class MaintenanceRepository {
    */
   public static isTradeCompatible(vendorSpecialty?: string | null, category?: string | null): boolean {
     if (!vendorSpecialty || !category) return false;
-    const spec = vendorSpecialty.toLowerCase().trim();
+    const rawSpec = vendorSpecialty.toLowerCase().trim();
+    const spec = MaintenanceRepository.normalizeCategory(rawSpec);
     const cat = category.toLowerCase().trim();
-    if (spec === cat) return true;
-    if (spec === 'general contractor' || spec === 'general repair' || spec === 'handyman') return true;
-    if ((cat === 'cosmetic' || cat === 'other') && (spec === 'make_ready' || spec === 'turnkey' || spec === 'cleaning' || spec === 'painting' || spec === 'general contractor')) return true;
-    return spec.includes(cat) || cat.includes(spec);
+    if (spec === cat || rawSpec === cat) return true;
+    if (spec === 'general contractor' || spec === 'general repair' || spec === 'handyman' || rawSpec === 'handyman') return true;
+    if ((cat === 'cosmetic' || cat === 'other') && (rawSpec === 'make_ready' || rawSpec === 'turnkey' || rawSpec === 'cleaning' || rawSpec === 'painting' || rawSpec === 'general contractor' || rawSpec === 'landscaping')) return true;
+    return spec.includes(cat) || cat.includes(spec) || rawSpec.includes(cat) || cat.includes(rawSpec);
   }
 
   /**
@@ -253,7 +368,9 @@ export class MaintenanceRepository {
     status?: string;
     priority?: string;
     property_id?: string;
+    portfolio?: string;
     unit_id?: string;
+    limit?: number;
     temporal?: Record<string, number>;
     orderBy?: string;
   }): WorkOrderWithDetails[] {
@@ -276,7 +393,9 @@ export class MaintenanceRepository {
     `;
     const params: any[] = [operatorId];
 
-    if (filter?.status) {
+    if (filter?.status === 'active') {
+      sql += " AND w.status IN ('open', 'assigned', 'in_progress', 'on_hold')";
+    } else if (filter?.status) {
       sql += ' AND w.status = ?';
       params.push(filter.status);
     }
@@ -287,6 +406,13 @@ export class MaintenanceRepository {
     if (filter?.property_id) {
       sql += ' AND w.property_id = ?';
       params.push(filter.property_id);
+    }
+    if (filter?.portfolio) {
+      sql += ` AND w.property_id IN (
+        SELECT id FROM properties
+        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE operator_id = ? AND name = ? AND deleted_at IS NULL)) AND deleted_at IS NULL
+      )`;
+      params.push(operatorId, filter.portfolio, operatorId, filter.portfolio);
     }
     if (filter?.unit_id) {
       sql += ' AND w.unit_id = ?';
@@ -307,6 +433,11 @@ export class MaintenanceRepository {
       sql += ` ORDER BY ${qualifiedOrder}`;
     } else {
       sql += " ORDER BY CASE w.priority WHEN 'emergency' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, w.created_at DESC";
+    }
+
+    if (filter?.limit && filter.limit > 0) {
+      sql += ' LIMIT ?';
+      params.push(filter.limit);
     }
 
     const rows = db.prepare(sql).all(...params) as unknown as WorkOrderWithDetails[];
@@ -342,15 +473,187 @@ export class MaintenanceRepository {
     `).get(id, operatorId) as WorkOrderWithDetails | undefined;
 
     if (!row) return null;
+    const assignedVendors = MaintenanceRepository.listWorkOrderVendors(id);
     return {
       ...row,
-      tenant_id: row.operator_id
+      tenant_id: row.operator_id,
+      assigned_vendors: assignedVendors
     };
+  }
+
+  /**
+   * Evaluate whether a work order's estimated cost exceeds permissible spend limits
+   * or available operating cash in the relevant portfolio.
+   *
+   * @param propertyId - Property identifier.
+   * @param estimatedCostCents - Estimated work order expense in cents.
+   * @returns Policy evaluation result with recommendation and detailed rationale.
+   */
+  public static evaluateSpendPolicy(propertyId: string, estimatedCostCents: number): {
+    shouldHold: boolean;
+    reason?: string;
+    spendThresholdCents?: number;
+    availableFundsCents?: number;
+    portfolioName?: string;
+    portfolioId?: string;
+  } {
+    if (!estimatedCostCents || estimatedCostCents <= 0) {
+      return { shouldHold: false };
+    }
+
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    // Check if property belongs to a portfolio
+    const prop = db.prepare(`
+      SELECT p.id, p.name, p.portfolio_id, port.name as portfolio_name, port.spend_threshold_cents
+      FROM properties p
+      LEFT JOIN portfolios port ON p.portfolio_id = port.id AND port.operator_id = p.operator_id AND port.deleted_at IS NULL
+      WHERE p.id = ? AND p.operator_id = ? AND p.deleted_at IS NULL
+    `).get(propertyId, operatorId) as any;
+
+    if (!prop || !prop.portfolio_id) {
+      return { shouldHold: false };
+    }
+
+    const portfolioId = prop.portfolio_id;
+    const portfolioName = prop.portfolio_name || 'Portfolio';
+    const spendThresholdCents = typeof prop.spend_threshold_cents === 'number' && prop.spend_threshold_cents > 0
+      ? prop.spend_threshold_cents
+      : null;
+
+    const reasons: string[] = [];
+    let shouldHold = false;
+
+    // 1. Permissible Spend Threshold check (if set on portfolio)
+    if (spendThresholdCents !== null && estimatedCostCents > spendThresholdCents) {
+      shouldHold = true;
+      reasons.push(
+        `Estimated cost ($${(estimatedCostCents / 100).toFixed(2)}) exceeds portfolio '${portfolioName}' permissible spend threshold of $${(spendThresholdCents / 100).toFixed(2)}`
+      );
+    }
+
+    // 2. Available Portfolio Operating Funds check
+    let availableFundsCents: number | null = null;
+    try {
+      const coaCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chart_of_accounts'").get();
+      if (coaCheck) {
+        let hasAccountingData = false;
+        let netBankCash = 0;
+
+        const cashRow = db.prepare(`
+          SELECT COALESCE(SUM(jl.debit_cents - jl.credit_cents), 0) as net_cash, COUNT(jl.id) as line_count
+          FROM journal_lines jl
+          JOIN journal_entries je ON jl.journal_entry_id = je.id AND je.deleted_at IS NULL
+          JOIN chart_of_accounts coa ON jl.account_id = coa.id AND coa.deleted_at IS NULL
+          JOIN properties p ON jl.property_id = p.id AND p.deleted_at IS NULL
+          WHERE jl.operator_id = ? AND p.portfolio_id = ?
+            AND coa.category_mapping = 'operating_bank'
+        `).get(operatorId, portfolioId) as { net_cash: number; line_count: number } | undefined;
+
+        if (cashRow && cashRow.line_count > 0) {
+          hasAccountingData = true;
+          availableFundsCents = Math.max(0, Number(cashRow.net_cash));
+        } else {
+          const contribCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_capital_contributions'").get();
+          let contributions = 0;
+          if (contribCheck) {
+            const cRow = db.prepare(`
+              SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
+              FROM client_capital_contributions
+              WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+            `).get(portfolioId, operatorId) as { total: number; count: number };
+            if (cRow && cRow.count > 0) {
+              hasAccountingData = true;
+              contributions = Number(cRow.total);
+            }
+          }
+
+          const distCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_distributions'").get();
+          let distributions = 0;
+          if (distCheck) {
+            const dRow = db.prepare(`
+              SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
+              FROM client_distributions
+              WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+            `).get(portfolioId, operatorId) as { total: number; count: number };
+            if (dRow && dRow.count > 0) {
+              hasAccountingData = true;
+              distributions = Number(dRow.total);
+            }
+          }
+
+          if (hasAccountingData) {
+            availableFundsCents = Math.max(0, contributions - distributions);
+          }
+        }
+
+        if (hasAccountingData && availableFundsCents !== null) {
+          if (estimatedCostCents > availableFundsCents) {
+            shouldHold = true;
+            reasons.push(
+              `Estimated cost ($${(estimatedCostCents / 100).toFixed(2)}) exceeds available portfolio operating funds ($${(availableFundsCents / 100).toFixed(2)})`
+            );
+          }
+        }
+      }
+    } catch (err: any) {
+      // Fail closed on spend policy evaluation errors per Section 6.3
+      shouldHold = true;
+      reasons.push(`Spend policy evaluation encountered an error (${err?.message || 'unknown error'}) - work order placed on administrative hold`);
+    }
+
+    return {
+      shouldHold,
+      reason: reasons.join('; '),
+      spendThresholdCents: spendThresholdCents ?? undefined,
+      availableFundsCents: availableFundsCents ?? undefined,
+      portfolioName,
+      portfolioId
+    };
+  }
+
+  /**
+   * Helper to append an automated operational message to an entity conversation thread.
+   */
+  public static recordAutomatedNote(workOrderId: string, subject: string, message: string): void {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+    try {
+      const convCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'").get();
+      if (!convCheck) return;
+
+      let thread = db.prepare(`
+        SELECT id FROM conversations
+        WHERE operator_id = ? AND entity_type = 'work_order' AND entity_id = ? AND deleted_at IS NULL
+        ORDER BY created_at ASC LIMIT 1
+      `).get(operatorId, workOrderId) as { id: string } | undefined;
+
+      let convId: string;
+      if (thread) {
+        convId = thread.id;
+        db.prepare('UPDATE conversations SET updated_at = ?, last_message_at = ? WHERE id = ?').run(now, now, convId);
+      } else {
+        convId = generateUUIDv7();
+        db.prepare(`
+          INSERT INTO conversations (id, operator_id, entity_type, entity_id, subject, is_private, created_at, updated_at, last_message_at)
+          VALUES (?, ?, 'work_order', ?, ?, 1, ?, ?, ?)
+        `).run(convId, operatorId, workOrderId, subject, now, now, now);
+      }
+
+      const msgId = generateUUIDv7();
+      db.prepare(`
+        INSERT INTO conversation_messages (id, conversation_id, operator_id, author_role, author_name, body, created_at)
+        VALUES (?, ?, ?, 'system', 'Garrison System', ?, ?)
+      `).run(msgId, convId, operatorId, message, now);
+    } catch {}
   }
 
   /**
    * Create a new maintenance work order.
    * Validates that property, unit, and contact references belong to the active operator.
+   * Evaluates portfolio spend thresholds and available funds to automatically place on hold if needed.
    *
    * @param data - Work order creation payload.
    * @returns Created work order with joined details.
@@ -370,6 +673,7 @@ export class MaintenanceRepository {
     scheduled_date?: number;
     estimated_cost_cents?: number;
     actual_cost_cents?: number;
+    hold_reason?: string;
     custom_fields?: Record<string, any> | string;
   }): WorkOrderWithDetails {
     const operatorId = RequestContext.getOperatorId();
@@ -388,34 +692,98 @@ export class MaintenanceRepository {
 
     const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields);
 
-    db.prepare(`
-      INSERT INTO work_orders (
-        id, operator_id, property_id, unit_id, title, description,
-        status, priority, category, permission_to_enter, entry_instructions,
-        requested_by_contact_id, vendor_contact_id, scheduled_date,
-        estimated_cost_cents, actual_cost_cents, custom_fields, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      operatorId,
-      data.property_id,
-      data.unit_id || null,
-      data.title,
-      data.description,
-      data.status || 'open',
-      data.priority || 'medium',
-      data.category || 'other',
-      data.permission_to_enter === false ? 0 : 1,
-      data.entry_instructions || null,
-      data.requested_by_contact_id || null,
-      data.vendor_contact_id || null,
-      data.scheduled_date || null,
-      data.estimated_cost_cents || 0,
-      data.actual_cost_cents || 0,
-      customFieldsJson,
-      now,
-      now
-    );
+    let effectiveStatus = data.status || 'open';
+    let effectiveHoldReason: string | null = data.hold_reason || null;
+
+    // Evaluate permissible spend threshold and available portfolio funds
+    const estimatedCost = data.estimated_cost_cents || 0;
+    if (estimatedCost > 0) {
+      const spendPolicy = MaintenanceRepository.evaluateSpendPolicy(data.property_id, estimatedCost);
+      if (spendPolicy.shouldHold && effectiveStatus !== 'completed' && effectiveStatus !== 'cancelled') {
+        effectiveStatus = 'on_hold';
+        effectiveHoldReason = spendPolicy.reason || 'Auto-held: estimated cost exceeds threshold or available funds';
+      }
+    }
+
+    const colCheck = db.prepare("PRAGMA table_info(work_orders)").all() as Array<{ name: string }>;
+    const hasHoldReason = colCheck.some((c) => c.name === 'hold_reason');
+
+    if (hasHoldReason) {
+      db.prepare(`
+        INSERT INTO work_orders (
+          id, operator_id, property_id, unit_id, title, description,
+          status, priority, category, permission_to_enter, entry_instructions,
+          requested_by_contact_id, vendor_contact_id, scheduled_date,
+          estimated_cost_cents, actual_cost_cents, hold_reason, custom_fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        operatorId,
+        data.property_id,
+        data.unit_id || null,
+        data.title,
+        data.description,
+        effectiveStatus,
+        data.priority || 'medium',
+        MaintenanceRepository.normalizeCategory(data.category),
+        data.permission_to_enter === false ? 0 : 1,
+        data.entry_instructions || null,
+        data.requested_by_contact_id || null,
+        data.vendor_contact_id || null,
+        data.scheduled_date || null,
+        estimatedCost,
+        data.actual_cost_cents || 0,
+        effectiveHoldReason,
+        customFieldsJson,
+        now,
+        now
+      );
+    } else {
+      db.prepare(`
+        INSERT INTO work_orders (
+          id, operator_id, property_id, unit_id, title, description,
+          status, priority, category, permission_to_enter, entry_instructions,
+          requested_by_contact_id, vendor_contact_id, scheduled_date,
+          estimated_cost_cents, actual_cost_cents, custom_fields, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        operatorId,
+        data.property_id,
+        data.unit_id || null,
+        data.title,
+        data.description,
+        effectiveStatus,
+        data.priority || 'medium',
+        MaintenanceRepository.normalizeCategory(data.category),
+        data.permission_to_enter === false ? 0 : 1,
+        data.entry_instructions || null,
+        data.requested_by_contact_id || null,
+        data.vendor_contact_id || null,
+        data.scheduled_date || null,
+        estimatedCost,
+        data.actual_cost_cents || 0,
+        customFieldsJson,
+        now,
+        now
+      );
+    }
+
+    // If assigned to a primary vendor, also record in work_order_vendors junction
+    if (data.vendor_contact_id) {
+      try {
+        MaintenanceRepository.assignWorkOrderVendor(id, data.vendor_contact_id, 'primary', 'Assigned at creation');
+      } catch {}
+    }
+
+    // If auto-held, log automated notice
+    if (effectiveHoldReason) {
+      MaintenanceRepository.recordAutomatedNote(
+        id,
+        'Spend Policy Auto-Hold Notice',
+        `⚠️ Work Order automatically placed ON HOLD:\n${effectiveHoldReason}`
+      );
+    }
 
     return MaintenanceRepository.getWorkOrderById(id)!;
   }
@@ -423,6 +791,7 @@ export class MaintenanceRepository {
   /**
    * Update an existing work order.
    * Validates ownership of updated property, unit, or contact references.
+   * Re-evaluates spend limits if estimated cost is modified.
    *
    * @param id - Work order identifier.
    * @param data - Mutable work order fields.
@@ -436,6 +805,9 @@ export class MaintenanceRepository {
     const db = getDatabase();
     const now = Date.now();
     const updated = { ...existing, ...data, updated_at: now };
+    if (updated.category) {
+      updated.category = MaintenanceRepository.normalizeCategory(updated.category) as any;
+    }
 
     // Reject reopening or dispatching cancelled work orders
     if (existing.status === 'cancelled' && updated.status !== 'cancelled') {
@@ -464,39 +836,292 @@ export class MaintenanceRepository {
       }
     }
 
-    const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields, existing.custom_fields);
+    // Re-evaluate spend limits if estimated cost was modified
+    if (
+      data.estimated_cost_cents !== undefined &&
+      data.estimated_cost_cents !== existing.estimated_cost_cents &&
+      data.estimated_cost_cents > 0
+    ) {
+      const spendPolicy = MaintenanceRepository.evaluateSpendPolicy(updated.property_id, updated.estimated_cost_cents);
+      if (spendPolicy.shouldHold && updated.status !== 'completed' && updated.status !== 'cancelled') {
+        updated.status = 'on_hold';
+        updated.hold_reason = spendPolicy.reason || 'Estimated expense exceeds permissible spend threshold or available portfolio funds';
+      }
+    }
 
-    db.prepare(`
-      UPDATE work_orders SET
-        property_id = ?, unit_id = ?, title = ?, description = ?,
-        status = ?, priority = ?, category = ?, permission_to_enter = ?,
-        entry_instructions = ?, requested_by_contact_id = ?, vendor_contact_id = ?,
-        scheduled_date = ?, completed_date = ?, estimated_cost_cents = ?,
-        actual_cost_cents = ?, custom_fields = ?, updated_at = ?
-      WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
-    `).run(
-      updated.property_id,
-      updated.unit_id || null,
-      updated.title,
-      updated.description,
-      updated.status,
-      updated.priority,
-      updated.category,
-      updated.permission_to_enter,
-      updated.entry_instructions || null,
-      updated.requested_by_contact_id || null,
-      updated.vendor_contact_id || null,
-      updated.scheduled_date || null,
-      updated.completed_date || null,
-      updated.estimated_cost_cents,
-      updated.actual_cost_cents,
-      customFieldsJson,
-      now,
-      id,
-      operatorId
-    );
+    if (updated.status !== 'on_hold') {
+      updated.hold_reason = null;
+    }
+
+    const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields, (existing as any).custom_fields);
+
+    const colCheck = db.prepare("PRAGMA table_info(work_orders)").all() as Array<{ name: string }>;
+    const hasHoldReason = colCheck.some((c) => c.name === 'hold_reason');
+
+    if (hasHoldReason) {
+      db.prepare(`
+        UPDATE work_orders SET
+          property_id = ?, unit_id = ?, title = ?, description = ?,
+          status = ?, priority = ?, category = ?, permission_to_enter = ?,
+          entry_instructions = ?, requested_by_contact_id = ?, vendor_contact_id = ?,
+          scheduled_date = ?, completed_date = ?, estimated_cost_cents = ?,
+          actual_cost_cents = ?, hold_reason = ?, custom_fields = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(
+        updated.property_id,
+        updated.unit_id || null,
+        updated.title,
+        updated.description,
+        updated.status,
+        updated.priority,
+        updated.category,
+        updated.permission_to_enter,
+        updated.entry_instructions || null,
+        updated.requested_by_contact_id || null,
+        updated.vendor_contact_id || null,
+        updated.scheduled_date || null,
+        updated.completed_date || null,
+        updated.estimated_cost_cents,
+        updated.actual_cost_cents,
+        updated.hold_reason || null,
+        customFieldsJson,
+        now,
+        id,
+        operatorId
+      );
+    } else {
+      db.prepare(`
+        UPDATE work_orders SET
+          property_id = ?, unit_id = ?, title = ?, description = ?,
+          status = ?, priority = ?, category = ?, permission_to_enter = ?,
+          entry_instructions = ?, requested_by_contact_id = ?, vendor_contact_id = ?,
+          scheduled_date = ?, completed_date = ?, estimated_cost_cents = ?,
+          actual_cost_cents = ?, custom_fields = ?, updated_at = ?
+        WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
+      `).run(
+        updated.property_id,
+        updated.unit_id || null,
+        updated.title,
+        updated.description,
+        updated.status,
+        updated.priority,
+        updated.category,
+        updated.permission_to_enter,
+        updated.entry_instructions || null,
+        updated.requested_by_contact_id || null,
+        updated.vendor_contact_id || null,
+        updated.scheduled_date || null,
+        updated.completed_date || null,
+        updated.estimated_cost_cents,
+        updated.actual_cost_cents,
+        customFieldsJson,
+        now,
+        id,
+        operatorId
+      );
+    }
+
+    // If status changed, record timeline message
+    if (existing.status !== updated.status) {
+      let statusMsg = `Status changed from "${existing.status}" to "${updated.status}".`;
+      if (updated.status === 'on_hold' && updated.hold_reason) {
+        statusMsg += `\nReason: ${updated.hold_reason}`;
+      }
+      MaintenanceRepository.recordAutomatedNote(id, 'Work Order Status Update', statusMsg);
+    }
 
     return MaintenanceRepository.getWorkOrderById(id);
+  }
+
+  /**
+   * List all assigned vendors/contractors for a work order.
+   *
+   * @param workOrderId - Target work order identifier.
+   * @returns Array of assigned vendor records with contact details.
+   */
+  public static listWorkOrderVendors(workOrderId: string): WorkOrderVendor[] {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_order_vendors'").get();
+    if (!tableCheck) return [];
+
+    const rows = db.prepare(`
+      SELECT
+        wov.*,
+        c.first_name || ' ' || c.last_name as vendor_name,
+        c.company_name,
+        c.vendor_specialty,
+        c.email,
+        c.phone
+      FROM work_order_vendors wov
+      JOIN contacts c ON wov.vendor_contact_id = c.id AND c.operator_id = wov.operator_id AND c.deleted_at IS NULL
+      WHERE wov.work_order_id = ? AND wov.operator_id = ? AND wov.deleted_at IS NULL
+      ORDER BY wov.assigned_at ASC
+    `).all(workOrderId, operatorId) as any[];
+
+    return rows.map((r) => ({
+      id: r.id,
+      operator_id: r.operator_id,
+      work_order_id: r.work_order_id,
+      vendor_contact_id: r.vendor_contact_id,
+      vendor_name: r.vendor_name,
+      company_name: r.company_name,
+      vendor_specialty: r.vendor_specialty,
+      email: r.email,
+      phone: r.phone,
+      role: r.role || 'contractor',
+      notes: r.notes || null,
+      assigned_at: r.assigned_at,
+      created_at: r.created_at,
+      deleted_at: r.deleted_at
+    }));
+  }
+
+  /**
+   * Assign or link a vendor/contractor to a work order.
+   * Validates vendor contact type and active operator ownership.
+   *
+   * @param workOrderId - Target work order identifier.
+   * @param vendorContactId - Contact identifier of vendor.
+   * @param role - Functional role (e.g. primary, subcontractor, specialist, inspector).
+   * @param notes - Operational scope notes.
+   * @returns Assigned vendor junction record.
+   */
+  public static assignWorkOrderVendor(
+    workOrderId: string,
+    vendorContactId: string,
+    role: string = 'contractor',
+    notes?: string
+  ): WorkOrderVendor {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    // Verify work order exists
+    const wo = db.prepare(
+      'SELECT id, category, vendor_contact_id FROM work_orders WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+    ).get(workOrderId, operatorId) as any;
+    if (!wo) {
+      throw new Error(`Work order ${workOrderId} not found`);
+    }
+
+    // Verify vendor contact exists and has contact_type = 'vendor'
+    const vendor = db.prepare(
+      'SELECT id, contact_type, vendor_specialty, w9_received, first_name, last_name, company_name, email, phone FROM contacts WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+    ).get(vendorContactId, operatorId) as any;
+    if (!vendor) {
+      throw new Error(`Vendor contact ${vendorContactId} not found`);
+    }
+    if (vendor.contact_type !== 'vendor') {
+      throw new Error(`Contact ${vendorContactId} is not a vendor (contact_type: ${vendor.contact_type})`);
+    }
+
+    const id = generateUUIDv7();
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_order_vendors'").get();
+    if (!tableCheck) {
+      throw new Error('work_order_vendors table not found');
+    }
+
+    // If role is explicitly primary, ensure vendor meets compliance and trade requirements
+    if (role === 'primary') {
+      if (!vendor.w9_received) {
+        throw new Error(`Vendor ${vendorContactId} cannot be assigned as primary: W-9 form is pending verification`);
+      }
+      if (!MaintenanceRepository.isTradeCompatible(vendor.vendor_specialty, wo.category)) {
+        throw new Error(`Vendor specialty "${vendor.vendor_specialty || 'None'}" is not eligible for "${wo.category}" work orders`);
+      }
+    }
+
+    // Check if already assigned
+    const existing = db.prepare(
+      'SELECT id FROM work_order_vendors WHERE work_order_id = ? AND vendor_contact_id = ? AND operator_id = ? AND deleted_at IS NULL'
+    ).get(workOrderId, vendorContactId, operatorId) as any;
+
+    if (existing) {
+      db.prepare(`
+        UPDATE work_order_vendors SET role = ?, notes = ?, assigned_at = ? WHERE id = ?
+      `).run(role, notes || null, now, existing.id);
+    } else {
+      db.prepare(`
+        INSERT INTO work_order_vendors (id, operator_id, work_order_id, vendor_contact_id, role, notes, assigned_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, operatorId, workOrderId, vendorContactId, role, notes || null, now, now);
+    }
+
+    // If work order has no primary vendor assigned yet, and this vendor is eligible, set vendor_contact_id
+    if (!wo.vendor_contact_id && vendor.w9_received && MaintenanceRepository.isTradeCompatible(vendor.vendor_specialty, wo.category)) {
+      db.prepare('UPDATE work_orders SET vendor_contact_id = ?, updated_at = ? WHERE id = ?')
+        .run(vendorContactId, now, workOrderId);
+    }
+
+    // Record note in timeline
+    MaintenanceRepository.recordAutomatedNote(
+      workOrderId,
+      'Vendor Assigned',
+      `Assigned vendor ${vendor.first_name} ${vendor.last_name} (${role}) to this work order.`
+    );
+
+    return {
+      id: existing ? existing.id : id,
+      operator_id: operatorId,
+      work_order_id: workOrderId,
+      vendor_contact_id: vendorContactId,
+      vendor_name: `${vendor.first_name} ${vendor.last_name}`,
+      company_name: vendor.company_name,
+      vendor_specialty: vendor.vendor_specialty,
+      email: vendor.email,
+      phone: vendor.phone,
+      role,
+      notes: notes || null,
+      assigned_at: now,
+      created_at: now
+    };
+  }
+
+  /**
+   * Remove a vendor/contractor assignment from a work order.
+   *
+   * @param workOrderId - Target work order identifier.
+   * @param vendorContactId - Contact identifier of vendor to unlink.
+   * @returns True if assignment removed.
+   */
+  public static removeWorkOrderVendor(workOrderId: string, vendorContactId: string): boolean {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+    const now = Date.now();
+
+    const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_order_vendors'").get();
+    if (!tableCheck) return false;
+
+    const result = db.prepare(`
+      UPDATE work_order_vendors SET deleted_at = ?
+      WHERE work_order_id = ? AND vendor_contact_id = ? AND operator_id = ? AND deleted_at IS NULL
+    `).run(now, workOrderId, vendorContactId, operatorId);
+
+    if (result.changes === 0) {
+      return false;
+    }
+
+    // If this was the primary vendor on work_orders, set to null or next assigned vendor
+    const wo = db.prepare('SELECT vendor_contact_id FROM work_orders WHERE id = ? AND operator_id = ?').get(workOrderId, operatorId) as any;
+    if (wo && wo.vendor_contact_id === vendorContactId) {
+      const nextVendor = db.prepare(`
+        SELECT vendor_contact_id FROM work_order_vendors
+        WHERE work_order_id = ? AND operator_id = ? AND deleted_at IS NULL
+        ORDER BY assigned_at ASC LIMIT 1
+      `).get(workOrderId, operatorId) as any;
+      db.prepare('UPDATE work_orders SET vendor_contact_id = ?, updated_at = ? WHERE id = ?')
+        .run(nextVendor ? nextVendor.vendor_contact_id : null, now, workOrderId);
+    }
+
+    MaintenanceRepository.recordAutomatedNote(
+      workOrderId,
+      'Vendor Removed',
+      `Removed vendor assignment for contact ID ${vendorContactId}.`
+    );
+
+    return true;
   }
 
   /**
@@ -545,17 +1170,181 @@ export class MaintenanceRepository {
   }
 
   /**
+   * Retrieve itemized bills linked to a work order along with budget vs actual calculations.
+   *
+   * @param workOrderId - Unique identifier of the work order.
+   * @returns Budget rollup and list of linked vendor bills.
+   */
+  public static getWorkOrderExpenses(workOrderId: string): WorkOrderExpensesResult {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const workOrder = MaintenanceRepository.getWorkOrderById(workOrderId);
+    if (!workOrder) {
+      throw new Error(`Work order ${workOrderId} not found or access denied`);
+    }
+
+    const bills = db.prepare(`
+      SELECT
+        b.id,
+        b.vendor_id,
+        b.invoice_number,
+        b.invoice_date,
+        b.due_date,
+        b.total_amount_cents,
+        b.amount_paid_cents,
+        b.status,
+        b.created_at,
+        v.first_name || ' ' || v.last_name as vendor_name,
+        v.company_name as vendor_company
+      FROM bills b
+      JOIN contacts v ON b.vendor_id = v.id AND v.deleted_at IS NULL
+      WHERE b.work_order_id = ? AND b.operator_id = ? AND b.deleted_at IS NULL AND b.status <> 'voided'
+      ORDER BY b.invoice_date DESC, b.created_at DESC
+    `).all(workOrderId, operatorId) as any[];
+
+    let totalInvoicedCents = 0;
+    let totalPaidCents = 0;
+    for (const b of bills) {
+      totalInvoicedCents += Number(b.total_amount_cents) || 0;
+      totalPaidCents += Number(b.amount_paid_cents) || 0;
+    }
+
+    const estimatedCents = workOrder.estimated_cost_cents || 0;
+    const varianceCents = estimatedCents - totalInvoicedCents;
+    const isOverBudget = estimatedCents > 0 && totalInvoicedCents > estimatedCents;
+    const percentUtilized = estimatedCents > 0 ? Math.round((totalInvoicedCents / estimatedCents) * 100) : 0;
+
+    return {
+      budget: {
+        estimated_cost_cents: estimatedCents,
+        actual_cost_cents: workOrder.actual_cost_cents || totalInvoicedCents,
+        total_invoiced_cents: totalInvoicedCents,
+        total_paid_cents: totalPaidCents,
+        remaining_variance_cents: varianceCents,
+        is_over_budget: isOverBudget,
+        percent_utilized: percentUtilized
+      },
+      bills: bills.map((b) => ({
+        id: b.id,
+        vendor_id: b.vendor_id,
+        vendor_name: b.vendor_name?.trim() || 'Unknown Vendor',
+        vendor_company: b.vendor_company || null,
+        invoice_number: b.invoice_number,
+        invoice_date: b.invoice_date,
+        due_date: b.due_date,
+        total_amount_cents: b.total_amount_cents,
+        amount_paid_cents: b.amount_paid_cents,
+        status: b.status,
+        created_at: b.created_at
+      }))
+    };
+  }
+
+  /**
+   * Retrieve structured data needed to generate a field technician dispatch sheet PDF.
+   *
+   * @param workOrderId - Unique identifier of the work order.
+   * @returns Dispatch PDF data contract or null if work order not found.
+   */
+  public static getWorkOrderDispatchData(workOrderId: string): WorkOrderDispatchPdfData | null {
+    const operatorId = RequestContext.getOperatorId();
+    const db = getDatabase();
+
+    const row = db.prepare(`
+      SELECT
+        w.*,
+        p.name as property_name,
+        p.address_line1,
+        p.address_line2,
+        p.city,
+        p.state,
+        p.postal_code,
+        u.unit_number,
+        r.first_name || ' ' || r.last_name as requester_name,
+        r.phone as requester_phone,
+        r.email as requester_email,
+        v.first_name || ' ' || v.last_name as vendor_name,
+        v.company_name as vendor_company,
+        v.phone as vendor_phone,
+        v.vendor_specialty,
+        o.name as operator_name
+      FROM work_orders w
+      JOIN properties p ON w.property_id = p.id AND p.operator_id = w.operator_id AND p.deleted_at IS NULL
+      JOIN operators o ON w.operator_id = o.id AND o.deleted_at IS NULL
+      LEFT JOIN units u ON w.unit_id = u.id AND u.operator_id = w.operator_id AND u.deleted_at IS NULL
+      LEFT JOIN contacts r ON w.requested_by_contact_id = r.id AND r.operator_id = w.operator_id AND r.deleted_at IS NULL
+      LEFT JOIN contacts v ON w.vendor_contact_id = v.id AND v.operator_id = w.operator_id AND v.deleted_at IS NULL
+      WHERE w.id = ? AND w.operator_id = ? AND w.deleted_at IS NULL
+    `).get(workOrderId, operatorId) as any;
+
+    if (!row) return null;
+
+    const fullAddress = [
+      row.address_line1,
+      row.address_line2,
+      `${row.city}, ${row.state} ${row.postal_code}`
+    ].filter(Boolean).join(' ');
+
+    const ticketNumber = `WO-${row.id.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+
+    const scheduledDateStr = row.scheduled_date
+      ? new Date(row.scheduled_date).toISOString().slice(0, 10)
+      : null;
+
+    const createdDateStr = row.created_at
+      ? new Date(row.created_at).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
+    return {
+      work_order_id: row.id,
+      ticket_number: ticketNumber,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      status: row.status,
+      property_name: row.property_name,
+      property_address: fullAddress,
+      unit_number: row.unit_number || null,
+      permission_to_enter: row.permission_to_enter === 1,
+      entry_instructions: row.entry_instructions || null,
+      requester_name: row.requester_name?.trim() || null,
+      requester_phone: row.requester_phone || null,
+      requester_email: row.requester_email || null,
+      vendor_name: row.vendor_name?.trim() || null,
+      vendor_company: row.vendor_company || null,
+      vendor_phone: row.vendor_phone || null,
+      vendor_specialty: row.vendor_specialty || null,
+      scheduled_date: scheduledDateStr,
+      created_date: createdDateStr,
+      estimated_cost_cents: row.estimated_cost_cents,
+      actual_cost_cents: row.actual_cost_cents,
+      operator_name: row.operator_name || 'Garrison Property Management',
+      assigned_vendors: MaintenanceRepository.listWorkOrderVendors(workOrderId).map((v) => ({
+        name: v.vendor_name || 'Vendor',
+        company: v.company_name || null,
+        role: v.role,
+        phone: v.phone || null
+      }))
+    };
+  }
+
+  /**
    * Compute aggregated metrics for dashboard presentation.
    *
    * @returns Counts of open, emergency, in-progress, and recently completed work orders.
    */
-  public static getMaintenanceMetrics(): {
+  public static getMaintenanceMetrics(filter?: { property_id?: string; portfolio?: string }): {
     openWorkOrders: number;
+    openOrders: number;
     emergencyWorkOrders: number;
     inProgressWorkOrders: number;
     completedLast30Days: number;
+    completedThisMonth: number;
+    avgResolutionTimeHours: number;
   } {
-    const orders = MaintenanceRepository.listWorkOrders();
+    const orders = MaintenanceRepository.listWorkOrders(filter);
     const openOrders = orders.filter((o) => ['open', 'assigned', 'in_progress', 'on_hold'].includes(o.status));
     const emergencyOrders = openOrders.filter((o) => o.priority === 'emergency');
     const inProgressOrders = openOrders.filter((o) => o.status === 'in_progress');
@@ -563,11 +1352,28 @@ export class MaintenanceRepository {
     const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
     const completedLast30Days = orders.filter((o) => o.status === 'completed' && (o.completed_date || 0) >= thirtyDaysAgo);
 
+    const startOfCurrentMonth = new Date();
+    startOfCurrentMonth.setDate(1);
+    startOfCurrentMonth.setHours(0, 0, 0, 0);
+    const startOfMonthMs = startOfCurrentMonth.getTime();
+
+    const completedThisMonth = orders.filter((o) => o.status === 'completed' && (o.completed_date || 0) >= startOfMonthMs);
+
+    const resolvedOrders = orders.filter((o) => o.status === 'completed' && o.completed_date && o.created_at && o.completed_date > o.created_at);
+    let avgResolutionTimeHours = 0;
+    if (resolvedOrders.length > 0) {
+      const totalResolutionMs = resolvedOrders.reduce((sum, o) => sum + (o.completed_date! - o.created_at), 0);
+      avgResolutionTimeHours = Math.round((totalResolutionMs / (resolvedOrders.length * 3600000)) * 10) / 10;
+    }
+
     return {
       openWorkOrders: openOrders.length,
+      openOrders: openOrders.length,
       emergencyWorkOrders: emergencyOrders.length,
       inProgressWorkOrders: inProgressOrders.length,
-      completedLast30Days: completedLast30Days.length
+      completedLast30Days: completedLast30Days.length,
+      completedThisMonth: completedThisMonth.length,
+      avgResolutionTimeHours
     };
   }
 

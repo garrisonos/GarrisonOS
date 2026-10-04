@@ -57,11 +57,11 @@ docs/
 
 ## Quick Reference Links
 
-* **Roadmap**: [Foundational MVP Roadmap](ROADMAP.md) | [Comprehensive Technical Review](LLMREVIEW20260915.md)
+* **Roadmap**: [Foundational MVP Roadmap](ROADMAP.md) | [Comprehensive Technical Review](LLMREVIEW20260915.md) | [UI Visual Tour](visual-tour.md)
 * **Canonical Specifications**: [Domain Models Specification](architecture/domain-models.md) | [REST API Specification](architecture/api-spec.md) | [Bootstrap Specification](architecture/bootstrap-spec.md)
 * **Core Architecture**: [Architecture Overview](architecture/overview.md) | [Multi-Tenancy Guide](architecture/multi-tenancy.md)
 * **Domain Modules**: [Accounting & AP](modules/accounting.md) | [Leasing & AR](modules/leases.md) | [Properties](modules/properties.md) | [Contacts](modules/contacts.md) | [Maintenance](modules/maintenance.md) | [Backup](modules/backup.md)
 * **Developer Workflow**: [Getting Started](development/getting-started.md) | [Testing Guide](development/testing.md) | [Frontend Presentation](development/frontend-guide.md)
 * **Production Operations**: [Self-Hosting Guide](deployment/self-hosting.md) | [Configuration Reference](deployment/configuration.md)
-* **Brand & Media Assets**: [Brand Assets & Media Kit](../README.md#brand-assets--media-kit) | [Primary Logo](assets/logo.png) | [Navigation Mark](assets/logo-nav.png) | [Social Card](assets/og-image.png)
+* **Brand & Media Assets**: [Brand Assets & Media Kit](../README.md#brand-assets--media-kit) | [Visual UI Tour](visual-tour.md) | [Primary Logo](assets/logo.png) | [Navigation Mark](assets/logo-nav.png) | [Social Card](assets/og-image.png)
 * **Legal & Security**: [Contributor License Agreement](legal/CLA.md) | [Security Policy](../SECURITY.md) | [Project License](../LICENSE)
