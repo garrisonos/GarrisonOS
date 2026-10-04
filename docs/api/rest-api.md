@@ -15,6 +15,7 @@ The GarrisonOS REST API is exposed by the headless Node.js backend (`api/server.
 | `Origin` | Optional | Must match an origin in `CORS_ALLOWED_ORIGINS` for browser cross-origin access |
 
 ### Operator Resolution Rules
+
 1. **Header Resolution**: When inspecting request headers, `X-Operator-ID` establishes operator identity for operational endpoints.
 2. **Token Fallback**: If `X-Operator-ID` is not provided in headers, non-batch operational endpoints resolve operator identity from the verified Bearer token's `opid` claim.
 3. **Mismatch Enforcement**: If an operator header is provided alongside a Bearer token, the header identity and token claim must agree. Mismatches return `401 UNAUTHORIZED`.

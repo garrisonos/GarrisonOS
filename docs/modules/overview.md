@@ -72,17 +72,24 @@ On startup, `core/module-loader.ts` discovers and initializes modules through th
 ## 4. Module Inventory & Near-Term Roadmap Capabilities
 
 For complete entity schemas and REST API endpoint specifications, refer to:
+
 - [Domain Models Specification](../architecture/domain-models.md)
 - [API Specification](../architecture/api-spec.md)
 
-| Module | Core Responsibility | Current Capabilities | Near-Term Roadmap Deliverables (Sprints 3–5) |
+| Module | Core Responsibility | Current Status | Roadmap Deliverables & Horizons |
 | :--- | :--- | :--- | :--- |
-| **`accounting`** | Fiduciary & Operational Financials | Double-entry general ledger, statutory trust segregation (`1010` vs `1020`), Three-Way Bank Reconciliation, Form 1099-NEC aggregation, Schedule E. | Single-entry `transactions` sunset (Sprint 4); Client Accounting & Fee Agreements (Sprint 4); Accounts Payable, ANSI PDF Check Printing & Bank Deposits (Sprint 5). |
-| **`backup`** | Data Portability & Disaster Recovery | Hot SQLite snapshots, automated `BackupScheduler` daemon, vacuuming, retention pruning, SHA-256 verification. | Packaging physical media attachments into verified backup archives alongside database snapshots (Sprint 3). |
-| **`contacts`** | Directory & Tax Compliance | Multi-role directory (tenants, clients, vendors), trade specializations, visual W-9 verification flags, tax classifications. | Universal threaded conversation notes (Sprint 4); prospect applicant intake (Future Horizon). |
-| **`leases`** | Rental Contracts & Receivables | Multi-party signatories, renewal modal, termination notice workflow, statutory deposit disposition countdowns. | Recurring itemized lease charges, late fee policy rules, credits/concessions, and tenant deposit refunds (Sprint 4). |
-| **`maintenance`** | Maintenance & Work Orders | Work order lifecycle, priority triage, trade-filtered vendor dispatch, automated make-ready orders. | Preventative recurring schedules (Sprint 4); expense recovery links to AP bills (Sprint 5); subtasks & timecards (Future Horizon). |
-| **`properties`** | Physical & Organizational Inventory | Portfolios, properties, units, vacancy metrics, unit turnover state machine. | Universal document attachments (Sprint 3); dynamic custom fields engine (Sprint 5). |
+| **`accounting`** | Fiduciary & Operational Financials | Active (Core) | Accounts Payable, check printing, deposits; Tier 1 Core Reports (Rent Roll, P&L, GL Detail, Delinquency Aging in Sprint 6); Tier 2–4 reports; electronic payments & NACHA rails (Sprint 9). |
+| **`attachments`** | Universal Media & Document Safety | Active (Core) | Universal polymorphic attachments, EXIF metadata stripping, PDF script sanitization, storage quotas. |
+| **`backup`** | Data Portability & Disaster Recovery | Active (Core) | Hot SQLite snapshots, automated `BackupScheduler` daemon, vacuuming, unified `.tar.gz` media backups. |
+| **`contacts`** | Directory & Tax Compliance | Active (Core) | Multi-role directory (tenants, owners, vendors), trade classifications, visual W-9 compliance badges. |
+| **`conversations`** | Polymorphic Threaded Notes | Active (Core) | Universal threaded conversation messages across properties, units, leases, work orders, contacts. |
+| **`leases`** | Rental Contracts & Receivables | Active (Core) | Multi-party signatories, renewals, terminations, itemized recurring charges, late fee policies, credits; eSign (Sprint 8); Section 8 (Sprint 9). |
+| **`maintenance`** | Maintenance & Work Orders | Active (Core) | Work order lifecycle, priority triage, vendor dispatch, spend thresholds, linked AP bills; checklists & timecards (Sprint 6); capital projects (Sprint 7). |
+| **`properties`** | Physical & Organizational Inventory | Active (Core) | Portfolios, properties, buildings, units, turnover state machine, amenities catalog, custom fields; parking & rentable assets (Sprint 7). |
+| **`importer`** | Self-Service Data Migration | Planned (Sprint 6 Core) | Universal CSV/Excel pre-import validator, entity mappers, and opening balance GL journal importer. |
+| **`inspections`** | Move-In/Out Condition Audits | Planned (Sprint 7 Core) | Mobile-first walk-through condition inspections, photo logs, tenant counter-signing, turnover automation. |
+| **`prospects`** | Lead-to-Lease CRM & Marketing | Planned (Sprint 8 Core) | Inquiring lead capture, campaign source attribution, interactive Kanban pipeline, showing tour scheduler. |
+| **`plugins/*`** | External Integrations & Extensions | Planned (Post-1.0 Horizons) | Dedicated platform syndication (Zillow, Apartments.com, Realtor.com), screening, telephony, AI OCR, IoT locks. |
 
 ---
 
@@ -91,3 +98,4 @@ For complete entity schemas and REST API endpoint specifications, refer to:
 1. **Zero Cross-Module Direct Imports**: Modules must never import directly from another module's internal files.
 2. **Asynchronous Cross-Module Communication**: All inter-module communication must use the in-process `EventBus` (`core/events.ts`).
 3. **Resilient Event Listeners**: All event subscribers must wrap their handlers in `try/catch` blocks to protect background execution flows.
+4. **Zero External Runtime Dependencies**: All core modules execute strictly on Node.js standard libraries (`node:http`, `node:sqlite`, `node:crypto`, `node:fs`, `node:path`). External third-party integrations belong exclusively in `plugins/`.

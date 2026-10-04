@@ -13,7 +13,7 @@ This guide details the procedures for deploying, supervising, and securing **Gar
 * **Runtime**: Node.js `v24.0.0+` (native `node:sqlite`, `node:crypto`, `node:http`). Zero external npm packages required.
 * **Network**: Loopback binding (`127.0.0.1:3000`) fronted by a reverse proxy (Caddy or Nginx) providing TLS termination and HSTS enforcement.
 
-```
+```text
                   [ Public Ingress: HTTPS / Port 443 ]
                                    │
                                    ▼
@@ -198,9 +198,9 @@ sudo systemctl start garrison.service
 
 Before exposing the instance to production users, verify:
 
-- [ ] `APP_SECRET` contains at least 64 hexadecimal characters (32 bytes) and is kept confidential.
-- [ ] Direct network ingress to port 3000 is blocked by host firewall (`ufw` or `iptables`); only reverse proxy access on ports 80/443 is permitted.
-- [ ] TLS certificate is active with strict HTTPS redirection enabled.
-- [ ] System initial setup (`/setup`) is completed and owner account credentials are saved in a password manager.
-- [ ] Automated backup scheduler is verified running via `/settings/backup`.
-- [ ] Directory permissions on `/opt/garrison/storage` and `/opt/garrison/data` are restricted to the `garrison` user.
+* [ ] `APP_SECRET` contains at least 64 hexadecimal characters (32 bytes) and is kept confidential.
+* [ ] Direct network ingress to port 3000 is blocked by host firewall (`ufw` or `iptables`); only reverse proxy access on ports 80/443 is permitted.
+* [ ] TLS certificate is active with strict HTTPS redirection enabled.
+* [ ] System initial setup (`/setup`) is completed and owner account credentials are saved in a password manager.
+* [ ] Automated backup scheduler is verified running via `/settings/backup`.
+* [ ] Directory permissions on `/opt/garrison/storage` and `/opt/garrison/data` are restricted to the `garrison` user.

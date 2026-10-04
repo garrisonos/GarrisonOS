@@ -3,6 +3,7 @@
 This document serves as the canonical domain dictionary and entity schema reference for **GarrisonOS**. It details the relational database schemas, column specifications, foreign key relationships, constraints, and double-entry accounting invariants across all current modules, Foundational MVP deliverables, and post-MVP horizons.
 
 All schemas strictly adhere to the engineering guardrails established in [`AGENTS.md`](../../AGENTS.md):
+
 - **Primary Keys**: UUIDv7 strings (`TEXT PRIMARY KEY`) generated via RFC 9562 standard.
 - **Operator Isolation**: Every operational table enforces row-level isolation via `operator_id TEXT NOT NULL REFERENCES operators(id)`.
 - **Financial Rigor**: Stored strictly as **INTEGER cents** (e.g., \$1,250.00 = `125000`). Floating-point arithmetic is prohibited.
@@ -15,7 +16,9 @@ All schemas strictly adhere to the engineering guardrails established in [`AGENT
 ## 1. Core System, Security & Governance
 
 ### 1.1 Operators (`operators`)
+
 System multi-tenancy boundary representing the managing property management entity.
+
 ```sql
 CREATE TABLE IF NOT EXISTS operators (
     id TEXT PRIMARY KEY,
@@ -30,7 +33,9 @@ CREATE TABLE IF NOT EXISTS operators (
 ```
 
 ### 1.2 Users & Authentication (`users`)
+
 Operator staff, property managers, subusers, and administrative users.
+
 ```sql
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -50,7 +55,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_operator_email ON users(operator_id,
 ```
 
 ### 1.3 Scoped Subuser Whitelists (`user_portfolio_access`, `user_module_access`)
+
 Junction tables enforcing dual-scoping security restrictions on operator subusers.
+
 ```sql
 CREATE TABLE IF NOT EXISTS user_portfolio_access (
     id TEXT PRIMARY KEY,
@@ -78,7 +85,9 @@ CREATE INDEX IF NOT EXISTS idx_user_module_access_lookup ON user_module_access(o
 ```
 
 ### 1.4 Configurable Role-Based Access Control (`roles`, `role_permissions`)
+
 Granular permission matrix supporting custom operator roles.
+
 ```sql
 CREATE TABLE IF NOT EXISTS roles (
     id TEXT PRIMARY KEY,
@@ -104,7 +113,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_role_permissions_unique ON role_permission
 ```
 
 ### 1.5 Universal Document Attachments & Media (`attachments`)
+
 Universal document storage metadata across all operational entities.
+
 ```sql
 CREATE TABLE IF NOT EXISTS attachments (
     id TEXT PRIMARY KEY,
@@ -124,7 +135,9 @@ CREATE INDEX IF NOT EXISTS idx_attachments_operator_entity ON attachments(operat
 ```
 
 ### 1.6 Immutable Audit Logs (`audit_logs`)
+
 Tamper-evident audit trail capturing all state-modifying actions.
+
 ```sql
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
@@ -145,7 +158,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_operator_entity ON audit_logs(operator
 ## 2. Properties, Units & Facilities
 
 ### 2.1 Portfolios (`portfolios`)
+
 Organizational groupings of properties (often mapping to client/investor ownership).
+
 ```sql
 CREATE TABLE IF NOT EXISTS portfolios (
     id TEXT PRIMARY KEY,
@@ -163,7 +178,9 @@ CREATE INDEX IF NOT EXISTS idx_portfolios_operator ON portfolios(operator_id) WH
 ```
 
 ### 2.2 Properties (`properties`)
+
 Physical real estate parcels or sites (e.g. multi-family complexes, apartment communities, or single-family homes).
+
 ```sql
 CREATE TABLE IF NOT EXISTS properties (
     id TEXT PRIMARY KEY,
@@ -210,7 +227,9 @@ CREATE INDEX IF NOT EXISTS idx_properties_operator_published ON properties(opera
 ```
 
 ### 2.3 Buildings (`buildings`)
+
 Structural edifices or distinct wings located within a property parcel.
+
 ```sql
 CREATE TABLE IF NOT EXISTS buildings (
     id TEXT PRIMARY KEY,
@@ -245,7 +264,9 @@ CREATE INDEX IF NOT EXISTS idx_buildings_operator_property ON buildings(operator
 ```
 
 ### 2.4 Units (`units`)
+
 Rentable physical premises within a property or building.
+
 ```sql
 CREATE TABLE IF NOT EXISTS units (
     id TEXT PRIMARY KEY,
@@ -290,7 +311,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_units_property_number ON units(property_id
 ```
 
 ### 2.5 Amenities Dictionary & Junctions (`amenities`, `property_amenities`, `unit_amenities`)
+
 Standardized catalog of property and unit amenities supporting syndication filters and listing presentation.
+
 ```sql
 CREATE TABLE IF NOT EXISTS amenities (
     id TEXT PRIMARY KEY,
@@ -330,6 +353,7 @@ CREATE INDEX IF NOT EXISTS idx_unit_amenities_unit ON unit_amenities(operator_id
 ## 3. Directory & Vendor Compliance (`contacts`)
 
 Directory of tenants, clients (owners), vendors, and contractors.
+
 ```sql
 CREATE TABLE IF NOT EXISTS contacts (
     id TEXT PRIMARY KEY,
@@ -373,7 +397,9 @@ CREATE INDEX IF NOT EXISTS idx_contacts_operator_type ON contacts(operator_id, c
 ## 4. Leasing & Receivables (AR)
 
 ### 4.1 Leases (`leases`, `lease_contacts`)
+
 Contractual agreements between operator and tenants for unit possession.
+
 ```sql
 CREATE TABLE IF NOT EXISTS leases (
     id TEXT PRIMARY KEY,
@@ -409,7 +435,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_lease_contacts_unique ON lease_contacts(op
 ```
 
 ### 4.2 Recurring Lease Charges (`recurring_lease_charges`)
+
 Itemized recurring charges added to monthly billing runs (pet rent, parking, utilities).
+
 ```sql
 CREATE TABLE IF NOT EXISTS recurring_lease_charges (
     id TEXT PRIMARY KEY,
@@ -428,7 +456,9 @@ CREATE INDEX IF NOT EXISTS idx_recurring_charges_lease ON recurring_lease_charge
 ```
 
 ### 4.3 Late Fee Policies (`late_fee_policies`)
+
 Jurisdiction-compliant rules governing late payment fees.
+
 ```sql
 CREATE TABLE IF NOT EXISTS late_fee_policies (
     id TEXT PRIMARY KEY,
@@ -449,6 +479,7 @@ CREATE INDEX IF NOT EXISTS idx_late_fee_operator ON late_fee_policies(operator_i
 ```
 
 ### 4.4 Credits, Concessions & Adjustments (`lease_credits_and_concessions`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS lease_credits_and_concessions (
     id TEXT PRIMARY KEY,
@@ -466,7 +497,9 @@ CREATE INDEX IF NOT EXISTS idx_lease_credits_lease ON lease_credits_and_concessi
 ```
 
 ### 4.5 Security Deposit Refunds (`security_deposit_refunds`)
+
 Statutory move-out accounting and deposit refund issuance.
+
 ```sql
 CREATE TABLE IF NOT EXISTS security_deposit_refunds (
     id TEXT PRIMARY KEY,
@@ -486,7 +519,9 @@ CREATE INDEX IF NOT EXISTS idx_deposit_refunds_lease ON security_deposit_refunds
 ```
 
 ### 4.6 Lease Clauses & Standard Legal Addenda (`lease_clauses`)
+
 Custom contractual terms, covenants, and legal addenda associated with specific leases.
+
 ```sql
 CREATE TABLE IF NOT EXISTS lease_clauses (
     id TEXT PRIMARY KEY,
@@ -504,7 +539,9 @@ CREATE INDEX IF NOT EXISTS idx_lease_clauses_lease ON lease_clauses(operator_id,
 ```
 
 ### 4.7 Commercial CAM & Expense Recovery Charges (`expense_recovery_charges`)
+
 Pro-rata common area maintenance (CAM), insurance, and property tax pass-through recoveries.
+
 ```sql
 CREATE TABLE IF NOT EXISTS expense_recovery_charges (
     id TEXT PRIMARY KEY,
@@ -527,6 +564,7 @@ CREATE INDEX IF NOT EXISTS idx_expense_recovery_lease ON expense_recovery_charge
 ## 5. General Ledger, Accounts Payable (AP) & Banking
 
 ### 5.1 Chart of Accounts & General Ledger
+
 ```sql
 CREATE TABLE IF NOT EXISTS chart_of_accounts (
     id TEXT PRIMARY KEY,
@@ -576,6 +614,7 @@ CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(operator_i
 ```
 
 ### 5.2 Accounts Payable: Bills & Allocations (`bills`, `bill_allocations`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS bills (
     id TEXT PRIMARY KEY,
@@ -619,6 +658,7 @@ CREATE INDEX IF NOT EXISTS idx_bill_allocations_bill ON bill_allocations(operato
 ```
 
 ### 5.3 Bill Disbursements & Vendor Check Printing (`bill_disbursements`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS bill_disbursements (
     id TEXT PRIMARY KEY,
@@ -648,6 +688,7 @@ CREATE INDEX IF NOT EXISTS idx_disbursement_lines_bill ON bill_disbursement_line
 ```
 
 ### 5.4 Recurring Scheduled Bills (`recurring_bills`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS recurring_bills (
     id TEXT PRIMARY KEY,
@@ -671,6 +712,7 @@ CREATE INDEX IF NOT EXISTS idx_recurring_bills_next ON recurring_bills(operator_
 ```
 
 ### 5.5 Bank Deposits & Clearing (`bank_deposits`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS bank_deposits (
     id TEXT PRIMARY KEY,
@@ -696,7 +738,9 @@ CREATE INDEX IF NOT EXISTS idx_deposit_lines_parent ON bank_deposit_lines(operat
 ```
 
 ### 5.6 Vendor Check Register & Check Printing (`vendor_checks`, `vendor_check_allocations`)
+
 Disbursement check register tracking printed paper checks, MICR numbering, void reissues, and bill settlements.
+
 ```sql
 CREATE TABLE IF NOT EXISTS vendor_checks (
     id TEXT PRIMARY KEY,
@@ -733,7 +777,9 @@ CREATE INDEX IF NOT EXISTS idx_check_alloc_bill ON vendor_check_allocations(oper
 ```
 
 ### 5.7 Vendor Credits & Credit Applications (`vendor_credits`, `vendor_credit_allocations`)
+
 AP credit memos and refunds issued by suppliers/vendors and applied against open bills.
+
 ```sql
 CREATE TABLE IF NOT EXISTS vendor_credits (
     id TEXT PRIMARY KEY,
@@ -772,6 +818,7 @@ CREATE INDEX IF NOT EXISTS idx_credit_alloc_bill ON vendor_credit_allocations(op
 ## 6. Client Portfolio Accounting & Management Fees
 
 ### 6.1 Client Capital Contributions (`client_capital_contributions`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS client_capital_contributions (
     id TEXT PRIMARY KEY,
@@ -792,6 +839,7 @@ CREATE INDEX IF NOT EXISTS idx_client_contrib_portfolio ON client_capital_contri
 ```
 
 ### 6.2 Client Distributions / Draws (`client_distributions`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS client_distributions (
     id TEXT PRIMARY KEY,
@@ -814,6 +862,7 @@ CREATE INDEX IF NOT EXISTS idx_client_dist_portfolio ON client_distributions(ope
 ```
 
 ### 6.3 Management Fee Agreements (`management_fee_agreements`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS management_fee_agreements (
     id TEXT PRIMARY KEY,
@@ -836,6 +885,7 @@ CREATE INDEX IF NOT EXISTS idx_fee_agreements_operator ON management_fee_agreeme
 ## 7. Maintenance & Work Orders
 
 ### 7.1 Work Orders (`work_orders`)
+
 ```sql
 CREATE TABLE IF NOT EXISTS work_orders (
     id TEXT PRIMARY KEY,
@@ -868,7 +918,9 @@ CREATE INDEX IF NOT EXISTS idx_work_orders_status ON work_orders(operator_id, st
 ```
 
 ### 7.2 Multi-Vendor Assignments (`work_order_vendors`)
+
 Junction table linking multiple primary contractors, subcontractors, or diagnostic specialists to a work order.
+
 ```sql
 CREATE TABLE IF NOT EXISTS work_order_vendors (
     id TEXT PRIMARY KEY,
@@ -886,6 +938,7 @@ CREATE INDEX IF NOT EXISTS idx_wov_vendor ON work_order_vendors(operator_id, ven
 ```
 
 ### 7.3 Work Order Subtasks (`work_order_tasks`) *(Sprint 6: Field Operations)*
+
 ```sql
 CREATE TABLE IF NOT EXISTS work_order_tasks (
     id TEXT PRIMARY KEY,
@@ -904,6 +957,7 @@ CREATE INDEX IF NOT EXISTS idx_wo_tasks_parent ON work_order_tasks(operator_id, 
 ```
 
 ### 7.4 Technician Timecards (`technician_timecards`) *(Sprint 6: Field Operations)*
+
 ```sql
 CREATE TABLE IF NOT EXISTS technician_timecards (
     id TEXT PRIMARY KEY,
@@ -926,7 +980,9 @@ CREATE INDEX IF NOT EXISTS idx_timecards_wo ON technician_timecards(operator_id,
 ## 8. Communications & Dynamic Custom Fields
 
 ### 8.1 Universal Conversations & Threaded Notes (`conversations`, `conversation_messages`)
+
 Polymorphic collaboration stream attached to operational entities.
+
 ```sql
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
@@ -956,7 +1012,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON conversation_messages(op
 ```
 
 ### 8.2 Dynamic Custom Fields Engine (`custom_field_definitions`)
+
 Schema-agnostic field definitions validating parent `custom_fields` JSON objects.
+
 ```sql
 CREATE TABLE IF NOT EXISTS custom_field_definitions (
     id TEXT PRIMARY KEY,
@@ -980,6 +1038,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_unique ON custom_field_defin
 ## 9. Post-MVP Future Horizons Entity Blueprints
 
 ### 9.1 Property Condition Inspections
+
 ```sql
 CREATE TABLE IF NOT EXISTS inspections (
     id TEXT PRIMARY KEY,
@@ -1020,6 +1079,7 @@ CREATE TABLE IF NOT EXISTS inspection_elements (
 ```
 
 ### 9.2 Prospects & Lead-to-Lease Pipeline
+
 ```sql
 CREATE TABLE IF NOT EXISTS marketing_campaigns (
     id TEXT PRIMARY KEY,
@@ -1057,7 +1117,9 @@ CREATE INDEX IF NOT EXISTS idx_prospects_campaign ON prospects(operator_id, camp
 ```
 
 ### 9.3 Scheduled Tenant Auto-Payments (`scheduled_tenant_payments`)
+
 Scheduled recurring tenant ACH/card payments executed against recurring charges and ledger balances.
+
 ```sql
 CREATE TABLE IF NOT EXISTS scheduled_tenant_payments (
     id TEXT PRIMARY KEY,
@@ -1088,7 +1150,9 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_payments_next ON scheduled_tenant_payme
 ## 10. Dynamic Custom Fields Subsystem
 
 ### 10.1 Custom Field Sections (`custom_field_sections`)
+
 Categorical section containers grouping custom field inputs on entity SSR presentation cards.
+
 ```sql
 CREATE TABLE IF NOT EXISTS custom_field_sections (
     id TEXT PRIMARY KEY,
@@ -1104,7 +1168,9 @@ CREATE INDEX IF NOT EXISTS idx_cf_sections_operator ON custom_field_sections(ope
 ```
 
 ### 10.2 Custom Field Definitions (`custom_field_definitions`)
+
 Schema definition records specifying input data types, validation rules, select options, and section associations.
+
 ```sql
 CREATE TABLE IF NOT EXISTS custom_field_definitions (
     id TEXT PRIMARY KEY,
@@ -1131,7 +1197,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_cf_defs_op_entity_name ON custom_field_def
 ## 11. Standardized Amenities & Marketing Syndication Subsystem
 
 ### 11.1 Amenity Catalog Definitions (`amenity_definitions`)
+
 Standardized amenity library organized into 5 operational categories (`community`, `unit`, `accessibility`, `pet`, `eco`).
+
 ```sql
 CREATE TABLE IF NOT EXISTS amenity_definitions (
     id TEXT PRIMARY KEY,
@@ -1149,7 +1217,9 @@ CREATE INDEX IF NOT EXISTS idx_amenity_def_operator ON amenity_definitions(opera
 ```
 
 ### 11.2 Property Amenities Junction (`property_amenities`)
+
 Associates community or parcel-level amenities with a property. Inherited automatically by child units.
+
 ```sql
 CREATE TABLE IF NOT EXISTS property_amenities (
     id TEXT PRIMARY KEY,
@@ -1164,7 +1234,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_prop_amenities_unique ON property_amenitie
 ```
 
 ### 11.3 Unit Amenities Junction (`unit_amenities`)
+
 Unit-level amenity assignments, unit-specific overrides, or exclusions of inherited property amenities.
+
 ```sql
 CREATE TABLE IF NOT EXISTS unit_amenities (
     id TEXT PRIMARY KEY,
@@ -1181,7 +1253,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_amenities_unique ON unit_amenities(op
 ```
 
 ### 11.4 Marketing Syndication Profiles (`marketing_syndication`)
+
 Listing copy, contact designations, and third-party portal publication channels.
+
 ```sql
 CREATE TABLE IF NOT EXISTS marketing_syndication (
     id TEXT PRIMARY KEY,

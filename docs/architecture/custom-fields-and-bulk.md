@@ -11,6 +11,7 @@ The Custom Fields Engine enables property management firms and owner-operators t
 ### 1.1 Supported Entity Domains
 
 Custom fields can be defined on the following entity types:
+
 * `property`: Parcels, developments, and community campuses.
 * `building`: Physical structures or residential towers within a property.
 * `unit`: Individual living or commercial spaces.
@@ -74,6 +75,7 @@ To support rapid onboarding and automated portfolio migration from legacy proper
 ### 2.2 Invariant: All-or-Nothing Transactional Rollback
 
 Bulk ingestion enforces strict transactional atomicity. If a single item in a batch violates validation guards, unique constraints, foreign key references, or custom field schemas:
+
 1. The entire database transaction is immediately aborted and rolled back.
 2. Zero records from the batch are persisted in the database.
 3. An HTTP 400 error envelope is returned identifying the exact item index and reason for failure.
@@ -109,6 +111,7 @@ Universal query parameters provide uniform filtering and sorting across all coll
 ### 3.1 Temporal Bounding (`*_start` and `*_end`)
 
 Endpoints accepting date or timestamp queries parse `*_start` and `*_end` filters:
+
 * Must be non-negative integer millisecond timestamps (`Date.now()`).
 * Floats, negative values, and non-numeric strings trigger immediate HTTP 400 `VALIDATION_ERROR`.
 * Enforces `*_start <= *_end`; inverted intervals are rejected fail-closed.
@@ -116,6 +119,7 @@ Endpoints accepting date or timestamp queries parse `*_start` and `*_end` filter
 ### 3.2 Multi-Key `order_by` Sorting
 
 Endpoints accept structured multi-column sorting:
+
 * Format: `order_by=field1:asc,field2:desc` (direction defaults to `ASC` if omitted).
 * **Column Whitelisting**: Every requested column is strictly validated against a permitted whitelist for that resource. Unwhitelisted columns or injection tokens (e.g. `DROP`, `SLEEP`, `UNION`) immediately return HTTP 400.
 * **Table Alias Qualification**: The query parser qualifies column names with table aliases (e.g. `w.created_at`) when executing multi-table joins to prevent ambiguous column errors.

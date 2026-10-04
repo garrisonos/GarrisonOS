@@ -95,18 +95,20 @@ Residential tenancies frequently involve multiple roommates, co-signers, and non
 ### 6.1. Recurring Charges
 
 In addition to baseline monthly rent, leases support recurring charge schedules (e.g. pet rent, reserved parking space, storage unit, trash surcharge). Recurring charges specify:
-- `charge_category`: `base_rent`, `pet_rent`, `parking_fee`, `storage_fee`, `utility_surcharge`, or `amenity_fee`.
-- `amount_cents`: Integer cents due per cycle.
-- `gl_account_id`: Active, operator-owned Chart of Accounts revenue account to credit upon billing generation.
-- `billing_frequency`: `monthly`, `quarterly`, `annually`, or `one_time`.
+
+* `charge_category`: `base_rent`, `pet_rent`, `parking_fee`, `storage_fee`, `utility_surcharge`, or `amenity_fee`.
+* `amount_cents`: Integer cents due per cycle.
+* `gl_account_id`: Active, operator-owned Chart of Accounts revenue account to credit upon billing generation.
+* `billing_frequency`: `monthly`, `quarterly`, `annually`, or `one_time`.
 
 ### 6.2. Concessions & Adjustments
 
 Tenant ledger balance adjustments fall into four audited categories:
-- `promotional_concession`: Move-in discount or marketing concession.
-- `maintenance_inconvenience`: Courtesy credit granted during repairs.
-- `discretionary_credit`: Manager adjustment for administrative reasons.
-- `bad_debt_writeoff`: Uncollectible debt write-off upon tenancy termination.
+
+* `promotional_concession`: Move-in discount or marketing concession.
+* `maintenance_inconvenience`: Courtesy credit granted during repairs.
+* `discretionary_credit`: Manager adjustment for administrative reasons.
+* `bad_debt_writeoff`: Uncollectible debt write-off upon tenancy termination.
 
 ---
 
@@ -119,10 +121,11 @@ Lease documents support modular clauses and legal addenda (`lease_clauses`). Cla
 ## 8. Late Fee Policies & Statutory Compliance
 
 Late fee policies define:
-- `grace_period_days`: Days elapsed after due date before delinquent calculation triggers.
-- `calculation_type`: `flat_fee`, `percentage_of_delinquency`, or `daily_accrual`.
-- `statutory_cap_cents`: Maximum legal fee limit governed by municipal or state statutes.
-- `delinquency_threshold_cents`: Minimum overdue balance required before a late fee is levied.
+
+* `grace_period_days`: Days elapsed after due date before delinquent calculation triggers.
+* `calculation_type`: `flat_fee`, `percentage_of_delinquency`, or `daily_accrual`.
+* `statutory_cap_cents`: Maximum legal fee limit governed by municipal or state statutes.
+* `delinquency_threshold_cents`: Minimum overdue balance required before a late fee is levied.
 
 ---
 

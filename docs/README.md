@@ -7,7 +7,7 @@
 Welcome to the official documentation for **GarrisonOS**, the zero-dependency, open-source property management platform engineered for independent landlords, property managers, and real estate operators.
 
 > [!WARNING]
-> **Pre-Production Disclaimer**: GarrisonOS is currently in active pre-production development. It is not ready for production environments and should not be installed by end users until the official Foundational MVP General Availability release (**v0.1.0 GA**, targeted at Sprint 5).
+> **Pre-Production Disclaimer**: GarrisonOS is currently in active pre-production development (Milestone 1 Core Engine Alpha `v0.1.0-alpha` completed, Milestone 2 Foundational Operator MVP `v0.3.0-alpha` in progress). It is not ready for production environments and should not be installed by end users until an official stable release.
 
 ---
 
@@ -16,8 +16,7 @@ Welcome to the official documentation for **GarrisonOS**, the zero-dependency, o
 ```text
 docs/
 ├── assets/                # Visual identity, brand logos, favicons, OG preview card & screenshots
-├── ROADMAP.md             # Phased development roadmap (Sprints 1-7) & Foundational MVP criteria
-├── LLMREVIEW20260915.md   # Comprehensive architectural review, phase metrics & scorecard
+├── ROADMAP.md             # Canonical Roadmap (Milestones 1–6 & Post-1.0 Horizons A–F)
 ├── architecture/          # Core engine design, multi-tenancy, data schemas, and blueprints
 │   ├── overview.md        # System architecture, zero-dependency engine, and request lifecycle
 │   ├── multi-tenancy.md   # Strict operator isolation, AsyncLocalStorage, and X-Operator-ID
@@ -57,7 +56,7 @@ docs/
 
 ## Quick Reference Links
 
-* **Roadmap**: [Foundational MVP Roadmap](ROADMAP.md) | [Comprehensive Technical Review](LLMREVIEW20260915.md) | [UI Visual Tour](visual-tour.md)
+* **Roadmap**: [Canonical Roadmap](ROADMAP.md) | [UI Visual Tour](visual-tour.md)
 * **Canonical Specifications**: [Domain Models Specification](architecture/domain-models.md) | [REST API Specification](architecture/api-spec.md) | [Bootstrap Specification](architecture/bootstrap-spec.md)
 * **Core Architecture**: [Architecture Overview](architecture/overview.md) | [Multi-Tenancy Guide](architecture/multi-tenancy.md)
 * **Domain Modules**: [Accounting & AP](modules/accounting.md) | [Leasing & AR](modules/leases.md) | [Properties](modules/properties.md) | [Contacts](modules/contacts.md) | [Maintenance](modules/maintenance.md) | [Backup](modules/backup.md)
