@@ -8,16 +8,16 @@
 </p>
 
 <p align="center">
-  <strong>The Open-Source, Zero-Dependency Property Management Engine</strong>
+  <strong>The Open-Source Alternative to AppFolio & RealPage</strong>
 </p>
 
 <p align="center">
-  <em>An open-source, modular, zero-dependency, lightweight property management framework designed to liberate property managers from closed vendor lock-in, inflexible data schemas, and proprietary software silos.</em>
+  <em>An open-source, modular, zero-dependency property management platform engineered with a 100% open-source Community Edition (GNU AGPLv3) and a Fair-Code Standard Edition free for up to 50 units. Designed to liberate landlords and property managers from predatory SaaS fees, data harvesting, and vendor monopolies.</em>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"></a>
-  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.2.0--alpha-yellow.svg" alt="Status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Dual:_AGPLv3_/_Fair--Code-blue.svg" alt="License: Dual AGPLv3 / Fair-Code"></a>
+  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.2.1--alpha-yellow.svg" alt="Status"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-v22.5%2B-green.svg" alt="Node.js"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg" alt="TypeScript"></a>
   <a href="#dependencies--runtime-prerequisites"><img src="https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg" alt="Runtime Dependencies"></a>
@@ -334,7 +334,10 @@ garrison-os/
 ├── CONTRIBUTING.md                    # Contribution guide & development standards
 ├── Dockerfile                         # Multi-stage zero-dependency Alpine container
 ├── docker-compose.yml                 # Turnkey production container orchestration
-├── LICENSE                            # AGPLv3 with Section 7(b) UI attribution addendum
+├── editions.json                      # Multi-Edition definitions (Community, Standard, Enterprise)
+├── LICENSE                            # Master Multi-Edition licensing manifest
+├── LICENSE.AGPL                       # GNU AGPLv3 for Community Edition
+├── LICENSE.FAIRCODE                   # GarrisonOS Fair-Code License v1.0 (Standard & Enterprise)
 ├── package.json                       # Zero runtime dependencies (typescript, @types/node)
 ├── tsconfig.json                      # Strict TypeScript compiler options
 │
@@ -626,12 +629,53 @@ Official GarrisonOS visual identity assets, icons, and logos are located under [
 
 ---
 
-## License & Governance
+## License & Multi-Edition Governance
 
-GarrisonOS is licensed under the [GNU Affero General Public License v3 (AGPLv3)](LICENSE) with a Section 7(b) attribution addendum.
+GarrisonOS is engineered under a **Manifest-Driven Multi-Edition Licensing Architecture** defined in [`editions.json`](editions.json) and governed by the master [`LICENSE`](LICENSE) manifest.
 
-Pursuant to Section 7(b), any web-facing or interactive deployment of this software must preserve and prominently display original author attribution and branding ("Powered by GarrisonOS" linking to [https://github.com/garrisonos/GarrisonOS](https://github.com/garrisonos/GarrisonOS)) in the primary application footer or navigation interface.
+### Module-Level License Declarations
 
-### Non-Profit Stewardship
+Every functional domain module under [`modules/`](modules/) explicitly declares its governing license and edition tier within its `module.json` manifest:
 
-GarrisonOS is maintained and governed by the GarrisonOS Foundation (501(c)(3) registration pending), a public-benefit organization dedicated to democratizing property management technology, preventing proprietary vendor lock-in, and providing community, workforce, and affordable housing operators with perpetual open-source data sovereignty.
+* **Community Modules** (`"license": "AGPL-3.0-or-later"`): 100% Free and Open Source commons, freely usable and forkable under GNU AGPLv3.
+* **Fair-Code / Commercial Modules** (`"license": "GarrisonOS-Fair-Code-1.0"`): Governed by the Fair-Code License for commercial portfolio scale.
+
+Dedicated packaging scripts assemble clean release distributions for each target:
+
+* `npm run package:community` — Packages a pure Open-Source Community Edition bundle containing only AGPL modules and installing `LICENSE.AGPL` as the root license.
+* `npm run package:standard` — Packages the official Fair-Code Standard Edition distribution with the 50-unit free tier, heartbeat engine, and `LICENSE.FAIRCODE`.
+
+### 1. GarrisonOS Community Edition (GNU AGPLv3)
+
+* **Scope**: 100% Free and Open Source software. Includes all baseline capabilities developed to date (properties, units, contacts, leases, attachments, accounting, maintenance, conversations, and backup).
+* **License**: [GNU Affero General Public License v3](LICENSE.AGPL) (AGPLv3).
+* **Telemetry**: Strictly offline-first with **Zero Outbound Telemetry** by default. Users may optionally opt-in to the Value-Exchange feature to receive real-time security bulletins and automated update notifications.
+* **Target Audience**: Independent landlords, DIY property managers, and open-source developers.
+
+### 2. GarrisonOS Standard Edition (Fair-Code v1.0)
+
+* **Scope**: The primary official distribution, packaged release archive, and container images.
+* **License**: [GarrisonOS Fair-Code License v1.0](LICENSE.FAIRCODE).
+* **Quota**: **Free for production use for up to fifty (50) managed units**. A ten (10) unit grace period (51 to 60 units) is permitted for a maximum duration of **fourteen (14) calendar days** to allow operators time to procure a commercial license or rebalance their portfolio before unit creation pauses.
+* **Telemetry**: Incorporates an automated update check and telemetry heartbeat to `updates.garrisonos.org` reporting non-PII system metadata.
+* **SaaS Prohibition**: Providing the software as a hosted commercial service or multi-tenant Software-as-a-Service (SaaS) to third parties is strictly prohibited without an express commercial license agreement.
+
+### 3. GarrisonOS Enterprise Edition (Commercial)
+
+* **Scope**: Scaled management firms and institutional operators managing 61+ units.
+* **License**: Commercial Enterprise License issued by the Project Owners.
+* **Features**: Custom unit capacity, dedicated commercial SLAs, and **offline-compatible Ed25519 cryptographic license keys** allowing 100% air-gapped, zero-telemetry private VPC execution.
+* **Hardware Locking & Server Migration Policy**: Enterprise license tokens are cryptographically locked to the host machine's hardware identity (`hw_<sha256>`). If you plan to migrate to a new physical server or cloud VM:
+  * Run `node scripts/fingerprint.js` on the target server and request an advance migration key from `licensing@garrisonos.org`.
+  * The new key will be issued with full duration, and your old key will automatically expire **one (1) week (7 days) after the new key is issued**, allowing zero-downtime parallel staging, database replication, and cutover.
+  * See the complete [Enterprise Hardware Locking & Server Migration Guide](docs/licensing/enterprise-migration.md) for details.
+
+### User Interface Attribution
+
+Pursuant to Section 7(b) of AGPLv3 and Section 5 of the Fair-Code License, all interactive, web-facing, or network deployments must preserve and prominently display original author attribution ("Powered by GarrisonOS" linking to [https://github.com/garrisonos/GarrisonOS](https://github.com/garrisonos/GarrisonOS)) in the primary application footer or navigation interface.
+
+### Non-Profit Stewardship & Inquiries
+
+GarrisonOS is maintained and governed by the GarrisonOS Project Owners and Foundation (501(c)(3) registration pending), dedicated to democratizing property management technology and liberating independent landlords from predatory software silos.
+
+For commercial licensing, enterprise keys, or partnership inquiries, contact: <support@garrisonos.org>

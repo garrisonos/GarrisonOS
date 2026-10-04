@@ -31,7 +31,7 @@ FROM node:24-alpine AS runner
 LABEL maintainer="GarrisonOS Contributors <contributors@garrisonos.org>"
 LABEL org.opencontainers.image.title="GarrisonOS"
 LABEL org.opencontainers.image.description="Zero-dependency open-source real estate property management engine"
-LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
+LABEL org.opencontainers.image.licenses="LicenseRef-GarrisonOS-Fair-Code-1.0 OR AGPL-3.0-or-later"
 
 WORKDIR /app
 

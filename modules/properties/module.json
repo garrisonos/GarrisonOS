@@ -1,6 +1,8 @@
 {
   "id": "properties",
   "name": "Properties & Portfolios",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Management of portfolios, physical properties, and rentable units.",
   "navigation": [
     {

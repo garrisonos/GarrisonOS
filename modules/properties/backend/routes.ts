@@ -230,6 +230,11 @@ export function registerRoutes(router: Router): void {
       const unit = PropertiesRepository.createUnit(req.body);
       successResponse(res, { unit }, 201);
     } catch (err: any) {
+      if (err?.code === 'LICENSE_LIMIT_EXCEEDED') {
+        return errorResponse(res, 'LICENSE_LIMIT_EXCEEDED', err.message, 402, [
+          { unit_count: err.unitCount, limit: err.limit }
+        ]);
+      }
       if (err?.code === 'VALIDATION_ERROR') {
         return errorResponse(res, 'VALIDATION_ERROR', err.message, 400, err.details);
       }

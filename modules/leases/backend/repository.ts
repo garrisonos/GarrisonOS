@@ -5,6 +5,7 @@ import { generateUUIDv7 } from '../../../core/crypto.js';
 import { eventBus } from '../../../core/events.js';
 import { JournalService } from '../../accounting/backend/journal.js';
 import { CustomFieldsService } from '../../../core/custom-fields.js';
+import { assertUnitQuota } from '../../../core/license.js';
 
 /**
  * Itemized recurring charge attached to a lease contract.
@@ -345,6 +346,9 @@ export class LeasesRepository {
   }): LeaseWithDetails {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
+    if (data.status === 'active' || data.status === 'month_to_month') {
+      assertUnitQuota(db);
+    }
     const leaseId = generateUUIDv7();
     const now = Date.now();
 
@@ -412,6 +416,9 @@ export class LeasesRepository {
 
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
+    if ((data.status === 'active' || data.status === 'month_to_month') && existing.status !== 'active' && existing.status !== 'month_to_month') {
+      assertUnitQuota(db);
+    }
     const now = Date.now();
 
     const customFieldsJson = CustomFieldsService.prepareForWrite('lease', data.custom_fields, existing.custom_fields);
@@ -465,6 +472,12 @@ export class LeasesRepository {
   ): LeaseWithDetails | null {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
+    if (status === 'active' || status === 'month_to_month') {
+      const existing = LeasesRepository.getLeaseById(id);
+      if (existing && existing.status !== 'active' && existing.status !== 'month_to_month') {
+        assertUnitQuota(db);
+      }
+    }
     const now = Date.now();
 
     if (status === 'terminated' && (noticeDate !== undefined || moveOutDate !== undefined)) {

@@ -10,6 +10,7 @@ import {
 } from './ledger.js';
 import { JournalService, CreateJournalLineInput } from './journal.js';
 import { ChartOfAccountsRepository } from './chart_of_accounts.js';
+import { generateFiduciaryAuditSeal, FiduciaryAuditSeal } from '../../../core/license.js';
 
 export interface CreateTransactionData {
   transaction_type: TransactionRecord['transaction_type'];
@@ -843,7 +844,13 @@ export class AccountingRepository {
       lease_deposits_total_cents: leaseDepositsTotalCents,
       in_balance: inBalance,
       reconciliation_difference_cents: diffCents,
-      leases: activeLeaseItems
+      leases: activeLeaseItems,
+      fiduciary_seal: generateFiduciaryAuditSeal(db, 'Three-Way Bank Reconciliation', {
+        asOf,
+        glTrustCashCents,
+        tenantDepositsLiabilityCents,
+        inBalance
+      })
     };
   }
 
@@ -979,7 +986,12 @@ export class AccountingRepository {
       total_vendors_count: vendorRecords.length,
       qualifying_vendors_count: qualifying.length,
       total_qualifying_payments_cents: totalQualifyingCents,
-      vendors: vendorRecords
+      vendors: vendorRecords,
+      fiduciary_seal: generateFiduciaryAuditSeal(db, 'IRS Form 1099-NEC Report', {
+        taxYear,
+        qualifyingVendorsCount: qualifying.length,
+        totalQualifyingPaymentsCents: totalQualifyingCents
+      })
     };
   }
 
@@ -1058,6 +1070,7 @@ export interface ThreeWayReconciliationResult {
   in_balance: boolean;
   reconciliation_difference_cents: number;
   leases: ReconciliationLeaseItem[];
+  fiduciary_seal?: FiduciaryAuditSeal;
 }
 
 /**
@@ -1084,6 +1097,7 @@ export interface Vendor1099ReportResult {
   qualifying_vendors_count: number;
   total_qualifying_payments_cents: number;
   vendors: Vendor1099Record[];
+  fiduciary_seal?: FiduciaryAuditSeal;
 }
 
 /**

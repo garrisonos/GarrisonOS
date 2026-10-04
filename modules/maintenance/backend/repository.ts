@@ -957,7 +957,7 @@ export class MaintenanceRepository {
       FROM work_order_vendors wov
       JOIN contacts c ON wov.vendor_contact_id = c.id AND c.operator_id = wov.operator_id AND c.deleted_at IS NULL
       WHERE wov.work_order_id = ? AND wov.operator_id = ? AND wov.deleted_at IS NULL
-      ORDER BY wov.assigned_at ASC
+      ORDER BY wov.assigned_at ASC, wov.id ASC
     `).all(workOrderId, operatorId) as any[];
 
     return rows.map((r) => ({

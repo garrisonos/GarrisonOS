@@ -3,6 +3,7 @@ import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { buildTemporalSqlConditions } from '../../../api/query-parser.js';
 import { CustomFieldsService } from '../../../core/custom-fields.js';
+import { assertCanAddUnit } from '../../../core/license.js';
 
 /**
  * Permitted amenity catalog categories.
@@ -677,6 +678,10 @@ export class PropertiesRepository {
   }): Unit {
     const operatorId = RequestContext.getOperatorId();
     const db = getDatabase();
+
+    // Enforce Fair-Code and Enterprise unit quotas
+    assertCanAddUnit(db);
+
     const id = generateUUIDv7();
     const now = Date.now();
 

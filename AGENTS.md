@@ -102,8 +102,14 @@ Automated agents and contributors must observe these cross-dialect portability r
 
 * Domain features live inside self-contained modules under `modules/<module_name>/` with dedicated `backend/`, `frontend/`, and `test/` subdirectories.
 * Every module must provide a `module.json` manifest defining its metadata, routes, permissions, and dependencies.
+* **Mandatory Edition Tagging**: Every `module.json` must explicitly declare `"edition": "community" | "standard" | "enterprise"` and `"license": "AGPL-3.0-or-later" | "GarrisonOS-Fair-Code-1.0"`.
+* **Agent Edition Clarification Mandate**: When introducing new capabilities, automated agents must explicitly verify the target edition. If user requirements are ambiguous about whether a capability belongs in Community, Standard, or Enterprise, agents MUST ask for clarification before writing code.
+* **High-Granularity Modular Design**: To maintain clean edition boundaries without code entanglement, commercial or enterprise capabilities must never be hardcoded directly into baseline community modules. Instead:
+  * Implement enterprise capabilities as **separate companion modules** (e.g. `modules/accounting_compliance/`).
+  * Use **UI Slots** (`slots` in `module.json`) for presentation extension points so commercial tabs and metrics do not pollute Community templates.
+  * Rely on the asynchronous `EventBus` (`core/events.ts`) for state synchronization across modules.
 * **Zero Cross-Module Direct Imports**: Modules must never import directly from another module's internal implementation files.
-* **Cross-Module Communication**: Must use the asynchronous in-process `EventBus` (`core/events.ts`).
+* **Zero Cross-License Extraction**: Agents and contributors must never extract, backport, or relicense code from Fair-Code or Enterprise modules into the Community Edition or any open-source fork.
 * **Handler Resilience**: All `EventBus` listeners must wrap their execution in `try/catch` blocks to ensure background failures do not crash the process or interrupt the request flow.
 
 ### Standardized REST API Envelopes
@@ -152,7 +158,10 @@ All API endpoints must return structured JSON envelopes conforming to `api/respo
 * **Password Hashing**: Native `node:crypto.scrypt` with a random 16-byte salt, formatted as `$scrypt$N=16384,r=8,p=1$salt$hash`. Verification must use `node:crypto.timingSafeEqual` (use `hashPassword` and `verifyPassword` from `core/crypto.ts`).
 * **Auth Tokens**: Signed HMAC-SHA256 tokens using native `node:crypto` (use `createToken` and `verifyToken` from `core/crypto.ts`).
 * **Network & Loopback Binding**: The Node.js engine must bind strictly to `127.0.0.1` (loopback). Direct untrusted external network exposure is forbidden.
-* **Zero Outbound Telemetry**: The engine operates offline-first. No unsolicited external network calls, tracking, or remote telemetry are permitted.
+* **Edition Telemetry Invariants & Privacy**:
+  * **Community Edition**: Operates strictly offline-first with **Zero Outbound Telemetry** by default. Network calls are permitted strictly when the operator opts in to the Value-Exchange feature (receiving real-time security bulletins and automated update notifications).
+  * **Standard Edition**: The daily heartbeat ping is restricted to system metadata (`instance_id`, `version`, `active_unit_count`, `license_key_hash`). **Zero Tenant PII, bank details, or financial ledger data may EVER be transmitted in telemetry.**
+  * **Enterprise Edition**: Must remain 100% functional in completely air-gapped environments without network access via Ed25519 offline license keys.
 * **File Uploads & Media Storage**: Uploaded files must be stored outside the web root (`STORAGE_PATH`), validate explicit allowed MIME/extension whitelists, enforce byte size limits, and validate resolved paths against directory traversal attacks via `path.resolve()`.
 
 ### Safe TypeScript Web Presentation

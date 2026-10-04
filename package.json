@@ -8,6 +8,8 @@
     "build": "tsc",
     "setup": "node scripts/setup.js",
     "start": "node scripts/serve.js",
+    "start:community": "node scripts/serve.js --edition=community",
+    "start:standard": "node scripts/serve.js --edition=standard",
     "start:engine": "node dist/api/server.js",
     "dev": "node scripts/serve.js --dev",
     "dev:engine": "node --watch dist/api/server.js",
@@ -18,7 +20,9 @@
     "check": "node scripts/check-hygiene.js && node scripts/check-security.js",
     "test": "node scripts/test.js",
     "test:core": "node scripts/test.js core",
-    "test:module": "node scripts/test.js"
+    "test:module": "node scripts/test.js",
+    "package:community": "node scripts/package-community.js",
+    "package:standard": "node scripts/package-standard.js"
   },
   "keywords": [
     "property-management",
@@ -29,7 +33,7 @@
     "multi-tenant"
   ],
   "author": "GarrisonOS Contributors",
-  "license": "AGPL-3.0-or-later",
+  "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
     "@types/node": "^24.13.4",
     "typescript": "^5.8.0"

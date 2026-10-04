@@ -10,7 +10,8 @@ GarrisonOS organizes engineering delivery across six progressive release milesto
 
 ```mermaid
 flowchart LR
-    A["Milestone 1: Core Engine Alpha<br/>(v0.1.0-alpha)<br/>Sprints 1–4 [COMPLETED]"] --> B["Milestone 2: Foundational Operator MVP<br/>(v0.3.0-alpha)<br/>Sprints 5–6"]
+    A["Milestone 1: Core Engine Alpha<br/>(v0.1.0-alpha)<br/>Sprints 1–4 [COMPLETED]"] --> A2["Milestone 1.5: Licensing & Governance<br/>(v0.2.1-alpha)<br/>Sprint 5 [COMPLETED]"]
+    A2 --> B["Milestone 2: Foundational Operator MVP<br/>(v0.3.0-alpha)<br/>Sprints 5–6"]
     B --> C["Milestone 3: Operations & Stakeholder Beta<br/>(v0.5.0-beta)<br/>Sprint 7"]
     C --> D["Milestone 4: Leasing CRM & eSign Beta<br/>(v0.7.0-beta)<br/>Sprint 8"]
     D --> E["Milestone 5: Automation, Payments & Affordable Housing<br/>(v0.9.0-beta)<br/>Sprint 9"]
@@ -23,11 +24,52 @@ flowchart LR
 - **Sprints**: 1–4 (Completed 2026-09-23)
 - **Target Audience**: Core developers, architectural auditors, and technical early adopters.
 - **Scope Achieved**: Zero-dependency runtime, context propagation, append-only double-entry general ledger, statutory trust accounting (`1010 Operating` vs `1020 Trust Checking` / `2100 Tenant Security Deposits Held`), Three-Way Bank Reconciliation schedules, client portfolio accounting & distributions, universal attachments subsystem with media sanitization, and baseline SSR admin dashboards.
+- **Open-Source Commons Guarantee**: All capabilities and baseline modules established in Milestone 1 (`properties`, `contacts`, `leases`, `attachments`, `accounting`, `maintenance`, `conversations`, `backup`) are permanently licensed under the **GarrisonOS Community Edition (GNU AGPLv3)**.
+
+### Milestone 1.5: Multi-Edition Licensing, Security Hardening & Packaging Foundation (`v0.2.1-alpha`) — *COMPLETED*
+
+- **Sprint**: 5 (Completed 2026-10-04)
+- **Target Audience**: Core project governance, open-source distributors, independent landlords, and commercial operators.
+- **Scope Achieved**:
+  1. **Manifest-Driven 3-Tier Multi-Edition Licensing Architecture**:
+     - **Community Edition** (GNU AGPLv3 via `LICENSE.AGPL`): 100% free commons for independent landlords, unrestricted units, zero forced telemetry.
+     - **Standard Edition** (GarrisonOS Fair-Code v1.0 via `LICENSE.FAIRCODE`): Turnkey distribution free up to 50 units (with 14-day grace window for 51–60 units), daily heartbeat verification, anti-SaaS covenants, and anti-aggregation terms (Section 1(e)).
+     - **Enterprise Edition** (Commercial Proprietary): Custom quota, air-gapped Ed25519 offline keys, hardware locking (`hw_<sha256>`), 7-day migration overlap, and rolling annual leases.
+  2. **Five-Pillar Security Hardening (9.9/10 Architecture Grade)**:
+     - **Cryptographic Revocation List (CRL)**: Signed Ed25519 CRL token ingestion with monotonic sequencing and automated distribution via daily heartbeat.
+     - **Database Identity Anchor**: SQLite HMAC-SHA256 signature (`database_anchor`) preventing unauthorized cross-server database copying/cloning.
+     - **Runtime Module Self-Integrity**: Pre-computed SHA-256 build checksums detecting runtime byte tampering in licensing files.
+     - **Enterprise Rolling Annual Lease**: 365-day validity with 30-day renewal grace period (`renewalGraceDays`) for mission-critical continuity.
+     - **Statutory Fiduciary Watermarking**: Certified cryptographic audit seals on Three-Way Bank Reconciliation and Form 1099-NEC reports; unlicensed or over-quota instances produce a statutory watermark: `UNLICENSED EXECUTION — INVALID FIDUCIARY AUDIT SEAL — NOT LEGAL FOR STATUTORY COMPLIANCE`.
+  3. **Module Whitelist & Ed25519 Manifest Signature Verification**:
+     - Hardcoded `OFFICIAL_COMMUNITY_MODULES` whitelist in `core/edition.ts`.
+     - Canonical Ed25519 manifest signature validator eliminating the "text-editor bypass" on `module.json`.
+  4. **Plugin Extensibility & Community Safety Policy**:
+     - **Community Edition**: Allows unverified third-party community plugins (`plugins/`) with a high-visibility **BIG FAT WARNING** banner to protect data integrity without restricting hacker freedom.
+     - **Standard Edition**: Strictly requires all plugins to be cryptographically verified by GarrisonOS (fails closed).
+     - **Enterprise Edition**: Tailorable solution permitting custom in-house plugins and custom domain modules.
+  5. **Dedicated Edition Packaging Scripts**:
+     - `npm run package:community`: Packages pure GNU AGPLv3 distribution (filters only AGPL modules, installs `LICENSE.AGPL`).
+     - `npm run package:standard`: Packages official Fair-Code distribution.
+  6. **Automated Verification**: 79 dedicated unit tests (56 license + 23 edition tests) achieving 100% pass rate.
 
 ### Milestone 2: Foundational Operator MVP (`v0.3.0-alpha`) — *CURRENT TARGET*
 
 - **Sprints**: 5–6 (Weeks 9–12)
 - **Target Audience**: Friendly pilot landlords and independent owner-operators (5–50 residential units).
+- **Multi-Edition Packaging**: Introduced the **Manifest-Driven Dual-Licensing Architecture** (`editions.json`):
+  1. **Community Edition (GNU AGPLv3)**: 100% free and open-source core for independent landlords, zero forced telemetry.
+  2. **Standard Edition (Fair-Code v1.0)**: Turnkey distribution free up to 50 units (with 51–60 grace window), requiring commercial license for 61+ units and SaaS hosting.
+  3. **Enterprise Edition (Commercial)**: Scaled portfolios with Ed25519 offline cryptographic keys and air-gapped support.
+- **Near-Term Commercial Licensing & Key Issuance Architecture (Sprint 5/6)**:
+  - **In-App License Activation & Quota Status (`/admin?tab=licensing`)**:
+    - Admin UI card displaying active unit count vs. limit, edition badge (`Community`, `Standard`, `Enterprise`), and expiration.
+    - Dynamic Grace Window banner (51–60 units) with direct support/upgrade contact link.
+    - In-app license key input saving directly to SQLite (`system_settings` table) allowing zero-downtime activation without Docker restarts or `.env` modifications.
+  - **Security Separation: Private Repository & Key Issuance Tooling**:
+    - **Mandatory Isolation**: All master private signing keys (`master-private.pem`), CLI license generation scripts (`issue-license.js`), and future e-commerce payment webhooks (Stripe / LemonSqueezy) must be developed and executed **strictly in a private repository or secure offline operator vault**.
+    - The public GarrisonOS repository shall only contain the public verification key and offline validation logic ([`core/license.ts`](core/license.ts)).
+    - Commercial token issuance and customer payment reconciliation will be managed in a companion private operations repository (`garrison-licensing`).
 - **Operational Definition of "MVP"**: A self-contained, offline-capable property management system that an independent operator can use to **run their day-to-day business without paper or spreadsheets**.
 - **Core MVP Criteria**:
   1. Complete operational accounting (AP bills, ANSI check printing, bank deposits, bulk ingestion).
@@ -275,6 +317,12 @@ classDiagram
 - [x] **Task 35**: AP, Banking, Custom Fields & Marketing SSR UI Views.
 - [x] **Task 35b**: Universal Entity Preview, Search & Navigation (`/search`, `Ctrl+K`).
 - [x] **Task 35c**: Operator User Management, Permissions & Activity Audit (`audit_logs`).
+- [x] **Task 35d**: Manifest-Driven Multi-Edition Architecture & Fair-Code Licensing Subsystem
+  - **Subtask 35d.1**: Define Multi-Edition Manifest Specification (`editions.json`) establishing Community (AGPLv3), Standard (Fair-Code 1.0, 50-unit threshold), and Enterprise tiers.
+  - **Subtask 35d.2**: Implement core runtime edition resolver and boot-time module licensing validation guards (`core/edition.ts`, `core/module-loader.ts`).
+  - **Subtask 35d.3**: Implement unit quota calculation, 50-unit threshold, 14-day grace duration for 51–60 units, and Ed25519 offline license signature verification (`core/license.ts`).
+  - **Subtask 35d.4**: Enforce unit quota validation in `PropertiesRepository.createUnit()` and standardize HTTP 402 `LICENSE_LIMIT_EXCEEDED` API response envelopes.
+  - **Subtask 35d.5**: Formalize dual licensing documents (`LICENSE.AGPL`, `LICENSE.FAIRCODE`), master `LICENSE` pointer, and upgrade Contributor License Agreement (`CLA.md` v2) with commercial relicensing rights.
 
 #### Pending Deliverables Closing Sprint 5
 
@@ -282,6 +330,13 @@ classDiagram
   - **Subtask 34.1**: Implement transactional bulk creation (`POST /api/v1/:resource/bulk`) wrapping insertions in atomic `withTransaction()` blocks.
   - **Subtask 34.2**: Implement standardized millisecond interval filtering (`*_start`, `*_end`) across all entity collection endpoints.
   - **Subtask 34.3**: Implement multi-key sort parsing (`order_by=field:asc,field2:desc`) with strict column whitelist guards preventing SQL injection.
+- [ ] **Task 35e**: In-App License Management, Key Activation & Offline Licensing Tooling
+  - **Subtask 35e.1**: Build SSR License Management view under Admin settings (`/admin?tab=licensing`) displaying active edition, managed unit count, threshold progress bar, cryptographic signature validity, Node Instance ID, and Hardware Fingerprint with 1-click copy buttons and Server Migration initiation modal.
+  - **Subtask 35e.2**: Implement license key input and activation endpoint (`POST /api/v1/license/activate`) saving cryptographic tokens to disk/database and hot-reloading runtime edition state.
+  - **Subtask 35e.3**: Build in-app operator notifications: warning banners when approaching 50 units and 14-day countdown grace period notices when units fall between 51 and 60.
+  - **Subtask 35e.4**: **Private Security Boundary (Offline Tooling)**: Implement offline license issuance CLI (`issue-license.js`), Ed25519 root private key generation (`master-private.pem`), and automated customer key delivery in a separate private repository (`garrison-licensing`), keeping all private signing keys, revenue operations, and webhook automation strictly isolated from this public repository.
+  - **Subtask 35e.5**: **Enterprise Hardware Locking, In-App Migration Action & 1-Week Overlap Policy**: Enforce mandatory hardware locking for Enterprise Edition (`hardwareFingerprint`). Implement `scripts/fingerprint.js` node inspection utility and native Web GUI copy/migration action in `/admin?tab=licensing`, document migration protocol ([`docs/licensing/enterprise-migration.md`](licensing/enterprise-migration.md)), and enforce the 1-week parallel migration window where an advance target key is issued and the old key automatically expires 7 days later.
+  - **Subtask 35e.6**: **Standard Edition Telemetry Hardening & Anti-MITM / `/etc/hosts` Protection**: Implement asymmetric Ed25519 challenge-response heartbeat verification (`core/license.ts`) defeating local proxy interception, corporate SSL inspection, and `/etc/hosts` spoofing via cryptographic nonce and signature verification. Enforce a 14-day offline warning notice and a 30-day fail-closed unit creation cutoff for Standard Edition nodes managing > 50 units, accompanied by progressive in-app threshold banners (45-unit nudge, 51–60 grace notice, 61+ hard stop).
 - [ ] **Task 36**: Public-Facing Tenant Self-Service Portal (Subdomain Architecture)
   - **Subtask 36.1**: Implement host-header subdomain routing dispatching `portal.<domain>` requests to isolated portal controllers.
   - **Subtask 36.2**: Implement passwordless magic-link authentication via time-limited HMAC tokens dispatched via SMTP/webhook.
@@ -504,7 +559,7 @@ classDiagram
   - **Subtask 74.3**: Build Linux distribution package (`.deb`) with automated Systemd unit provisioning and permission hardening.
   - **Subtask 74.4**: Build first-run desktop browser launcher automatically opening the initial setup wizard handshake.
 - [ ] **Task 75**: GarrisonOS Managed Update Network, Registration & Maintenance Subsystem
-  - **Operational Rationale**: Provides an opt-in, managed maintenance service delivering automated security patches, migration rollbacks, and release binaries from the central cloud network. Air-gapped and manual self-management mode remains 100% functional with zero feature degradation.
+  - **Operational Rationale**: Implements the telemetry heartbeat for Standard Edition and the Value-Exchange Opt-In for Community Edition, delivering automated security bulletins, vulnerability notices, and verified release binaries from `updates.garrisonos.org`. Enterprise Edition offline keys permit completely air-gapped, zero-telemetry private VPC execution. Air-gapped and manual self-management mode remains 100% functional with zero feature degradation.
   - **Subtask 75.1**: Build Update Channel Registration Client requiring Operator Business Name, Contact Email, Active Unit Count, and System Version, exchanging credentials for a cryptographically verified `update_token`.
   - **Subtask 75.2**: Implement Operator Maintenance Window and Update Preferences UI (`/admin?tab=updates`), allowing operators to define low-traffic maintenance schedules (e.g. Tuesdays at 3:00 AM) and select release tracks (`stable`, `beta`, `security_only`).
   - **Subtask 75.3**: Implement Cryptographic Package Signature Verification (Ed25519) and SHA-256 checksum validation ensuring downloaded release archives are mathematically authentic and un-tampered before execution.

@@ -5,6 +5,7 @@ import { Router } from '../api/router.js';
 import { EventBus } from './events.js';
 import { runMigrations } from '../database/migrator.js';
 import { getApplicationVersion } from './version.js';
+import { assertModuleLicensing } from './edition.js';
 
 export interface ModuleNavigationItem {
   label: string;
@@ -17,11 +18,14 @@ export interface ModuleNavigationItem {
 export interface ModuleManifest {
   id: string;
   name: string;
+  edition?: 'community' | 'standard' | 'enterprise' | 'commercial';
+  license?: string;
   version: string;
   description: string;
   navigation?: ModuleNavigationItem[];
   slots?: string[];
   dependencies?: string[];
+  signature?: string;
 }
 
 export interface LoadedModule {
@@ -56,6 +60,10 @@ export async function loadModules(
 
     const manifestRaw = fs.readFileSync(manifestPath, 'utf8');
     const manifest = JSON.parse(manifestRaw) as ModuleManifest;
+    manifest.version = manifest.version || '0.1.0';
+
+    // Enforce edition-level licensing protection
+    assertModuleLicensing(manifest);
 
     // 2. Load backend routes if present
     const distModDir = path.resolve(baseDir, 'dist/modules', entry, 'backend');

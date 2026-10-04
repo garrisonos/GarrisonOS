@@ -1,0 +1,100 @@
+GARRISONOS FAIR-CODE LICENSE
+Version 1.0, October 2026
+
+Copyright (c) 2026 GarrisonOS Project Owners and Contributors.
+Contact: support@garrisonos.org
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, and distribute copies of the Software,
+subject to the following conditions:
+
+1. COMMERCIAL USE THRESHOLD & MANAGED UNIT QUOTA:
+   (a) You may use the Software for production operations free of charge if the
+       total number of rental, residential, or commercial units managed across all
+       properties operated by your legal entity, affiliates, or operating group does
+       not exceed fifty (50) units.
+   (b) A ten (10) unit grace period (permitting operation of up to sixty (60) total
+       units) is granted for a maximum duration of fourteen (14) calendar days to
+       allow an operator sufficient time to procure a commercial license from the
+       Project Owners. Continued operation between fifty-one (51) and sixty (60) units
+       beyond fourteen (14) calendar days without a valid commercial license key is
+       prohibited and causes unit creation to be locked.
+   (c) Managing sixty-one (61) or more units requires an active, paid Commercial
+       License issued by the Project Owners. Operation beyond sixty (60) units
+       without a valid commercial license key constitutes unauthorized use and
+       copyright infringement.
+   (d) Personal non-production evaluation, staging, automated CI/CD testing, and
+       educational exploration are exempt from unit quota limitations.
+   (e) MULTI-INSTANCE AGGREGATION & ANTI-EVASION:
+       The fifty (50) unit limitation applies across all instances, installations,
+       virtual machines, containers, servers, and databases operated by, or for the
+       benefit of, your legal entity, affiliates, operating group, partners, employees,
+       contractors, agents, or managed client portfolios in the aggregate. You may
+       NOT shard, partition, distribute, or operate multiple instances of the
+       Software (whether directly, by proxy, through distinct legal entities or DBAs
+       under common ownership or control, or via individual employee/agent accounts)
+       to circumvent or evade the fifty (50) unit commercial threshold. Operating
+       multiple instances where the combined managed unit count across all such
+       deployments exceeds fifty (50) units requires an Enterprise License covering
+       each instance or a centralized multi-instance commercial agreement.
+
+2. HOSTING & SOFTWARE-AS-A-SERVICE (SaaS) PROHIBITION:
+   You may NOT provide the Software, in whole or in part, as a hosted service,
+   multi-tenant cloud service, application service provider (ASP), or Software-as-
+   a-Service (SaaS) to third parties where the primary value or service provided
+   to such third parties is the operation or functionality of the Software,
+   without an express commercial licensing agreement executed with the Project Owners.
+
+3. MANDATORY UPSTREAM NOTIFICATION & SOURCE DISCLOSURE:
+   Any entity or individual deploying or offering the Software as a network or
+   hosted service to authorized third parties must:
+   (a) Notify the Project Owners in writing at support@garrisonos.org within
+       fourteen (14) calendar days of public or commercial availability;
+   (b) Provide the Project Owners with immediate, continuous, and unhindered access
+       to the complete corresponding source code of all modifications, additions,
+       and integrations; and
+   (c) Maintain a prominently accessible network location where authorized users
+       and the Project Owners may inspect and download such source code.
+
+4. RESTRICTION ON CROSS-LICENSE EXTRACTION & FORKING:
+   All code, modules, algorithms, and assets licensed under this GarrisonOS
+   Fair-Code License are proprietary to the Project Owners and licensors. You may
+   NOT extract, backport, bundle, re-license, or incorporate any portion of this
+   Software into the GarrisonOS Community Edition, nor into any open-source fork
+   or distribution governed by the GNU Affero General Public License (AGPL),
+   GNU General Public License (GPL), Apache License, MIT License, or any other
+   permissive or copyleft license, without express prior written consent from the
+   Project Owners.
+
+5. USER INTERFACE ATTRIBUTION:
+   Any web-facing, interactive, or graphical deployment of the Software must
+   prominently display the text "Powered by GarrisonOS" with a functional hyperlink
+   to https://github.com/garrisonos/GarrisonOS in the main navigation bar or footer.
+   This notice must remain visible and unobstructed to all end-users interacting
+   with the Software over a network.
+
+6. REDISTRIBUTION OF SOURCE CODE:
+   Any permitted redistribution of source code, modified or unmodified, must
+   retain this entire license notice, including all copyright declarations, use
+   thresholds, and disclaimers.
+
+7. DISCLAIMER OF WARRANTY:
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+8. LIMITATION OF LIABILITY:
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+   PROJECT OWNERS, CONTRIBUTORS, OR AFFILIATES BE LIABLE FOR ANY INDIRECT,
+   INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING BUT NOT
+   LIMITED TO PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+   OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

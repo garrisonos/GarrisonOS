@@ -1,6 +1,8 @@
 {
   "id": "conversations",
   "name": "Universal Conversations & Notes",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Polymorphic threaded notes and audit comments across operational entities with participant scoping",
   "dependencies": [],
   "permissions": [
