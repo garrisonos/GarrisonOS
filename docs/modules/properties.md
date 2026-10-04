@@ -87,16 +87,16 @@ GarrisonOS provides integrated unit turnover management:
 
 ### 4.1. Standardized Amenities Across 5 Categories
 Amenities are categorized into 5 standardized groups in the `amenity_definitions` table:
-* **Community**: Swimming Pool, Fitness Center, Clubhouse, Business Center, Package Lockers, Covered Parking, Electric Vehicle Charging, Rooftop Terrace, BBQ Picnic Area, Elevator.
-* **Unit**: In-Unit Washer/Dryer, Stainless Steel Appliances, Central Air Conditioning, Balcony/Patio, Dishwasher, Walk-In Closets, Hardwood Flooring, Quartz Countertops, Smart Thermostat, High-Speed Internet Included.
-* **Accessibility**: Wheelchair Accessible, Ground Floor Unit, Roll-In Shower, Accessible Parking, Wide Doorways, Grab Bars Installed.
-* **Pet**: Dogs Allowed, Cats Allowed, Dog Park / Pet Run, Pet Washing Station, No Pet Rent.
-* **Eco-Friendly**: Solar Panels, ENERGY STAR Appliances, Low-Flow Fixtures, LED Lighting Throughout, Recycling Center On-Site.
+* **Community**: Clubhouse, Swimming Pool, Fitness Center, Dog Park, Rooftop Deck, Gated Access, Package Lockers, Business Center.
+* **Unit**: In-Unit Washer/Dryer, Dishwasher, Private Balcony / Patio, Central Air Conditioning, Hardwood Floors, Stainless Steel Appliances, Walk-in Closets.
+* **Accessibility**: Wheelchair Accessible, Elevator Access, Roll-in Shower, Accessible Parking, Ground Floor Unit.
+* **Pet**: Dogs Allowed, Cats Allowed, Large Dogs Allowed, Pet Wash Station, No Pets Allowed.
+* **Eco-Friendly**: EV Charging Station, Solar Panels, Energy Star Appliances, Recycling Service, Bike Storage.
 
 ### 4.2. Property-to-Unit Inheritance & Unit Overrides
 * **Automatic Inheritance**: When an amenity is assigned to a property (e.g., Community Swimming Pool, Package Lockers), all units within that property inherit the amenity by default (`is_inherited = true`).
-* **Unit Exclusions & Specifics**: Units can explicitly exclude inherited property amenities (`is_excluded = 1`) or declare unit-exclusive amenities (e.g., private in-unit laundry or private balcony).
+* **Unit Exclusions & Specifics**: Units can explicitly exclude inherited property amenities (`is_excluded = 1`), override parent amenity details (`is_override = 1`), or declare unit-exclusive amenities (e.g., private in-unit laundry or private balcony).
 
 ### 4.3. Marketing Syndication & Flyer Generator
-* **Syndication Portals**: Operators can toggle portal distribution flags (`syndicate_zillow`, `syndicate_trulia`, `syndicate_hotpads`, `syndicate_apartments_com`, `syndicate_craigslist`) and configure promotional headlines, descriptions, specials, and dedicated marketing contact personnel.
+* **Syndication Portals**: Operators can toggle portal distribution channels via `channels_json` (`website`, `zillow`, `apartments_com`, `trulia`, `realtor_com`, `craigslist`) and configure promotional headlines, descriptions, specials, advertised rent, target deposit, and dedicated marketing contact personnel.
 * **Vector Marketing Flyer PDF**: The `/api/v1/properties/:id/flyer-pdf` endpoint produces a high-resolution, zero-dependency ANSI-compliant vector PDF flyer bundling property details, active unit rental matrix, categorized amenity badges, and marketing contact info.

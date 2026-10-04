@@ -108,7 +108,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
   // Calculate next check number suggestion
   let nextCheckNum = 1001;
-  for (const c of checks) {
+  for (const c of allChecksForCounts) {
     const num = parseInt(c.check_number, 10);
     if (!isNaN(num) && num >= nextCheckNum) {
       nextCheckNum = num + 1;
@@ -247,9 +247,10 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
                         ? html`
                             <button
                               type="button"
-                              class="btn btn-sm btn-subtle"
+                              class="btn btn-sm btn-subtle btn-open-void"
                               style="color: var(--danger); margin-left: 0.25rem;"
-                              onclick="openVoidModal('${c.id}', '${c.check_number}')"
+                              data-check-id="${c.id}"
+                              data-check-num="${c.check_number}"
                             >
                               Void
                             </button>
@@ -393,6 +394,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
         document.getElementById('void_check_num').textContent = '#' + num;
         document.getElementById('void-check-dialog').showModal();
       }
+      document.addEventListener('click', function(event) {
+        if (!(event.target instanceof Element)) return;
+        const button = event.target.closest('.btn-open-void');
+        if (button && button.dataset.checkId) {
+          openVoidModal(button.dataset.checkId, button.dataset.checkNum || '');
+        }
+      });
     </script>
   `;
 

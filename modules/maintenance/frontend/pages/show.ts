@@ -280,8 +280,11 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     { value: 'hvac', label: 'HVAC' },
     { value: 'appliance', label: 'Appliance' },
     { value: 'structural', label: 'Structural' },
+    { value: 'make_ready', label: 'Make Ready' },
     { value: 'cosmetic', label: 'Cosmetic' },
-    { value: 'pest', label: 'Pest Control' },
+    { value: 'roofing', label: 'Roofing' },
+    { value: 'landscaping', label: 'Landscaping' },
+    { value: 'pest_control', label: 'Pest Control' },
     { value: 'other', label: 'Other / General' }
   ];
 
@@ -298,7 +301,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   });
 
   const categoryOptions = categories.map((c) => {
-    const isSelected = workOrder.category === c.value;
+    const isSelected = workOrder.category === c.value || (c.value === 'pest_control' && workOrder.category === 'pest');
     return html`<option value="${c.value}" ${isSelected ? raw('selected') : raw('')}>${c.label}</option>`;
   });
 
@@ -500,7 +503,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       </div>
     </div>
 
-    ${renderCustomFields('work_order', workOrder.custom_fields || {}, { operatorId: ctx.session.operatorId })}
+    ${renderCustomFields('work_order', workOrder.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <!-- 2-Column Details Grid -->
     <div class="grid-2-col">

@@ -1,4 +1,4 @@
-import { getDatabase } from '../../../database/client.js';
+import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 
@@ -171,8 +171,8 @@ export class AmenitiesRepository {
     const active = db.prepare(`
       SELECT a.*
       FROM property_amenities pa
-      JOIN amenity_definitions a ON pa.amenity_id = a.id
-      WHERE pa.operator_id = ? AND pa.property_id = ? AND pa.deleted_at IS NULL AND a.deleted_at IS NULL
+      JOIN amenity_definitions a ON pa.amenity_id = a.id AND a.operator_id = pa.operator_id AND a.deleted_at IS NULL
+      WHERE pa.operator_id = ? AND pa.property_id = ? AND pa.deleted_at IS NULL
       ORDER BY a.category ASC, a.name ASC
     `).all(operatorId, propertyId) as unknown as AmenityDefinitionRecord[];
 
@@ -184,22 +184,23 @@ export class AmenitiesRepository {
    */
   public static setPropertyAmenities(propertyId: string, amenityIds: string[], opId?: string): void {
     const operatorId = opId || RequestContext.getOperatorId();
-    const db = getDatabase();
     const now = Date.now();
 
-    // Soft delete existing
-    db.prepare('UPDATE property_amenities SET deleted_at = ? WHERE operator_id = ? AND property_id = ? AND deleted_at IS NULL')
-      .run(now, operatorId, propertyId);
+    withTransaction((tx) => {
+      // Soft delete existing
+      tx.prepare('UPDATE property_amenities SET deleted_at = ? WHERE operator_id = ? AND property_id = ? AND deleted_at IS NULL')
+        .run(now, operatorId, propertyId);
 
-    const insertStmt = db.prepare(`
-      INSERT INTO property_amenities (id, operator_id, property_id, amenity_id, created_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, NULL)
-    `);
+      const insertStmt = tx.prepare(`
+        INSERT INTO property_amenities (id, operator_id, property_id, amenity_id, created_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, NULL)
+      `);
 
-    for (const amenityId of amenityIds) {
-      if (!amenityId) continue;
-      insertStmt.run(generateUUIDv7(), operatorId, propertyId, amenityId, now);
-    }
+      for (const amenityId of amenityIds) {
+        if (!amenityId) continue;
+        insertStmt.run(generateUUIDv7(), operatorId, propertyId, amenityId, now);
+      }
+    });
   }
 
   /**
@@ -219,16 +220,16 @@ export class AmenitiesRepository {
     const propRows = db.prepare(`
       SELECT a.*
       FROM property_amenities pa
-      JOIN amenity_definitions a ON pa.amenity_id = a.id
-      WHERE pa.operator_id = ? AND pa.property_id = ? AND pa.deleted_at IS NULL AND a.deleted_at IS NULL
+      JOIN amenity_definitions a ON pa.amenity_id = a.id AND a.operator_id = pa.operator_id AND a.deleted_at IS NULL
+      WHERE pa.operator_id = ? AND pa.property_id = ? AND pa.deleted_at IS NULL
     `).all(operatorId, propertyId) as unknown as AmenityDefinitionRecord[];
 
     // 2. Get unit-specific assignments and overrides
     const unitRows = db.prepare(`
       SELECT ua.amenity_id, ua.is_override, ua.is_excluded, a.*
       FROM unit_amenities ua
-      JOIN amenity_definitions a ON ua.amenity_id = a.id
-      WHERE ua.operator_id = ? AND ua.unit_id = ? AND ua.deleted_at IS NULL AND a.deleted_at IS NULL
+      JOIN amenity_definitions a ON ua.amenity_id = a.id AND a.operator_id = ua.operator_id AND a.deleted_at IS NULL
+      WHERE ua.operator_id = ? AND ua.unit_id = ? AND ua.deleted_at IS NULL
     `).all(operatorId, unitId) as any[];
 
     const unitMap = new Map<string, any>(unitRows.map((u) => [u.amenity_id, u]));
@@ -273,26 +274,28 @@ export class AmenitiesRepository {
     opId?: string
   ): void {
     const operatorId = opId || RequestContext.getOperatorId();
-    const db = getDatabase();
     const now = Date.now();
+    const excludedSet = new Set(options.excludedInheritedIds || []);
 
-    db.prepare('UPDATE unit_amenities SET deleted_at = ? WHERE operator_id = ? AND unit_id = ? AND deleted_at IS NULL')
-      .run(now, operatorId, unitId);
+    withTransaction((tx) => {
+      tx.prepare('UPDATE unit_amenities SET deleted_at = ? WHERE operator_id = ? AND unit_id = ? AND deleted_at IS NULL')
+        .run(now, operatorId, unitId);
 
-    const insertStmt = db.prepare(`
-      INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, is_override, is_excluded, created_at, deleted_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-    `);
+      const insertStmt = tx.prepare(`
+        INSERT INTO unit_amenities (id, operator_id, unit_id, amenity_id, is_override, is_excluded, created_at, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+      `);
 
-    for (const id of options.selectedIds) {
-      if (!id) continue;
-      insertStmt.run(generateUUIDv7(), operatorId, unitId, id, 1, 0, now);
-    }
+      for (const id of options.selectedIds) {
+        if (!id || excludedSet.has(id)) continue;
+        insertStmt.run(generateUUIDv7(), operatorId, unitId, id, 1, 0, now);
+      }
 
-    for (const id of options.excludedInheritedIds || []) {
-      if (!id) continue;
-      insertStmt.run(generateUUIDv7(), operatorId, unitId, id, 1, 1, now);
-    }
+      for (const id of options.excludedInheritedIds || []) {
+        if (!id) continue;
+        insertStmt.run(generateUUIDv7(), operatorId, unitId, id, 1, 1, now);
+      }
+    });
   }
 
   /**
@@ -305,11 +308,11 @@ export class AmenitiesRepository {
     const sql = unitId
       ? `SELECT m.*, c.first_name, c.last_name, c.email as contact_email, c.phone as contact_phone
          FROM marketing_syndication m
-         LEFT JOIN contacts c ON m.assigned_contact_id = c.id
+         LEFT JOIN contacts c ON m.assigned_contact_id = c.id AND c.operator_id = m.operator_id AND c.deleted_at IS NULL
          WHERE m.operator_id = ? AND m.unit_id = ? AND m.deleted_at IS NULL`
       : `SELECT m.*, c.first_name, c.last_name, c.email as contact_email, c.phone as contact_phone
          FROM marketing_syndication m
-         LEFT JOIN contacts c ON m.assigned_contact_id = c.id
+         LEFT JOIN contacts c ON m.assigned_contact_id = c.id AND c.operator_id = m.operator_id AND c.deleted_at IS NULL
          WHERE m.operator_id = ? AND m.property_id = ? AND m.deleted_at IS NULL`;
 
     const row = (unitId ? db.prepare(sql).get(operatorId, unitId) : db.prepare(sql).get(operatorId, propertyId || '')) as any;
@@ -340,7 +343,7 @@ export class AmenitiesRepository {
     const now = Date.now();
 
     const existing = this.getMarketingSyndication(input.property_id || undefined, input.unit_id || undefined, operatorId);
-    const channelsJson = JSON.stringify(input.channels || {});
+    const channelsJson = input.channels !== undefined ? JSON.stringify(input.channels) : (existing?.channels_json || '{}');
 
     if (existing) {
       db.prepare(`
@@ -356,14 +359,14 @@ export class AmenitiesRepository {
           updated_at = ?
         WHERE id = ? AND operator_id = ?
       `).run(
-        input.headline ?? existing.headline,
-        input.description ?? existing.description,
-        input.advertised_rent_cents ?? existing.advertised_rent_cents,
-        input.target_deposit_cents ?? existing.target_deposit_cents,
-        input.available_date ?? existing.available_date,
-        input.assigned_contact_id ?? existing.assigned_contact_id,
+        input.headline !== undefined ? input.headline : existing.headline,
+        input.description !== undefined ? input.description : existing.description,
+        input.advertised_rent_cents !== undefined ? input.advertised_rent_cents : existing.advertised_rent_cents,
+        input.target_deposit_cents !== undefined ? input.target_deposit_cents : existing.target_deposit_cents,
+        input.available_date !== undefined ? input.available_date : existing.available_date,
+        input.assigned_contact_id !== undefined ? input.assigned_contact_id : existing.assigned_contact_id,
         channelsJson,
-        input.status ?? existing.status,
+        input.status !== undefined ? input.status : existing.status,
         now,
         existing.id,
         operatorId

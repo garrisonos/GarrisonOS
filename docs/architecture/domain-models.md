@@ -903,7 +903,7 @@ CREATE TABLE IF NOT EXISTS work_order_tasks (
 CREATE INDEX IF NOT EXISTS idx_wo_tasks_parent ON work_order_tasks(operator_id, work_order_id) WHERE deleted_at IS NULL;
 ```
 
-### 7.3 Technician Timecards (`technician_timecards`) *(Sprint 6: Field Operations)*
+### 7.4 Technician Timecards (`technician_timecards`) *(Sprint 6: Field Operations)*
 ```sql
 CREATE TABLE IF NOT EXISTS technician_timecards (
     id TEXT PRIMARY KEY,
@@ -1093,15 +1093,14 @@ Categorical section containers grouping custom field inputs on entity SSR presen
 CREATE TABLE IF NOT EXISTS custom_field_sections (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'unit', 'lease', 'contact', 'work_order', 'bill')),
-    label TEXT NOT NULL,
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'building', 'unit', 'lease', 'contact', 'work_order', 'bill')),
+    title TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    icon TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_custom_sections_op_type ON custom_field_sections(operator_id, entity_type, sort_order) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_cf_sections_operator ON custom_field_sections(operator_id, entity_type) WHERE deleted_at IS NULL;
 ```
 
 ### 10.2 Custom Field Definitions (`custom_field_definitions`)
@@ -1110,21 +1109,21 @@ Schema definition records specifying input data types, validation rules, select 
 CREATE TABLE IF NOT EXISTS custom_field_definitions (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'unit', 'lease', 'contact', 'work_order', 'bill')),
-    name TEXT NOT NULL,
-    label TEXT NOT NULL,
-    field_type TEXT NOT NULL CHECK (field_type IN ('string', 'number', 'currency', 'date', 'boolean', 'select')),
+    entity_type TEXT NOT NULL CHECK (entity_type IN ('property', 'building', 'unit', 'lease', 'contact', 'work_order', 'bill')),
+    field_name TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    data_type TEXT NOT NULL CHECK (data_type IN ('string', 'number', 'currency', 'boolean', 'date', 'select')),
     section_id TEXT REFERENCES custom_field_sections(id),
     is_required INTEGER NOT NULL DEFAULT 0 CHECK (is_required IN (0, 1)),
     options_json TEXT,
     default_value TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    description TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_fields_op_type_name ON custom_field_definitions(operator_id, entity_type, name) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_cf_defs_op_entity ON custom_field_definitions(operator_id, entity_type) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cf_defs_op_entity_name ON custom_field_definitions(operator_id, entity_type, field_name) WHERE deleted_at IS NULL;
 ```
 
 ---
@@ -1137,14 +1136,16 @@ Standardized amenity library organized into 5 operational categories (`community
 CREATE TABLE IF NOT EXISTS amenity_definitions (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    name TEXT NOT NULL,
     category TEXT NOT NULL CHECK (category IN ('community', 'unit', 'accessibility', 'pet', 'eco')),
-    description TEXT,
+    name TEXT NOT NULL,
+    icon TEXT,
+    is_custom INTEGER NOT NULL DEFAULT 0 CHECK (is_custom IN (0, 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_amenities_op_name ON amenity_definitions(operator_id, name) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_amenity_def_unique ON amenity_definitions(operator_id, category, name) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_amenity_def_operator ON amenity_definitions(operator_id, category) WHERE deleted_at IS NULL;
 ```
 
 ### 11.2 Property Amenities Junction (`property_amenities`)
@@ -1171,6 +1172,7 @@ CREATE TABLE IF NOT EXISTS unit_amenities (
     unit_id TEXT NOT NULL REFERENCES units(id),
     amenity_id TEXT NOT NULL REFERENCES amenity_definitions(id),
     details TEXT,
+    is_override INTEGER NOT NULL DEFAULT 0 CHECK (is_override IN (0, 1)),
     is_excluded INTEGER NOT NULL DEFAULT 0 CHECK (is_excluded IN (0, 1)),
     created_at INTEGER NOT NULL,
     deleted_at INTEGER
@@ -1179,25 +1181,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_unit_amenities_unique ON unit_amenities(op
 ```
 
 ### 11.4 Marketing Syndication Profiles (`marketing_syndication`)
-Listing copy, contact designations, and third-party portal publication toggles.
+Listing copy, contact designations, and third-party portal publication channels.
 ```sql
 CREATE TABLE IF NOT EXISTS marketing_syndication (
     id TEXT PRIMARY KEY,
     operator_id TEXT NOT NULL REFERENCES operators(id),
-    property_id TEXT NOT NULL REFERENCES properties(id),
+    property_id TEXT REFERENCES properties(id),
+    unit_id TEXT REFERENCES units(id),
     headline TEXT,
     description TEXT,
-    contact_name TEXT,
-    contact_phone TEXT,
-    contact_email TEXT,
-    syndicate_zillow INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_zillow IN (0, 1)),
-    syndicate_trulia INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_trulia IN (0, 1)),
-    syndicate_hotpads INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_hotpads IN (0, 1)),
-    syndicate_apartments_com INTEGER NOT NULL DEFAULT 1 CHECK (syndicate_apartments_com IN (0, 1)),
-    syndicate_craigslist INTEGER NOT NULL DEFAULT 0 CHECK (syndicate_craigslist IN (0, 1)),
+    advertised_rent_cents INTEGER,
+    target_deposit_cents INTEGER,
+    available_date INTEGER,
+    assigned_contact_id TEXT REFERENCES contacts(id),
+    channels_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'paused')),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_syndication_prop_unique ON marketing_syndication(operator_id, property_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_marketing_property ON marketing_syndication(operator_id, property_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_marketing_unit ON marketing_syndication(operator_id, unit_id) WHERE deleted_at IS NULL;
 ```

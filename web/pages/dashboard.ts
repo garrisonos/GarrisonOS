@@ -681,7 +681,7 @@ export function renderDashboardPage(options: DashboardPageOptions): SafeHtml {
  */
 export async function handle(ctx: PageContext): Promise<PageResult> {
   const selectedPortfolio = ctx.query['portfolio'] || undefined;
-  const selectedPropertyId = ctx.query['property_id'] || undefined;
+  let selectedPropertyId = ctx.query['property_id'] || undefined;
   const rawFocus = ctx.query['focus'] || 'overview';
   const focusPreset: 'overview' | 'occupancy' | 'financial' | 'maintenance' =
     rawFocus === 'occupancy' || rawFocus === 'financial' || rawFocus === 'maintenance'
@@ -706,6 +706,11 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     properties = propRes?.data?.properties || [];
   } catch {
     properties = [];
+  }
+
+  // Clear stale property selection if property does not belong to selected portfolio
+  if (selectedPropertyId && properties.length > 0 && !properties.some((p) => p.id === selectedPropertyId)) {
+    selectedPropertyId = undefined;
   }
 
   // 2. Fetch Filtered Occupancy Metrics

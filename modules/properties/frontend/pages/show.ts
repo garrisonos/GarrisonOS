@@ -197,7 +197,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
     ${errorAlert}
 
-    ${renderCustomFields('property', property.custom_fields || {}, { operatorId: ctx.session.operatorId })}
+    ${renderCustomFields('property', property.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <div class="card">
       <div class="card-header">

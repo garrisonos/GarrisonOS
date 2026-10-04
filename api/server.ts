@@ -1436,8 +1436,23 @@ export function createRouter(serverPort: number = PORT): Router {
       limit = parsed;
     }
 
-    const userRole = (req as any).userRole || (RequestContext.tryGet() as any)?.role || 'staff';
     const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId;
+    const db = getDatabase();
+    const user = userId && userId !== 'system'
+      ? db.prepare('SELECT role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL').get(userId, operatorId) as { role: string } | undefined
+      : undefined;
+
+    let userRole = (req as any).userRole || (RequestContext.tryGet() as any)?.role;
+    if (!userRole) {
+      if (userId === 'system') {
+        userRole = 'owner';
+      } else if (user?.role) {
+        userRole = user.role;
+      } else {
+        return errorResponse(res, 'FORBIDDEN', 'User not authorized or inactive', 403);
+      }
+    }
 
     try {
       const results = UniversalSearchService.search(q, userRole, limit, operatorId);
@@ -1457,6 +1472,22 @@ export function createRouter(serverPort: number = PORT): Router {
     const typeHint = typeof req.query['type'] === 'string' && req.query['type'].trim()
       ? req.query['type'].trim()
       : undefined;
+
+    const operatorId = RequestContext.getOperatorId();
+    const userId = RequestContext.tryGet()?.userId || req.userId;
+    if (!userId) {
+      return errorResponse(res, 'UNAUTHORIZED', 'Authentication is required to preview entities', 401);
+    }
+
+    const db = getDatabase();
+    const user = userId !== 'system'
+      ? db.prepare('SELECT role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL').get(userId, operatorId) as { role: string } | undefined
+      : undefined;
+
+    const contextRole = (req as any).userRole || (RequestContext.tryGet() as any)?.role;
+    if (userId !== 'system' && !user?.role && !contextRole) {
+      return errorResponse(res, 'FORBIDDEN', 'User not authorized or inactive', 403);
+    }
 
     try {
       const preview = EntityPreviewService.getPreview(id, typeHint);
@@ -1614,7 +1645,9 @@ export function createRouter(serverPort: number = PORT): Router {
       contacts: 'contact',
       work_order: 'work_order',
       work_orders: 'work_order',
-      maintenance: 'work_order'
+      maintenance: 'work_order',
+      bill: 'bill',
+      bills: 'bill'
     };
 
     const entityType = typeMap[rawType || ''];

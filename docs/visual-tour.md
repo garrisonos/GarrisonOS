@@ -316,7 +316,7 @@ This document provides a visual tour of the GarrisonOS native TypeScript Server-
 ---
 
 ### 9.2 System Diagnostics & Server Health
-* **Path**: `/admin?tab=system`
+* **Path**: `/admin?tab=telemetry`
 * **Artifact**: `docs/assets/screenshots/2026-10-02_27_admin_system_health.png`
 * **Features**: Real-time Node.js runtime metrics (Uptime, Memory RSS / Heap, Platform), SQLite database file sizing, WAL journal statistics, and security environment status.
 
@@ -336,7 +336,7 @@ This document provides a visual tour of the GarrisonOS native TypeScript Server-
 ### 9.4 User Management, Roles & Granular Permissions
 * **Path**: `/admin?tab=users`
 * **Artifact**: `docs/assets/screenshots/2026-10-02_29_admin_users_and_permissions.png`
-* **Features**: Centralized user governance dashboard for creating, editing, and deactivating team members. Supports role assignment (`admin`, `property_manager`, `leasing_agent`, `maintenance`, `auditor`), portfolio scoping, and granular per-module permission toggles (Properties, Leases, Maintenance, Accounting, Contacts).
+* **Features**: Centralized user governance dashboard for creating, editing, and deactivating team members. Supports role assignment (`manager`, `leasing_agent`, `maintenance`, `auditor`, `viewer`), portfolio scoping, and granular per-module permission toggles (Properties, Leases, Maintenance, Accounting, Contacts, Backups & Snapshots).
 
 ![Admin Users & Permissions](assets/screenshots/2026-10-02_29_admin_users_and_permissions.png)
 

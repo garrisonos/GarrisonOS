@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > *Note on UI/UX Maturity*: The user interfaces and presentation views included in this milestone represent an initial foundational tier. While end-to-end operational workflows (search, previews, maintenance tracking, AP bill allocations, check printing, bank deposits, and administration) are fully functional, they serve as a baseline. Significant ongoing work remains on the development roadmap for comprehensive mobile/tablet responsiveness, refined component ergonomics, accessibility audits, and the public-facing tenant portal.
 
+- **Code Review Resolutions, Security Hardening & Defect Rectification**:
+  - **Security & Authorization Hardening (`api/preview.ts`, `api/server.ts`, `web/pages/admin.ts`)**:
+    - Enforced entity-level RBAC route permissions (`properties:view`, `leases:view`, `maintenance:view`, `accounting:view`, `contacts:view`) within the Universal Entity Preview API (`/api/v1/entities/preview`).
+    - Fixed universal search RBAC scoping by resolving caller's role from database and preventing unauthorized entity leakage.
+    - Sanitized XSS in JSON detail views within the admin panel via `escapeHtml()`, corrected SQL column aliasing (`user_id AS id`, `storage_quota_bytes AS quota`), and added `Backups & Snapshots` to the user module permissions whitelist.
+    - Sanitized DOM injections in screenshot automation and client JS to resolve CodeQL security alerts.
+  - **Accounts Payable & Banking Data Integrity (`modules/accounting/backend/ap.ts`, `routes.ts`, `web/lib/pdf.ts`, `database/seed.ts`)**:
+    - Added `recalcWorkOrderActualCost()` synchronization in AP bill creation, updates, and voids, keeping work order invoiced totals synchronized.
+    - Added vendor contact type and work order operator ownership validation guards to bill update handlers.
+    - Removed placeholder routing and account numbers (`123456789`/`987654321`) from check batch-pdf and deposit-slip routes, returning HTTP 400 `VALIDATION_ERROR` when missing.
+    - Unified PDF text escaping in `generateWorkOrderPdf` with the shared `escapePdfString` helper.
+    - Corrected seed bill statuses and allocation settled amounts for `INV-2026-881` and `INV-2026-302`.
+  - **Maintenance Operations & Spend Policy Safeguards (`modules/maintenance/backend/repository.ts`, `migrations/0004_work_order_vendors.sql`)**:
+    - Added `uq_wo_vendors_active` unique partial index preventing duplicate active vendor assignments.
+    - Enforced vendor W-9 verification and trade compatibility checks in `assignWorkOrderVendor`.
+    - Scoped portfolio queries to operator and active status, prevented cash double-counting, added fail-closed error handling in `evaluateSpendPolicy`, and cleared `hold_reason` when status transitions out of `on_hold`.
+    - Excluded voided bills (`b.status <> 'voided'`) from work order expense rollups and computed real monthly metrics.
+    - Added `normalizeCategory` supporting extended trade categories (`pest_control`, `make_ready`, `roofing`, `landscaping`).
+  - **Properties, Amenities & Marketing Syndication Alignment (`modules/properties/backend/`, `frontend/pages/amenities.ts`)**:
+    - Added `is_override` and `is_excluded` columns to `unit_amenities` and `contacts(id)` foreign key on `assigned_contact_id`.
+    - Wrapped amenity updates in transactional boundaries and ensured marketing syndication PUT routes enforce URL route IDs.
+    - Fixed default property redirect, address column aliases, portfolio authorization checks, and inherited amenity exclusion filters in amenities frontend.
+  - **Custom Fields Engine Robustness (`core/custom-fields.ts`, `api/server.ts`, frontend templates)**:
+    - Added `'bill'` to supported custom field entities and updated entity mapping in API routes.
+    - Scoped custom field section joins to `operator_id` and validated section existence, operator ownership, and entity type matching during definition creation/updates.
+    - Enforced strict 4-digit calendar year bounds (1000–9999) and ISO format support in date normalization.
+    - Rendered read-only custom field cards with `{ disabled: true }` across property, unit, lease, contact, and maintenance views.
+  - **Universal Search, UI Ergonomics & Browser Script Safety (`api/search.ts`, `web/pages/dashboard.ts`, `web/templates/pagination.ts`, `scripts/live-browser-tour.js`)**:
+    - Escaped wildcards (`%`, `_`, `\`) with `ESCAPE '\\'` in all search query SQL statements.
+    - Cleared stale `selectedPropertyId` when switching portfolios on the dashboard.
+    - Clamped pagination indices to `[1, totalPages]`.
+    - Deferred screenshot directory cleanup in `live-browser-tour.js` until after CDP connection is established.
+
 - **User Management, Activity Audit Logs, Work Order Collaboration, Multi-Vendor Assignment & Spend Policy Auto-Hold**:
   - **Operator User Management & Granular Permissions UI (`web/pages/admin.ts`, `api/server.ts`)**:
     - Added dedicated `👥 Team & Permissions` tab to the Admin Dashboard featuring an Operator User Directory table displaying member name, email, role badge, permitted modules whitelist, and portfolio access scope.

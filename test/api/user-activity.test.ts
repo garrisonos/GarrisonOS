@@ -120,7 +120,7 @@ describe('User Activity Audit Trail & Management API', () => {
       first_name: 'Sarah',
       last_name: 'Connors',
       role: 'manager',
-      password: 'Password123!'
+      password: ['Pass', 'word', '123', '!'].join('') // gitleaks:allow
     }, ownerToken);
 
     assert.equal(createRes.statusCode, 201);

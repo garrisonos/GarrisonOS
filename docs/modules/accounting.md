@@ -225,7 +225,7 @@ Vendor bills represent formal obligations to pay third-party service providers. 
 ### 7.2. Check Register & Batch PDF Check Printing
 Physical checks printed through GarrisonOS adhere to standard ANSI X9.100-140 layout guidelines (top voucher, middle voucher, bottom check) rendered via zero-dependency pure Node.js vector PDF 1.4 generation (`web/lib/pdf.ts`).
 * **Check Register Dashboard (`/accounting/checks`)**: Displays issued checks with real-time status filtering (`draft`, `printed`, `cleared`, `voided`, `reissued`), bank account selection, and issued vs. cleared tracking for bank reconciliation.
-* **Batch Printing (`POST /api/v1/accounting/checks/batch-pdf`)**: Operators select multiple checks to generate a consolidated multi-page PDF document ready for standard 3-up check stock.
+* **Batch Printing (`GET /api/v1/accounting/checks/batch-pdf`)**: Operators select multiple checks to generate a consolidated multi-page PDF document ready for standard 3-up check stock.
 * **Transactional Voiding**: Voiding a check automatically restores the outstanding balance on settled bills, posts an equal and opposite reversing journal entry (Dr 1010 Bank / Cr 2010 AP), and logs an audit trail.
 
 ### 7.3. Vendor Credit Memos

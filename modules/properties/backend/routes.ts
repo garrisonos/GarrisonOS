@@ -555,8 +555,9 @@ export function registerRoutes(router: Router): void {
   router.put('/api/v1/properties/:id/marketing', (req, res) => {
     try {
       const syndication = AmenitiesRepository.upsertMarketingSyndication({
+        ...req.body,
         property_id: req.params.id!,
-        ...req.body
+        unit_id: null
       });
       successResponse(res, { syndication });
     } catch (err: any) {
@@ -572,8 +573,9 @@ export function registerRoutes(router: Router): void {
   router.put('/api/v1/properties/units/:id/marketing', (req, res) => {
     try {
       const syndication = AmenitiesRepository.upsertMarketingSyndication({
-        unit_id: req.params.id!,
-        ...req.body
+        ...req.body,
+        property_id: null,
+        unit_id: req.params.id!
       });
       successResponse(res, { syndication });
     } catch (err: any) {
@@ -596,11 +598,9 @@ export function registerRoutes(router: Router): void {
         address: `${property.address_line1}, ${property.city}, ${property.state} ${property.postal_code}`,
         headline: syndication?.headline || `Spacious Living at ${property.name}`,
         description: syndication?.description || 'Premier residential community offering modern living spaces, convenience, and attentive local property management.',
-        market_rent_cents: syndication?.advertised_rent_cents || 150000,
-        target_deposit_cents: syndication?.target_deposit_cents || 150000,
-        bedrooms: 2,
-        bathrooms: 1.5,
-        available_date: syndication?.available_date ? new Date(syndication.available_date).toISOString().slice(0, 10) : 'Immediate',
+        market_rent_cents: syndication?.advertised_rent_cents ?? undefined,
+        target_deposit_cents: syndication?.target_deposit_cents ?? undefined,
+        available_date: syndication?.available_date ? new Date(syndication.available_date).toISOString().slice(0, 10) : undefined,
         amenities: active.map((a) => ({ name: a.name, category: a.category.toUpperCase() })),
         contact_name: syndication?.contact_name || 'Leasing Office',
         contact_phone: syndication?.contact_phone || null,

@@ -155,7 +155,7 @@ Progress across the seven canonical architectural phases leading to Foundational
 
 ---
 
-### Phase 5: Native Presentation Layer & Public Tenant Portal `[96% - Exceptional]`
+### Phase 5: Native Presentation Layer & Public Tenant Portal `[85% - Foundational Tier]`
 * [x] Native TypeScript SSR presentation architecture (`web/lib/html.ts`, `node:http`), layout shells, and CSS custom properties design system.
 * [x] Complete removal of legacy PHP presentation code (39 files, 4,318 LOC eliminated).
 * [x] Operator dashboards, search, and CRUD views for properties, contacts, leases, and work orders.
@@ -181,7 +181,7 @@ Progress across the seven canonical architectural phases leading to Foundational
 
 ---
 
-### Phase 7: MVP Verification, Packaging & GUI Installers `[90% - Near Complete]`
+### Phase 7: MVP Verification, Packaging & GUI Installers `[92% - Near Complete]`
 * [x] End-to-end integration test suite (`test/e2e/lifecycle.test.ts`) validating full operator journey.
 * [x] Hardened Systemd service unit (`deploy/systemd/garrison.service`) with Linux sandboxing.
 * [x] Multi-stage zero-dependency Dockerfile (`node:24-alpine`) and `docker-compose.yml`.

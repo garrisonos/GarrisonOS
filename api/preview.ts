@@ -1,19 +1,36 @@
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../database/client.js';
 import { RequestContext } from '../core/context.js';
+import { canAccessModule, hasPermission, loadOperatorRoleOverrides } from '../core/rbac.js';
+import type { PermissionString } from '../core/rbac.js';
 
+/**
+ * Key-value summary field displayed within an entity preview modal.
+ */
 export interface EntitySummaryField {
+  /** Field label displayed on the summary card. */
   label: string;
+  /** Field value string. */
   value: string;
 }
 
+/**
+ * Standardized preview payload returned by EntityPreviewService.
+ */
 export interface EntityPreviewResult {
+  /** Canonical domain entity type. */
   entityType: string;
+  /** Unique entity primary key identifier. */
   id: string;
+  /** Primary entity title or headline. */
   title: string;
+  /** Status badge text. */
   badge: string;
+  /** CSS class applied to status badge. */
   badgeClass: string;
+  /** Deep link navigation URL to the entity full view. */
   fullUrl: string;
+  /** Key-value summary fields. */
   summary: EntitySummaryField[];
 }
 
@@ -62,9 +79,32 @@ export class EntityPreviewService {
     const db = getDatabase();
 
     const normalizedType = (typeHint || '').toLowerCase().trim();
+    const userId = RequestContext.tryGet()?.userId;
+    const user = userId && userId !== 'system'
+      ? db.prepare('SELECT role FROM users WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
+        .get(userId, operatorId) as { role: string } | undefined
+      : undefined;
+    const overrides = loadOperatorRoleOverrides(operatorId, db);
+    const canView = (permission: PermissionString): boolean => {
+      if (userId === 'system') return true;
+      const moduleName = permission.split(':')[0] ?? '';
+      if (user && userId) {
+        return !!user.role
+          && hasPermission(user.role, permission, overrides)
+          && canAccessModule(userId, moduleName, operatorId, db);
+      }
+      const contextRole = (RequestContext.tryGet() as any)?.role;
+      if (contextRole) {
+        return hasPermission(contextRole, permission, overrides);
+      }
+      if (process.env['NODE_ENV'] !== 'production') {
+        return true;
+      }
+      return false;
+    };
 
     // 1. Property
-    if (!normalizedType || normalizedType === 'property' || normalizedType === 'properties') {
+    if (canView('properties:view') && (!normalizedType || normalizedType === 'property' || normalizedType === 'properties')) {
       const prop = db.prepare(`
         SELECT id, name, property_type, address_line1, city, state, postal_code, year_built
         FROM properties
@@ -93,7 +133,7 @@ export class EntityPreviewService {
     }
 
     // 2. Unit
-    if (!normalizedType || normalizedType === 'unit' || normalizedType === 'units') {
+    if (canView('properties:view') && (!normalizedType || normalizedType === 'unit' || normalizedType === 'units')) {
       const unit = db.prepare(`
         SELECT u.*, p.name as property_name
         FROM units u
@@ -121,7 +161,7 @@ export class EntityPreviewService {
     }
 
     // 3. Lease
-    if (!normalizedType || normalizedType === 'lease' || normalizedType === 'leases') {
+    if (canView('leases:view') && (!normalizedType || normalizedType === 'lease' || normalizedType === 'leases')) {
       const lease = db.prepare(`
         SELECT l.*, p.name as property_name, u.unit_number, c.first_name || ' ' || c.last_name as tenant_name
         FROM leases l
@@ -152,7 +192,7 @@ export class EntityPreviewService {
     }
 
     // 4. Contact
-    if (!normalizedType || normalizedType === 'contact' || normalizedType === 'contacts') {
+    if (canView('contacts:view') && (!normalizedType || normalizedType === 'contact' || normalizedType === 'contacts')) {
       const contact = db.prepare(`
         SELECT * FROM contacts
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
@@ -179,7 +219,7 @@ export class EntityPreviewService {
     }
 
     // 5. Work Order (Maintenance)
-    if (!normalizedType || normalizedType === 'work_order' || normalizedType === 'maintenance') {
+    if (canView('maintenance:view') && (!normalizedType || normalizedType === 'work_order' || normalizedType === 'maintenance')) {
       const wo = db.prepare(`
         SELECT w.*, p.name as property_name, u.unit_number, v.first_name || ' ' || v.last_name as vendor_name
         FROM work_orders w
@@ -210,7 +250,7 @@ export class EntityPreviewService {
     }
 
     // 6. AP Bill
-    if (!normalizedType || normalizedType === 'bill' || normalizedType === 'bills') {
+    if (canView('accounting:view') && (!normalizedType || normalizedType === 'bill' || normalizedType === 'bills')) {
       const bill = db.prepare(`
         SELECT b.*, v.first_name || ' ' || v.last_name as vendor_name, v.company_name
         FROM bills b
@@ -238,7 +278,7 @@ export class EntityPreviewService {
     }
 
     // 7. Check
-    if (!normalizedType || normalizedType === 'check' || normalizedType === 'checks') {
+    if (canView('accounting:view') && (!normalizedType || normalizedType === 'check' || normalizedType === 'checks')) {
       const check = db.prepare(`
         SELECT * FROM vendor_checks
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL
@@ -264,7 +304,7 @@ export class EntityPreviewService {
     }
 
     // 8. Bank Deposit
-    if (!normalizedType || normalizedType === 'deposit' || normalizedType === 'deposits') {
+    if (canView('accounting:view') && (!normalizedType || normalizedType === 'deposit' || normalizedType === 'deposits')) {
       const deposit = db.prepare(`
         SELECT * FROM bank_deposits
         WHERE id = ? AND operator_id = ? AND deleted_at IS NULL

@@ -99,7 +99,6 @@ class CdpClient {
     this.ws = new WebSocket(wsUrl);
     this.nextId = 1;
     this.callbacks = new Map();
-    this.events = new Map();
 
     this.ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -111,9 +110,6 @@ class CdpClient {
         } else {
           resolve(msg.result);
         }
-      } else if (msg.method) {
-        const handler = this.events.get(msg.method);
-        if (handler) handler(msg.params);
       }
     };
   }

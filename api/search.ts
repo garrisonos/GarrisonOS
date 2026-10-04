@@ -2,24 +2,45 @@ import { RequestContext } from '../core/context.js';
 import { getDatabase } from '../database/client.js';
 import { hasPermission } from '../core/rbac.js';
 
+/**
+ * Single search result item returned across domain entity categories.
+ */
 export interface SearchResultItem {
+  /** Entity UUIDv7 identifier. */
   id: string;
+  /** Broad search category partition. */
   category: 'properties' | 'people' | 'financials' | 'maintenance';
+  /** Underlying specific entity type name. */
   entity_type: string;
+  /** Primary headline or title text. */
   title: string;
+  /** Contextual secondary subtitle text. */
   subtitle: string;
+  /** In-app navigation URL for the entity. */
   url: string;
+  /** Entity status string if applicable. */
   status?: string;
+  /** Status badge label if applicable. */
   badge?: string;
+  /** Financial amount in integer cents if applicable. */
   amount_cents?: number;
+  /** Computed search relevance score. */
   score: number;
 }
 
+/**
+ * Structured response payload containing search results grouped by category.
+ */
 export interface SearchResponseData {
+  /** Original search query string. */
   query: string;
+  /** Total matching count across all categories. */
   total: number;
+  /** Flag indicating whether syntax filters excluded results. */
   has_filtered_results: boolean;
+  /** Flat list of top matching search results. */
   results: SearchResultItem[];
+  /** Search results partitioned by domain category. */
   categories: {
     properties: SearchResultItem[];
     people: SearchResultItem[];
@@ -110,8 +131,9 @@ export class UniversalSearchService {
       };
     }
 
-    const likeTerm = `%${searchTerm}%`;
-    const prefixTerm = `${searchTerm}%`;
+    const sanitizedSearchTerm = searchTerm.replace(/[\\%_]/g, '\\$&');
+    const likeTerm = `%${sanitizedSearchTerm}%`;
+    const prefixTerm = `${sanitizedSearchTerm}%`;
 
     const canProps = hasPermission(userRole, 'properties:view');
     const canContacts = hasPermission(userRole, 'contacts:view');
@@ -136,7 +158,7 @@ export class UniversalSearchService {
           SELECT id, name, property_type, address_line1, city, state, postal_code
           FROM properties
           WHERE operator_id = ? AND deleted_at IS NULL AND (
-            name LIKE ? OR address_line1 LIKE ? OR city LIKE ? OR id LIKE ?
+            name LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
           )
           LIMIT ?
         `).all(operatorId, likeTerm, likeTerm, likeTerm, prefixTerm, limitPerCategory * 2) as any[];
@@ -162,7 +184,7 @@ export class UniversalSearchService {
           FROM units u
           JOIN properties p ON u.property_id = p.id
           WHERE u.operator_id = ? AND u.deleted_at IS NULL AND (
-            u.unit_number LIKE ? OR u.id LIKE ? OR p.name LIKE ?
+            u.unit_number LIKE ? ESCAPE '\\' OR u.id LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\'
           )
           ${parsed.statusFilter ? 'AND u.status = ?' : ''}
           LIMIT ?
@@ -195,7 +217,7 @@ export class UniversalSearchService {
         SELECT id, first_name, last_name, company_name, email, phone, contact_type
         FROM contacts
         WHERE operator_id = ? AND deleted_at IS NULL AND (
-          first_name LIKE ? OR last_name LIKE ? OR company_name LIKE ? OR email LIKE ? OR phone LIKE ? OR id LIKE ?
+          first_name LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\' OR company_name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\' OR phone LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
         )
         ${parsed.typeFilter && ['tenant', 'vendor', 'owner'].includes(parsed.typeFilter) ? 'AND contact_type = ?' : ''}
         LIMIT ?
@@ -228,7 +250,7 @@ export class UniversalSearchService {
         JOIN units u ON l.unit_id = u.id
         JOIN properties p ON u.property_id = p.id
         WHERE l.operator_id = ? AND l.deleted_at IS NULL AND (
-          l.id LIKE ? OR p.name LIKE ? OR u.unit_number LIKE ?
+          l.id LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR u.unit_number LIKE ? ESCAPE '\\'
         )
         ${parsed.statusFilter ? 'AND l.status = ?' : ''}
         LIMIT ?
@@ -262,10 +284,10 @@ export class UniversalSearchService {
           FROM bills b
           LEFT JOIN contacts c ON b.vendor_id = c.id
           WHERE b.operator_id = ? AND b.deleted_at IS NULL AND (
-            b.invoice_number LIKE ? OR b.id LIKE ? OR c.company_name LIKE ? OR c.first_name LIKE ?
+            b.invoice_number LIKE ? ESCAPE '\\' OR b.id LIKE ? ESCAPE '\\' OR c.company_name LIKE ? ESCAPE '\\' OR c.first_name LIKE ? ESCAPE '\\'
           )
           ${parsed.statusFilter ? 'AND b.status = ?' : ''}
-          ${parsed.vendorFilter ? 'AND (c.company_name LIKE ? OR c.first_name LIKE ?)' : ''}
+          ${parsed.vendorFilter ? "AND (c.company_name LIKE ? ESCAPE '\\' OR c.first_name LIKE ? ESCAPE '\\')" : ''}
           ${parsed.minAmountCents !== undefined ? 'AND b.total_amount_cents >= ?' : ''}
           ${parsed.maxAmountCents !== undefined ? 'AND b.total_amount_cents <= ?' : ''}
           LIMIT ?
@@ -306,7 +328,7 @@ export class UniversalSearchService {
           SELECT id, check_number, payee_name, amount_cents, status, check_date
           FROM vendor_checks
           WHERE operator_id = ? AND deleted_at IS NULL AND (
-            check_number LIKE ? OR payee_name LIKE ? OR id LIKE ?
+            check_number LIKE ? ESCAPE '\\' OR payee_name LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
           )
           ${parsed.statusFilter ? 'AND status = ?' : ''}
           ${parsed.minAmountCents !== undefined ? 'AND amount_cents >= ?' : ''}
@@ -346,7 +368,7 @@ export class UniversalSearchService {
           SELECT id, deposit_reference, total_amount_cents, deposit_date, status, memo
           FROM bank_deposits
           WHERE operator_id = ? AND deleted_at IS NULL AND (
-            deposit_reference LIKE ? OR memo LIKE ? OR id LIKE ?
+            deposit_reference LIKE ? ESCAPE '\\' OR memo LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
           )
           ${parsed.statusFilter ? 'AND status = ?' : ''}
           LIMIT ?
@@ -383,7 +405,7 @@ export class UniversalSearchService {
         FROM work_orders w
         LEFT JOIN properties p ON w.property_id = p.id
         WHERE w.operator_id = ? AND w.deleted_at IS NULL AND (
-          w.title LIKE ? OR w.description LIKE ? OR w.id LIKE ? OR p.name LIKE ?
+          w.title LIKE ? ESCAPE '\\' OR w.description LIKE ? ESCAPE '\\' OR w.id LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\'
         )
         ${parsed.statusFilter ? 'AND w.status = ?' : ''}
         LIMIT ?

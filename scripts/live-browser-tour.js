@@ -10,16 +10,6 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const screenshotsDir = path.join(rootDir, 'docs', 'assets', 'screenshots');
 
-if (existsSync(screenshotsDir)) {
-  const existingFiles = readdirSync(screenshotsDir);
-  for (const f of existingFiles) {
-    if (f.endsWith('.png')) {
-      unlinkSync(path.join(screenshotsDir, f));
-    }
-  }
-} else {
-  mkdirSync(screenshotsDir, { recursive: true });
-}
 
 function isServerRunning(port = 8080) {
   return new Promise((resolve) => {
@@ -207,6 +197,13 @@ async function runLiveTour() {
     const cdp = new CdpClient(target.webSocketDebuggerUrl);
     await cdp.waitForOpen();
     console.log('[tour] Connected to live browser session.');
+    mkdirSync(screenshotsDir, { recursive: true });
+    const existingFiles = readdirSync(screenshotsDir);
+    for (const f of existingFiles) {
+      if (f.endsWith('.png')) {
+        unlinkSync(path.join(screenshotsDir, f));
+      }
+    }
 
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');

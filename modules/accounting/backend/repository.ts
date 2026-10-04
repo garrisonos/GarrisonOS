@@ -71,9 +71,9 @@ export class AccountingRepository {
     if (filter?.portfolio) {
       sql += ` AND property_id IN (
         SELECT id FROM properties
-        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE name = ?)) AND deleted_at IS NULL
+        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE operator_id = ? AND name = ? AND deleted_at IS NULL)) AND deleted_at IS NULL
       )`;
-      params.push(operatorId, filter.portfolio, filter.portfolio);
+      params.push(operatorId, filter.portfolio, operatorId, filter.portfolio);
     }
     if (filter?.unit_id) {
       sql += ' AND unit_id = ?';

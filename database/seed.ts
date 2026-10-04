@@ -1252,11 +1252,11 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         notes, created_at, updated_at
       ) VALUES
         -- Bill 1: Apex Plumbing (Linked to Emergency Work Order wo1Id)
-        (?, ?, ?, ?, 'INV-2026-881', ?, ?, 'net_30', 'PO-8810', 145000, 0, 145000, 145000, 'approved', ?, ?, 'Emergency pipe leak & bathroom flange replacement', ?, ?),
+        (?, ?, ?, ?, 'INV-2026-881', ?, ?, 'net_30', 'PO-8810', 145000, 0, 145000, 145000, 'paid', ?, ?, 'Emergency pipe leak & bathroom flange replacement', ?, ?),
         -- Bill 2: VoltMaster Electric (Draft)
         (?, ?, ?, NULL, 'INV-2026-904', ?, ?, 'net_15', 'PO-9041', 280000, 0, 280000, 0, 'draft', NULL, NULL, 'Commercial panel submetering installation', ?, ?),
         -- Bill 3: Hawkins General Repair (Approved Multi-Property Split)
-        (?, ?, ?, NULL, 'INV-2026-302', ?, ?, 'net_30', 'PO-3022', 320000, 0, 320000, 160000, 'approved', ?, ?, 'Quarterly exterior siding and deck restoration across 3 properties', ?, ?),
+        (?, ?, ?, NULL, 'INV-2026-302', ?, ?, 'net_30', 'PO-3022', 320000, 0, 320000, 0, 'approved', ?, ?, 'Quarterly exterior siding and deck restoration across 3 properties', ?, ?),
         -- Bill 4: CoolAir Climate Systems (Paid)
         (?, ?, ?, NULL, 'INV-2026-440', ?, ?, 'due_on_receipt', 'PO-4403', 185000, 0, 185000, 185000, 'paid', ?, ?, 'Dual heat pump seasonal service overhaul', ?, ?),
         -- Bill 5: Blue Ridge Pro Painters (Approved Overdue)
@@ -1281,9 +1281,9 @@ export async function seedDatabase(dbInstance?: DatabaseSync): Promise<void> {
         -- Bill 2 Allocations ($2,800)
         (?, ?, ?, ?, ?, NULL, ?, 280000, 0, 'Lofts panel upgrade & breaker rewiring', ?),
         -- Bill 3 Allocations ($1,200 / $1,000 / $1,000)
-        (?, ?, ?, ?, ?, NULL, ?, 120000, 60000, 'Highland Pines deck refinishing', ?),
-        (?, ?, ?, ?, ?, NULL, ?, 100000, 50000, 'Oakwood Terraces exterior siding powerwash', ?),
-        (?, ?, ?, ?, ?, NULL, ?, 100000, 50000, 'Downtown Lofts common area maintenance', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 120000, 0, 'Highland Pines deck refinishing', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 100000, 0, 'Oakwood Terraces exterior siding powerwash', ?),
+        (?, ?, ?, ?, ?, NULL, ?, 100000, 0, 'Downtown Lofts common area maintenance', ?),
         -- Bill 4 Allocations ($1,850)
         (?, ?, ?, ?, ?, NULL, ?, 185000, 185000, 'Dual heat pump system overhaul', ?),
         -- Bill 5 Allocations ($4,500)

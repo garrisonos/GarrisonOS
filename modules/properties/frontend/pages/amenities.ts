@@ -8,6 +8,7 @@ import {
   UnitAmenityViewRecord
 } from '../../backend/amenities.js';
 import { getDatabase } from '../../../../database/client.js';
+import { canAccessPortfolio } from '../../../../core/rbac.js';
 
 interface PropertyRow {
   id: string;
@@ -16,6 +17,7 @@ interface PropertyRow {
   city: string;
   state: string;
   zip: string;
+  portfolio_id?: string | null;
 }
 
 interface UnitRow {
@@ -76,6 +78,14 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   const propertyId = (ctx.query['property_id'] || ctx.query['id'] || '').trim();
   const unitId = (ctx.query['unit_id'] || '').trim();
 
+  // If no property or unit specified, route gracefully to first available property
+  if (!propertyId && !unitId) {
+    const firstProp = db.prepare('SELECT id FROM properties WHERE operator_id = ? AND deleted_at IS NULL ORDER BY name ASC LIMIT 1').get(opId) as { id: string } | undefined;
+    if (firstProp) {
+      return { redirect: `/properties/amenities?property_id=${encodeURIComponent(firstProp.id)}`, content: '' };
+    }
+  }
+
   let property: PropertyRow | null = null;
   let unit: UnitRow | null = null;
 
@@ -83,17 +93,26 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     unit = (db.prepare('SELECT id, property_id, unit_number, status, market_rent_cents, target_deposit_cents FROM units WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
       .get(unitId, opId) as unknown as UnitRow) || null;
     if (unit) {
-      property = (db.prepare('SELECT id, name, address, city, state, zip FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
+      property = (db.prepare('SELECT id, name, address_line1 AS address, city, state, postal_code AS zip, portfolio_id FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
         .get(unit.property_id, opId) as unknown as PropertyRow) || null;
     }
   } else if (propertyId) {
-    property = (db.prepare('SELECT id, name, address, city, state, zip FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
+    property = (db.prepare('SELECT id, name, address_line1 AS address, city, state, postal_code AS zip, portfolio_id FROM properties WHERE id = ? AND operator_id = ? AND deleted_at IS NULL')
       .get(propertyId, opId) as unknown as PropertyRow) || null;
   }
 
   if (!property && !unit) {
     ctx.session.addFlash('error', 'Property or Unit not found.');
     return { redirect: '/properties', content: '' };
+  }
+
+  // Enforce portfolio access control on parent property
+  const sessionUserId = ctx.session.user?.id;
+  if (property && property.portfolio_id && sessionUserId && sessionUserId !== 'system') {
+    if (!canAccessPortfolio(sessionUserId, property.portfolio_id, opId, db)) {
+      ctx.session.addFlash('error', 'Access denied to this portfolio property.');
+      return { redirect: '/properties', content: '' };
+    }
   }
 
   const csrfToken = ctx.session.getCsrfToken();
@@ -119,8 +138,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
           const rawExcluded = ctx.body['excluded_inherited'] || [];
           const excludedInheritedIds = Array.isArray(rawExcluded) ? rawExcluded : rawExcluded ? [rawExcluded] : [];
 
+          // The unit active selection should omit inherited property amenity IDs, as those are inherited by default
+          const propAmenities = AmenitiesRepository.getPropertyAmenities(property.id, opId);
+          const inheritedSet = new Set(propAmenities.active.map((a) => a.id));
+          const unitSpecificSelectedIds = selectedIds.filter((id: string) => !inheritedSet.has(id));
+
           AmenitiesRepository.setUnitAmenities(unit.id, {
-            selectedIds,
+            selectedIds: unitSpecificSelectedIds,
             excludedInheritedIds
           }, opId);
 
@@ -201,12 +225,13 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   let excludedInheritedIds = new Set<string>();
 
   if (unit && property) {
+    const propData = AmenitiesRepository.getPropertyAmenities(property.id, opId);
+    for (const a of propData.active) {
+      inheritedAmenityIds.add(a.id);
+    }
     const unitData = AmenitiesRepository.getUnitAmenities(unit.id, property.id, opId);
     for (const a of unitData.active) {
       activeAmenityIds.add(a.id);
-      if (a.is_inherited) {
-        inheritedAmenityIds.add(a.id);
-      }
     }
     // Also find if any inherited ones are excluded
     const rawExcluded = db.prepare(`

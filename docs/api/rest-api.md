@@ -199,7 +199,7 @@ All JSON responses conform to standardized envelopes:
 * `POST /api/v1/accounting/checks`: Record paper check payment settling one or more bills
 * `GET /api/v1/accounting/checks/:id`: Get check details and bill settlements
 * `GET /api/v1/accounting/checks/:id/pdf`: Generate zero-dependency ANSI X9.100-140 check PDF with MICR line and remittance vouchers
-* `POST /api/v1/accounting/checks/batch-pdf`: Generate consolidated multi-page ANSI X9.100-140 check batch PDF
+* `GET /api/v1/accounting/checks/batch-pdf`: Generate consolidated multi-page ANSI X9.100-140 check batch PDF
 * `POST /api/v1/accounting/checks/:id/void`: Void check, reopen bills, and reverse GL payment
 * `GET /api/v1/accounting/vendor_credits`: List vendor credit memos
 * `POST /api/v1/accounting/vendor_credits`: Record vendor credit memo / refund
@@ -255,8 +255,7 @@ All JSON responses conform to standardized envelopes:
 ### Custom Fields Engine
 
 * `GET /api/v1/custom_fields/sections`: List custom field sections filtered by `entity_type`
-* `POST /api/v1/custom_fields/sections`: Create custom field section (`entity_type`, `label`, `sort_order`, `icon`)
-* `PUT /api/v1/custom_fields/sections/:id`: Update custom field section label, sort order, or icon
+* `POST /api/v1/custom_fields/sections`: Create custom field section (`entity_type`, `title`, optional `sort_order`)
 * `DELETE /api/v1/custom_fields/sections/:id`: Soft delete custom field section
 * `GET /api/v1/custom_fields/definitions`: List custom field schemas filtered by `entity_type`
 * `POST /api/v1/custom_fields/definitions`: Register custom field definition (`name`, `label`, `field_type`, `section_id`, `is_required`, `options`, `sort_order`, `description`)

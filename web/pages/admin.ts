@@ -777,14 +777,14 @@ function renderUsersTab(
                         type="button"
                         class="btn btn-sm btn-subtle"
                         style="padding: 0.25rem 0.5rem; margin-right: 0.25rem;"
-                        onclick="openEditUserModal('${u.id}', '${u.email}', '${u.first_name}', '${u.last_name}', '${u.role}', ${JSON.stringify(JSON.stringify(modules))}, ${JSON.stringify(JSON.stringify(portfolios))})"
+                        onclick="openEditUserModal(${JSON.stringify(u.id)}, ${JSON.stringify(u.email)}, ${JSON.stringify(u.first_name)}, ${JSON.stringify(u.last_name)}, ${JSON.stringify(u.role)}, ${JSON.stringify(JSON.stringify(modules))}, ${JSON.stringify(JSON.stringify(portfolios))})"
                         title="Edit User & Permissions"
                       >
                         ✏️ Edit
                       </button>
                       ${u.role !== 'owner'
                         ? html`
-                            <form method="POST" action="/admin?tab=users" style="display: inline;" onsubmit="return confirm('Are you sure you want to deactivate and remove ${u.first_name} ${u.last_name}?');">
+                            <form method="POST" action="/admin?tab=users" style="display: inline;" onsubmit="return confirm(${JSON.stringify(`Are you sure you want to deactivate and remove ${u.first_name} ${u.last_name}?`)});">
                               ${csrfField(csrfToken)}
                               <input type="hidden" name="action" value="delete_user">
                               <input type="hidden" name="user_id" value="${u.id}">
@@ -1491,13 +1491,18 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   let allBackups: any[] = [];
   try {
     allBackups = db.prepare(`
-      SELECT id, filename, size_bytes, sha256_checksum, status, created_at
+      SELECT id, filename, file_size_bytes AS size_bytes, checksum_sha256 AS sha256_checksum, status, created_at
       FROM backups
-      WHERE deleted_at IS NULL
+      WHERE operator_id = ? AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 25
-    `).all() as any[];
-  } catch (_) {}
+    `).all(operatorId) as any[];
+  } catch (err: any) {
+    const msg = String(err?.message || '');
+    if (!msg.includes('no such table')) {
+      dbStatus = 'degraded';
+    }
+  }
 
   let usersList: any[] = [];
   let allPortfolios: any[] = [];

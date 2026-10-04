@@ -1327,8 +1327,8 @@ export function registerRoutes(router: Router): void {
 
     const payerName = (typeof req.query['payer_name'] === 'string' && req.query['payer_name'].trim()) || opRow?.name || 'GarrisonOS Management';
     const payerAddress = (typeof req.query['payer_address'] === 'string' && req.query['payer_address'].trim()) || '100 Main St, Suite 200';
-    const bankRouting = (typeof req.query['bank_routing'] === 'string' && req.query['bank_routing'].trim()) || '123456789';
-    const bankAccountNumber = (typeof req.query['bank_account_number'] === 'string' && req.query['bank_account_number'].trim()) || '987654321';
+    const bankRouting = (typeof req.query['bank_routing'] === 'string' && req.query['bank_routing'].trim()) || undefined;
+    const bankAccountNumber = (typeof req.query['bank_account_number'] === 'string' && req.query['bank_account_number'].trim()) || undefined;
 
     try {
       const checksData: any[] = [];
@@ -1495,8 +1495,8 @@ export function registerRoutes(router: Router): void {
         deposit_number: (deposit as any).deposit_number || deposit.id.slice(0, 8),
         deposit_date: new Date(deposit.deposit_date).toISOString().slice(0, 10),
         bank_name: deposit.bank_account_name || 'Operating Checking',
-        bank_routing: (deposit as any).bank_routing_number || '123456789',
-        bank_account_number: (deposit as any).bank_account_number || '987654321',
+        bank_routing: (deposit as any).bank_routing_number || undefined,
+        bank_account_number: (deposit as any).bank_account_number || undefined,
         payer_name: opRow?.name || 'GarrisonOS Management',
         memo: deposit.memo,
         total_amount_cents: deposit.total_amount_cents,

@@ -169,6 +169,10 @@ const ENTITY_SQL: Record<string, { select: string; update: string }> = {
   work_order: {
     select: 'SELECT id, custom_fields FROM work_orders WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
     update: 'UPDATE work_orders SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+  },
+  bill: {
+    select: 'SELECT id, custom_fields FROM bills WHERE id = ? AND operator_id = ? AND deleted_at IS NULL',
+    update: 'UPDATE bills SET custom_fields = ?, updated_at = ? WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
   }
 };
 
@@ -180,6 +184,7 @@ function normalizeDateValue(raw: any): string | null {
     const d = new Date(raw);
     if (isNaN(d.getTime())) return null;
     const year = d.getUTCFullYear();
+    if (year < 1000 || year > 9999) return null;
     const month = String(d.getUTCMonth() + 1).padStart(2, '0');
     const day = String(d.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
@@ -187,6 +192,18 @@ function normalizeDateValue(raw: any): string | null {
 
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
+
+  // Support ISO datetime strings (e.g., 2026-10-03T12:00:00Z)
+  if (trimmed.includes('T')) {
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    const year = d.getUTCFullYear();
+    if (year < 1000 || year > 9999) return null;
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (!match) return null;
 
@@ -299,7 +316,7 @@ export class CustomFieldsService {
       let sql = `
         SELECT d.*, s.title as section_title
         FROM custom_field_definitions d
-        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.deleted_at IS NULL
+        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.operator_id = d.operator_id AND s.deleted_at IS NULL
         WHERE d.operator_id = ? AND d.deleted_at IS NULL
       `;
       const params: any[] = [operatorId];
@@ -351,7 +368,7 @@ export class CustomFieldsService {
       row = db.prepare(`
         SELECT d.*, s.title as section_title
         FROM custom_field_definitions d
-        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.deleted_at IS NULL
+        LEFT JOIN custom_field_sections s ON d.section_id = s.id AND s.operator_id = d.operator_id AND s.deleted_at IS NULL
         WHERE d.id = ? AND d.operator_id = ? AND d.deleted_at IS NULL
       `).get(id, operatorId);
     } else {
@@ -413,6 +430,18 @@ export class CustomFieldsService {
         throw new Error('options array is required for select data type');
       }
       optionsJson = JSON.stringify(cleaned);
+    }
+
+    if (data.section_id) {
+      const section = db.prepare(
+        'SELECT id, entity_type FROM custom_field_sections WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+      ).get(data.section_id, operatorId) as { id: string; entity_type: string } | undefined;
+      if (!section) {
+        throw new Error(`Custom field section "${data.section_id}" not found`);
+      }
+      if (section.entity_type !== data.entity_type) {
+        throw new Error(`Section entity_type "${section.entity_type}" does not match field entity_type "${data.entity_type}"`);
+      }
     }
 
     const existing = db.prepare(`
@@ -515,6 +544,18 @@ export class CustomFieldsService {
     }
 
     const now = Date.now();
+
+    if (data.section_id) {
+      const section = db.prepare(
+        'SELECT id, entity_type FROM custom_field_sections WHERE id = ? AND operator_id = ? AND deleted_at IS NULL'
+      ).get(data.section_id, operatorId) as { id: string; entity_type: string } | undefined;
+      if (!section) {
+        throw new Error(`Custom field section "${data.section_id}" not found`);
+      }
+      if (section.entity_type !== existing.entity_type) {
+        throw new Error(`Section entity_type "${section.entity_type}" does not match field entity_type "${existing.entity_type}"`);
+      }
+    }
 
     const colCheck = db.prepare("PRAGMA table_info(custom_field_definitions)").all() as Array<{ name: string }>;
     const hasSectionId = colCheck.some((c) => c.name === 'section_id');

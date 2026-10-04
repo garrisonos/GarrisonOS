@@ -31,7 +31,7 @@ export interface DepositSlipPdfData {
   deposit_date: string;
   bank_name: string;
   bank_routing?: string | null;
-  bank_account_number: string;
+  bank_account_number?: string | null;
   payer_name: string;
   memo?: string | null;
   total_amount_cents: number;
@@ -71,10 +71,10 @@ export interface MarketingFlyerPdfData {
   address: string;
   headline?: string | null;
   description?: string | null;
-  market_rent_cents: number;
-  target_deposit_cents: number;
-  bedrooms: number;
-  bathrooms: number;
+  market_rent_cents?: number | null;
+  target_deposit_cents?: number | null;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
   square_feet?: number | null;
   available_date?: string | null;
   amenities: { name: string; category: string }[];
@@ -246,10 +246,10 @@ function buildCheckStreamOps(check: CheckPdfData): string[] {
   text(410, 584, 'F1', 7, 'AUTHORIZED SIGNATURE');
 
   // MICR Line
-  const routing = check.bank_routing || '123456789';
-  const account = check.bank_account_number || '987654321';
-  const micr = `C${check.check_number}C A${routing}A ${account}C`;
-  text(120, 550, 'F3', 11, micr);
+  if (check.bank_routing && check.bank_account_number) {
+    const micr = `C${check.check_number}C A${check.bank_routing}A ${check.bank_account_number}C`;
+    text(120, 550, 'F3', 11, micr);
+  }
 
   // Perforation 1 (y: 530)
   line(20, 530, 592, 530, 0.5, true);
@@ -539,11 +539,20 @@ export function generateMarketingFlyerPdf(data: MarketingFlyerPdfData): Buffer {
   } else {
     text(45, 715, 'F1', 12, data.property_type.replace(/_/g, ' ').toUpperCase());
   }
-  text(420, 725, 'F2', 18, `$${(data.market_rent_cents / 100).toFixed(0)} / mo`);
+  if (data.market_rent_cents) {
+    text(420, 725, 'F2', 18, `$${(data.market_rent_cents / 100).toFixed(0)} / mo`);
+  }
 
   // Location & Specs
   text(35, 675, 'F1', 10, `Location: ${data.address}`);
-  text(35, 655, 'F2', 10, `Bedrooms: ${data.bedrooms}   |   Bathrooms: ${data.bathrooms}   |   Deposit: $${(data.target_deposit_cents / 100).toFixed(0)}${data.square_feet ? '   |   Sq Ft: ' + data.square_feet : ''}`);
+  const specs: string[] = [];
+  if (data.bedrooms !== undefined && data.bedrooms !== null) specs.push(`Bedrooms: ${data.bedrooms}`);
+  if (data.bathrooms !== undefined && data.bathrooms !== null) specs.push(`Bathrooms: ${data.bathrooms}`);
+  if (data.target_deposit_cents) specs.push(`Deposit: $${(data.target_deposit_cents / 100).toFixed(0)}`);
+  if (data.square_feet) specs.push(`Sq Ft: ${data.square_feet}`);
+  if (specs.length > 0) {
+    text(35, 655, 'F2', 10, specs.join('   |   '));
+  }
 
   line(30, 640, 582, 640, 0.5);
 
@@ -612,12 +621,7 @@ export function generateWorkOrderPdf(data: WorkOrderDispatchPdfData): Buffer {
   const ops: string[] = [];
 
   const text = (x: number, y: number, font: string, size: number, str: string) => {
-    const escaped = (str || '')
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-      .replace(/\r?\n/g, ' ');
-    ops.push(`BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escaped}) Tj ET`);
+    ops.push(`BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfString(str || '')}) Tj ET`);
   };
 
   const line = (x1: number, y1: number, x2: number, y2: number, width = 1) => {

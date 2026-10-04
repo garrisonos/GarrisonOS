@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Ctrl+K or Cmd+K or '/' to focus search bar
-    const searchInput = document.getElementById('topbar-search-input');
+    const searchInput = document.getElementById('global-search-input') || document.getElementById('topbar-search-input');
     if (searchInput) {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
@@ -72,7 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 4. Universal Search Controller with 300ms Debounce & Keyboard Navigation
-  const searchInput = document.getElementById('topbar-search-input');
+  const searchInput = document.getElementById('global-search-input') || document.getElementById('topbar-search-input');
   const searchDropdown = document.getElementById('search-quick-results');
 
   if (searchInput && searchDropdown) {
@@ -451,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 10. Universal Entity Preview & Modal Navigation
-  const UUID_REGEX = /[0-9a-f0-9]{8}-[0-9a-f0-9]{4}-[0-9a-f0-9]{4}-[0-9a-f0-9]{4}-[0-9a-f0-9]{12}/i;
+  const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
   // Ensure universal preview modal dialog exists in DOM
   let entityModal = document.getElementById('universal-entity-preview-modal');
@@ -543,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Global click interception
   document.addEventListener('click', async (e) => {
     // 1. Check if clicked target or parent has entity identifiers
-    const entityTarget = e.target.closest('[data-entity-id], [data-uuid], a[href*="id="], .entity-clickable');
+    const entityTarget = e.target.closest('[data-entity-id], [data-uuid], .entity-clickable');
     if (!entityTarget) return;
 
     // Check if the click occurred inside ANY currently open dialog/modal
@@ -575,10 +575,15 @@ document.addEventListener('DOMContentLoaded', () => {
         entityModal.close();
       }
 
-      // If we already know the targetHref (and it's a page link, not #), navigate to it
-      if (targetHref && targetHref !== '#' && !targetHref.startsWith('javascript:')) {
-        window.location.href = targetHref;
-        return;
+      // If we already know the targetHref (and it's a page link, not #), navigate to it safely
+      if (targetHref && targetHref !== '#') {
+        const trimmedHref = targetHref.trim();
+        const isSafeRelative = trimmedHref.startsWith('/') && !trimmedHref.startsWith('//');
+        const isSafeHttp = trimmedHref.startsWith('http://') || trimmedHref.startsWith('https://');
+        if (isSafeRelative || isSafeHttp) {
+          window.location.href = trimmedHref;
+          return;
+        }
       }
 
       // If no direct href, fetch the entity preview to resolve its fullUrl

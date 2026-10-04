@@ -15,8 +15,9 @@ export interface PaginationOptions {
  * @returns SafeHtml rendered pagination markup or empty raw string if only 1 page with 0 items.
  */
 export function renderPagination(options: PaginationOptions): SafeHtml {
-  const { page, limit, total, baseUrl, queryParams = {} } = options;
+  const { limit, total, baseUrl, queryParams = {} } = options;
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const page = Math.max(1, Math.min(options.page || 1, totalPages));
 
   if (total <= limit && page === 1) {
     // Single page with few items: render simple counter without navigation buttons

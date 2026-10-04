@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS work_order_vendors (
 );
 CREATE INDEX IF NOT EXISTS idx_wo_vendors_operator_wo ON work_order_vendors(operator_id, work_order_id);
 CREATE INDEX IF NOT EXISTS idx_wo_vendors_operator_vendor ON work_order_vendors(operator_id, vendor_contact_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_wo_vendors_active ON work_order_vendors(operator_id, work_order_id, vendor_contact_id) WHERE deleted_at IS NULL;
 
 -- Hold reason column for work orders placed on hold
 ALTER TABLE work_orders ADD COLUMN hold_reason TEXT;

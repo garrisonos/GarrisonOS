@@ -29,7 +29,7 @@ export interface WorkOrder {
   /** Urgency level of the work order. */
   priority: 'low' | 'medium' | 'high' | 'emergency';
   /** Trade or domain classification. */
-  category: 'plumbing' | 'electrical' | 'hvac' | 'appliance' | 'structural' | 'cosmetic' | 'pest' | 'other';
+  category: 'plumbing' | 'electrical' | 'hvac' | 'appliance' | 'structural' | 'cosmetic' | 'pest' | 'pest_control' | 'make_ready' | 'roofing' | 'landscaping' | 'other';
   /** 1 if technician has permission to enter, 0 otherwise. */
   permission_to_enter: number;
   /** Access instructions or lockbox codes. */
@@ -324,6 +324,23 @@ export class MaintenanceRepository {
   }
 
   /**
+   * Normalizes extended work order categories to database column supported values.
+   *
+   * @param cat - Category name to normalize.
+   * @returns Canonical database category string.
+   */
+  public static normalizeCategory(cat?: string | null): string {
+    if (!cat) return 'other';
+    const mapping: Record<string, string> = {
+      pest_control: 'pest',
+      make_ready: 'cosmetic',
+      roofing: 'structural',
+      landscaping: 'other'
+    };
+    return mapping[cat] || cat;
+  }
+
+  /**
    * Determine if a vendor's trade specialty is compatible with a work order category.
    *
    * @param vendorSpecialty - Declared trade specialty of vendor.
@@ -392,9 +409,9 @@ export class MaintenanceRepository {
     if (filter?.portfolio) {
       sql += ` AND w.property_id IN (
         SELECT id FROM properties
-        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE name = ?)) AND deleted_at IS NULL
+        WHERE operator_id = ? AND (portfolio_id = ? OR portfolio_id IN (SELECT id FROM portfolios WHERE operator_id = ? AND name = ? AND deleted_at IS NULL)) AND deleted_at IS NULL
       )`;
-      params.push(operatorId, filter.portfolio, filter.portfolio);
+      params.push(operatorId, filter.portfolio, operatorId, filter.portfolio);
     }
     if (filter?.unit_id) {
       sql += ' AND w.unit_id = ?';
@@ -535,39 +552,42 @@ export class MaintenanceRepository {
 
         if (cashRow && cashRow.line_count > 0) {
           hasAccountingData = true;
-          netBankCash = Number(cashRow.net_cash);
-        }
+          availableFundsCents = Math.max(0, Number(cashRow.net_cash));
+        } else {
+          const contribCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_capital_contributions'").get();
+          let contributions = 0;
+          if (contribCheck) {
+            const cRow = db.prepare(`
+              SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
+              FROM client_capital_contributions
+              WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+            `).get(portfolioId, operatorId) as { total: number; count: number };
+            if (cRow && cRow.count > 0) {
+              hasAccountingData = true;
+              contributions = Number(cRow.total);
+            }
+          }
 
-        const contribCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_capital_contributions'").get();
-        let contributions = 0;
-        if (contribCheck) {
-          const cRow = db.prepare(`
-            SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
-            FROM client_capital_contributions
-            WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
-          `).get(portfolioId, operatorId) as { total: number; count: number };
-          if (cRow && cRow.count > 0) {
-            hasAccountingData = true;
-            contributions = Number(cRow.total);
+          const distCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_distributions'").get();
+          let distributions = 0;
+          if (distCheck) {
+            const dRow = db.prepare(`
+              SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
+              FROM client_distributions
+              WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
+            `).get(portfolioId, operatorId) as { total: number; count: number };
+            if (dRow && dRow.count > 0) {
+              hasAccountingData = true;
+              distributions = Number(dRow.total);
+            }
+          }
+
+          if (hasAccountingData) {
+            availableFundsCents = Math.max(0, contributions - distributions);
           }
         }
 
-        const distCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='client_distributions'").get();
-        let distributions = 0;
-        if (distCheck) {
-          const dRow = db.prepare(`
-            SELECT COALESCE(SUM(amount_cents), 0) as total, COUNT(id) as count
-            FROM client_distributions
-            WHERE portfolio_id = ? AND operator_id = ? AND deleted_at IS NULL
-          `).get(portfolioId, operatorId) as { total: number; count: number };
-          if (dRow && dRow.count > 0) {
-            hasAccountingData = true;
-            distributions = Number(dRow.total);
-          }
-        }
-
-        if (hasAccountingData) {
-          availableFundsCents = Math.max(0, netBankCash + contributions - distributions);
+        if (hasAccountingData && availableFundsCents !== null) {
           if (estimatedCostCents > availableFundsCents) {
             shouldHold = true;
             reasons.push(
@@ -576,8 +596,10 @@ export class MaintenanceRepository {
           }
         }
       }
-    } catch {
-      // Proceed gracefully in non-accounting test contexts
+    } catch (err: any) {
+      // Fail closed on spend policy evaluation errors per Section 6.3
+      shouldHold = true;
+      reasons.push(`Spend policy evaluation encountered an error (${err?.message || 'unknown error'}) - work order placed on administrative hold`);
     }
 
     return {
@@ -702,7 +724,7 @@ export class MaintenanceRepository {
         data.description,
         effectiveStatus,
         data.priority || 'medium',
-        data.category || 'other',
+        MaintenanceRepository.normalizeCategory(data.category),
         data.permission_to_enter === false ? 0 : 1,
         data.entry_instructions || null,
         data.requested_by_contact_id || null,
@@ -732,7 +754,7 @@ export class MaintenanceRepository {
         data.description,
         effectiveStatus,
         data.priority || 'medium',
-        data.category || 'other',
+        MaintenanceRepository.normalizeCategory(data.category),
         data.permission_to_enter === false ? 0 : 1,
         data.entry_instructions || null,
         data.requested_by_contact_id || null,
@@ -782,6 +804,9 @@ export class MaintenanceRepository {
     const db = getDatabase();
     const now = Date.now();
     const updated = { ...existing, ...data, updated_at: now };
+    if (updated.category) {
+      updated.category = MaintenanceRepository.normalizeCategory(updated.category) as any;
+    }
 
     // Reject reopening or dispatching cancelled work orders
     if (existing.status === 'cancelled' && updated.status !== 'cancelled') {
@@ -810,13 +835,21 @@ export class MaintenanceRepository {
       }
     }
 
-    // Re-evaluate spend limits if estimated cost was modified or set
-    if (data.estimated_cost_cents !== undefined && data.estimated_cost_cents > 0) {
+    // Re-evaluate spend limits if estimated cost was modified
+    if (
+      data.estimated_cost_cents !== undefined &&
+      data.estimated_cost_cents !== existing.estimated_cost_cents &&
+      data.estimated_cost_cents > 0
+    ) {
       const spendPolicy = MaintenanceRepository.evaluateSpendPolicy(updated.property_id, updated.estimated_cost_cents);
       if (spendPolicy.shouldHold && updated.status !== 'completed' && updated.status !== 'cancelled') {
         updated.status = 'on_hold';
         updated.hold_reason = spendPolicy.reason || 'Estimated expense exceeds permissible spend threshold or available portfolio funds';
       }
+    }
+
+    if (updated.status !== 'on_hold') {
+      updated.hold_reason = null;
     }
 
     const customFieldsJson = CustomFieldsService.prepareForWrite('work_order', data.custom_fields, (existing as any).custom_fields);
@@ -989,6 +1022,16 @@ export class MaintenanceRepository {
       throw new Error('work_order_vendors table not found');
     }
 
+    // If role is explicitly primary, ensure vendor meets compliance and trade requirements
+    if (role === 'primary') {
+      if (!vendor.w9_received) {
+        throw new Error(`Vendor ${vendorContactId} cannot be assigned as primary: W-9 form is pending verification`);
+      }
+      if (!MaintenanceRepository.isTradeCompatible(vendor.vendor_specialty, wo.category)) {
+        throw new Error(`Vendor specialty "${vendor.vendor_specialty || 'None'}" is not eligible for "${wo.category}" work orders`);
+      }
+    }
+
     // Check if already assigned
     const existing = db.prepare(
       'SELECT id FROM work_order_vendors WHERE work_order_id = ? AND vendor_contact_id = ? AND operator_id = ? AND deleted_at IS NULL'
@@ -1005,8 +1048,8 @@ export class MaintenanceRepository {
       `).run(id, operatorId, workOrderId, vendorContactId, role, notes || null, now, now);
     }
 
-    // If work order has no primary vendor assigned yet, also set vendor_contact_id
-    if (!wo.vendor_contact_id) {
+    // If work order has no primary vendor assigned yet, and this vendor is eligible, set vendor_contact_id
+    if (!wo.vendor_contact_id && vendor.w9_received && MaintenanceRepository.isTradeCompatible(vendor.vendor_specialty, wo.category)) {
       db.prepare('UPDATE work_orders SET vendor_contact_id = ?, updated_at = ? WHERE id = ?')
         .run(vendorContactId, now, workOrderId);
     }
@@ -1050,10 +1093,14 @@ export class MaintenanceRepository {
     const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='work_order_vendors'").get();
     if (!tableCheck) return false;
 
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE work_order_vendors SET deleted_at = ?
       WHERE work_order_id = ? AND vendor_contact_id = ? AND operator_id = ? AND deleted_at IS NULL
     `).run(now, workOrderId, vendorContactId, operatorId);
+
+    if (result.changes === 0) {
+      return false;
+    }
 
     // If this was the primary vendor on work_orders, set to null or next assigned vendor
     const wo = db.prepare('SELECT vendor_contact_id FROM work_orders WHERE id = ? AND operator_id = ?').get(workOrderId, operatorId) as any;
@@ -1061,7 +1108,7 @@ export class MaintenanceRepository {
       const nextVendor = db.prepare(`
         SELECT vendor_contact_id FROM work_order_vendors
         WHERE work_order_id = ? AND operator_id = ? AND deleted_at IS NULL
-        LIMIT 1
+        ORDER BY assigned_at ASC LIMIT 1
       `).get(workOrderId, operatorId) as any;
       db.prepare('UPDATE work_orders SET vendor_contact_id = ?, updated_at = ? WHERE id = ?')
         .run(nextVendor ? nextVendor.vendor_contact_id : null, now, workOrderId);
@@ -1151,7 +1198,7 @@ export class MaintenanceRepository {
         v.company_name as vendor_company
       FROM bills b
       JOIN contacts v ON b.vendor_id = v.id AND v.deleted_at IS NULL
-      WHERE b.work_order_id = ? AND b.operator_id = ? AND b.deleted_at IS NULL
+      WHERE b.work_order_id = ? AND b.operator_id = ? AND b.deleted_at IS NULL AND b.status <> 'voided'
       ORDER BY b.invoice_date DESC, b.created_at DESC
     `).all(workOrderId, operatorId) as any[];
 
@@ -1304,14 +1351,28 @@ export class MaintenanceRepository {
     const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
     const completedLast30Days = orders.filter((o) => o.status === 'completed' && (o.completed_date || 0) >= thirtyDaysAgo);
 
+    const startOfCurrentMonth = new Date();
+    startOfCurrentMonth.setDate(1);
+    startOfCurrentMonth.setHours(0, 0, 0, 0);
+    const startOfMonthMs = startOfCurrentMonth.getTime();
+
+    const completedThisMonth = orders.filter((o) => o.status === 'completed' && (o.completed_date || 0) >= startOfMonthMs);
+
+    const resolvedOrders = orders.filter((o) => o.status === 'completed' && o.completed_date && o.created_at && o.completed_date > o.created_at);
+    let avgResolutionTimeHours = 0;
+    if (resolvedOrders.length > 0) {
+      const totalResolutionMs = resolvedOrders.reduce((sum, o) => sum + (o.completed_date! - o.created_at), 0);
+      avgResolutionTimeHours = Math.round((totalResolutionMs / (resolvedOrders.length * 3600000)) * 10) / 10;
+    }
+
     return {
       openWorkOrders: openOrders.length,
       openOrders: openOrders.length,
       emergencyWorkOrders: emergencyOrders.length,
       inProgressWorkOrders: inProgressOrders.length,
       completedLast30Days: completedLast30Days.length,
-      completedThisMonth: completedLast30Days.length,
-      avgResolutionTimeHours: 24
+      completedThisMonth: completedThisMonth.length,
+      avgResolutionTimeHours
     };
   }
 
