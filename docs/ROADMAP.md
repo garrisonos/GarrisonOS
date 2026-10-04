@@ -509,7 +509,7 @@ classDiagram
   - **Subtask 75.2**: Implement Operator Maintenance Window and Update Preferences UI (`/admin?tab=updates`), allowing operators to define low-traffic maintenance schedules (e.g. Tuesdays at 3:00 AM) and select release tracks (`stable`, `beta`, `security_only`).
   - **Subtask 75.3**: Implement Cryptographic Package Signature Verification (Ed25519) and SHA-256 checksum validation ensuring downloaded release archives are mathematically authentic and un-tampered before execution.
   - **Subtask 75.4**: Implement Pre-Flight Health Check & Automated Migration Rollback Engine executing mandatory disk space checks (minimum 2x DB size) and WAL snapshots before applying updates, with automated rollback if migrations fail.
-  - **Subtask 75.5**: Implement Transparent Update Heartbeat Payload Viewer in `/admin` displaying the exact JSON transmitted (registration, environment, scale, diagnostics, origin IP) ensuring full privacy transparency without collecting PII or financial balances.
+  - **Subtask 75.5**: Implement Transparent Update Heartbeat Payload Viewer in `/admin` displaying the exact JSON transmitted (registration, environment, scale, diagnostics, origin IP) ensuring full privacy transparency by disclosing that the heartbeat transmits contact email and origin IP, without collecting financial balances or tenant records.
 - [ ] **Task 76**: Modular Plugin Architecture Contract & Extension Registry (`plugins/`)
   - **Subtask 76.1**: Define plugin manifest contract (`plugin.json`), lifecycle hooks, and secure sandbox execution boundaries.
   - **Subtask 76.2**: Build plugin management interface in `/admin` allowing operators to inspect, configure, and toggle external integration plugins.
