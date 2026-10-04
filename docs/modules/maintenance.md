@@ -84,10 +84,11 @@ Work orders support multi-step task checklists (`work_order_tasks`). Maintenance
 ### 6.2. Formal Closure Workflow
 
 Closing a work order (`PUT /api/v1/maintenance/:id/close`) requires capturing:
-- `completed_at`: Verification timestamp (epoch ms).
-- `completion_notes`: Documented repair outcome and tenant sign-off.
-- `actual_cost_cents`: Total labor and material expense.
-- Optional link to an Accounts Payable bill (`bills.id`) for vendor invoicing.
+
+* `completed_at`: Verification timestamp (epoch ms).
+* `completion_notes`: Documented repair outcome and tenant sign-off.
+* `actual_cost_cents`: Total labor and material expense.
+* Optional link to an Accounts Payable bill (`bills.id`) for vendor invoicing.
 
 ### 6.3. Technician Timecard Integration (Sprint 6: Field Operations)
 
@@ -115,7 +116,9 @@ The preventative maintenance subsystem (`modules/maintenance/backend/migrations/
 ## 8. Multi-Vendor Assignments, Spend Policy Auto-Hold & Budget Tracking
 
 ### 8.1. Multi-Vendor Assignments (`work_order_vendors`)
+
 Complex work orders frequently require multiple trades (e.g., emergency plumbing requiring a plumber and a water restoration contractor, or commercial HVAC overhauls requiring an HVAC specialist and an electrician).
+
 * **Role-Based Contractor Links**: Operators assign multiple contractors from the verified contacts directory with designated trade roles (`Lead Contractor`, `Subcontractor`, `Remediation Specialist`, `Diagnostic Inspector`) and assignment notes.
 * **REST Endpoints**:
   * `GET /api/v1/maintenance/work-orders/:id/vendors`: List assigned contractors
@@ -123,15 +126,18 @@ Complex work orders frequently require multiple trades (e.g., emergency plumbing
   * `DELETE /api/v1/maintenance/work-orders/:id/vendors/:vendorContactId`: Remove contractor link
 
 ### 8.2. Automated Spend Policy & Cash Threshold Auto-Hold
+
 To prevent unauthorized or unfunded capital expenditures:
+
 * **Portfolio Spend Thresholds**: Portfolios define a permissible expenditure ceiling (`portfolios.spend_threshold_cents`).
 * **Automated Evaluation**: When a work order is created or updated with an estimated cost (`estimated_cost_cents`), `evaluateSpendPolicy()` checks whether the estimate exceeds the portfolio spend threshold or available operating bank cash and capital contributions.
 * **Auto-Hold State**: If exceeded, the work order is automatically transitioned to `status = 'on_hold'` with an explanatory `hold_reason`, posting an automated notice to the work order conversation timeline.
 
 ### 8.3. Real-Time Budget & Expense Tracking
+
 * **Linked AP Bills**: Invoices posted in Accounts Payable (`bills`) can be directly tied to work orders via `work_order_id`.
 * **Variance Rollup**: `getWorkOrderExpenses()` aggregates total invoiced actuals against the authorized estimate, computing dollar variance, budget utilization percentage, and flagging over-budget conditions with alert badges.
 
 ### 8.4. Field Technician Dispatch PDF
-* **Zero-Dependency Vector PDF**: `GET /api/v1/maintenance/work-orders/:id/pdf` generates a print-ready vector PDF dispatch sheet for technicians with property address, unit access notes, resident contacts, issue scope checklist, material expense logs, labor hours, and technician/resident sign-off blocks.
 
+* **Zero-Dependency Vector PDF**: `GET /api/v1/maintenance/work-orders/:id/pdf` generates a print-ready vector PDF dispatch sheet for technicians with property address, unit access notes, resident contacts, issue scope checklist, material expense logs, labor hours, and technician/resident sign-off blocks.

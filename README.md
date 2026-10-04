@@ -17,7 +17,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL v3"></a>
-  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.1.0--alpha-yellow.svg" alt="Status"></a>
+  <a href="#pre-production-disclaimer"><img src="https://img.shields.io/badge/Status-v0.2.0--alpha-yellow.svg" alt="Status"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-v22.5%2B-green.svg" alt="Node.js"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.8%2B-blue.svg" alt="TypeScript"></a>
   <a href="#dependencies--runtime-prerequisites"><img src="https://img.shields.io/badge/Runtime_Dependencies-0-brightgreen.svg" alt="Runtime Dependencies"></a>
@@ -36,7 +36,7 @@
 >
 > ## Pre-Production Disclaimer
 >
-> GarrisonOS is currently in **pre-production prototyping** and active development (targeting Foundational MVP Feature-Complete Alpha `v0.1.0-alpha` at Sprint 5). This software is **not ready for production property operations and should not be deployed by end users** until an official stable release is made available. Core APIs, internal schemas, and functionality remain subject to evolution. Developers and contributors are welcome to explore, evaluate, and test the codebase in isolated development environments.
+> GarrisonOS is currently in active pre-production development. Milestone 1 (Core Engine & Fiduciary Accounting Alpha, `v0.1.0-alpha`) is complete, and Milestone 2 (Foundational Operator MVP, `v0.3.0-alpha`) is currently underway across Sprints 5 and 6. This software is **not ready for production property operations and should not be deployed by end users** until an official stable release is made available. Core APIs, internal schemas, and functionality remain subject to evolution. Developers and contributors are welcome to explore, evaluate, and test the codebase in isolated development environments.
 
 ---
 
@@ -53,7 +53,14 @@ Built from first principles around **zero external runtime dependencies**, Garri
 * **Multi-Operator Architecture & 3-Tier Governance**: Cleanly bifurcates software system multi-tenancy (**Operator**) from real-estate rental occupants (**Tenants**), governed by a hierarchical access hierarchy: Platform Master Owner, Platform System Managers, Operator Admins, and Operator Subusers with dual module/portfolio scoping.
 * **4-Tier Asset Hierarchy**: Native real estate domain modeling supporting `Portfolios` $\to$ `Properties` $\to$ `Buildings` $\to$ `Units` with unit turnover lifecycle management (`vacant` $\leftrightarrow$ `turnover` $\leftrightarrow$ `maintenance_hold`).
 * **Elevated Double-Entry General Ledger & Client Accounting**: Native immutable double-entry bookkeeping (`journal_entries` and `journal_lines`), statutory trust accounting segregation (`1010 Operating` vs. `1020 Trust Checking` / `2100 Tenant Security Deposits Held`), Three-Way Bank Reconciliation, Client Capital Contributions, net cash Client Distributions / Draws, and automated Management Fee calculation and GL accrual.
+* **Accounts Payable (AP) & ANSI Vendor Check Printing**: Full AP bill lifecycle (draft, unapproved, approved, paid, voided), multi-property expense allocations (`bill_allocations`), recurring scheduled bills, and zero-dependency vector PDF check generator conforming to ANSI X9.100-140 check stock standards.
+* **Bank Deposits & Batched Reconciliation Clearing**: Grouping undeposited cash, check, and electronic receipts into statement-reconciled deposit slips (`bank_deposits`) with printable remitter receipts.
 * **Leasing AR & Fee Policy Engine**: Granular itemized recurring lease charges (pet rent, storage, utilities), configurable late fee policies (flat, % balance, % rent) with statutory caps, lease credits and concessions, and security deposit refunds vs. AR overpayment returns.
+* **Amenities Catalog & Marketing Syndication Profiles**: Standardized 5-category amenities catalog with property-to-unit inheritance/exclusions and automated branded marketing flyer PDF generation.
+* **Dynamic Schema-Driven Custom Fields Engine**: Metadata schema definitions API (`/api/v1/custom_fields/definitions`) and UI form generator across properties, units, leases, contacts, and work orders.
+* **Universal Search Engine & Global Hotkeys**: Live debounce quick suggestions dropdown, keyboard navigation (`Ctrl+K`, `/`), and full-page categorized `/search` results view with syntax filters.
+* **Team Permissions & Activity Audit Logging**: Dedicated `/admin?tab=users` panel with configurable module whitelists, portfolio scopes, and chronological audit trails.
+* **Work Order Multi-Contractor Assignments & Spend Policies**: Assigning multiple specialists, tracking real-time budget variances, and automated spend threshold auto-holds.
 * **Universal Document Attachments & Media Safety**: Zero-dependency polymorphic document subsystem supporting file attachments across all core entities, streaming RFC 7578 multipart parsing, automated EXIF stripping for JPEG/PNG, executable script neutralization for PDFs, and per-operator storage quota enforcement.
 * **System Administration GUI & Observability**: Dedicated `/admin` control center rendering real-time Node.js process telemetry (CPU, RSS, heap), operator storage quota gauges, rate limiter observability, and dead-letter error logs.
 * **Turnkey Production Packaging**: Zero-dependency Alpine Dockerfile, Docker Compose, hardened Systemd service unit, Caddy and Nginx reverse proxy configurations with automatic TLS, and unified `.tar.gz` backup and restore tooling bundling SQLite snapshots and physical media attachments.
@@ -84,8 +91,14 @@ The GarrisonOS MVP is focused strictly on delivering a robust, self-hosted prope
 * **Contacts Directory & Vendor Compliance**: Centralized human directory (tenants, owners, vendors, emergency contacts, guarantors), vendor trade specializations (plumbing, HVAC, electrical, etc.), visual W-9 verification flags (`w9_received`), and legal tax classification tracking.
 * **Leasing Lifecycle & AR Engine**: Draft $\to$ Active $\to$ Expiring $\to$ Renewed $\to$ Terminated state flow, multi-party signatories, renewal modals, move-out termination workflows with statutory deposit countdown timers, itemized recurring lease charges, late fee policy engine, lease credits/concessions, and deposit refund tracking.
 * **Elevated Double-Entry General Ledger & Statutory Trust Accounting**: Native, append-only double-entry journal engine (`journal_entries` and `journal_lines`) enforcing balanced zero-sum debit/credit proofs, statutory trust accounting segregation (`1010 Operating Checking` vs. `1020 Trust Checking` / `2100 Tenant Security Deposits Held`), Three-Way Bank Reconciliation schedules, IRS Schedule E tax mapping, Trial Balance verification, Form 1099-NEC vendor aggregation ($600 threshold), and streamed accounting exports (Rent Roll, Schedule E P&L, tenant ledgers, QuickBooks QBO/IIF/OFX).
+* **Accounts Payable, Check Printing & Bank Deposits**: Full AP bill lifecycle, multi-property expense allocations, recurring bills, zero-dependency ANSI X9.100-140 PDF check printing, and statement-reconciled bank deposit slips.
 * **Client Portfolio Accounting & Management Fees**: Capital contributions with automatic GL posting and non-commingling validation, portfolio cash summaries (`?basis=cash|accrual`), client distributions/draws restricted to available operating cash, and management fee agreements with automated calculation (flat per-unit or percentage of collected revenue) and GL accrual posting.
+* **Universal Self-Service Data Migration Importer**: Pre-import dry-run validation and mapping for CSV/Excel rosters (Properties, Units, Leases, Tenants, Vendors, Opening Balances).
+* **Core Financial & Operational Reports (Tier 1)**: Interactive & printable Rent Roll, Income Statement (P&L with cash vs. accrual toggle), General Ledger Detail Report, and Delinquency Aging Report (30/60/90+ days).
 * **Universal Document Attachments & Media Safety**: File attachments across core domain entities, zero-dependency streaming multipart parser, automated EXIF stripping for JPEGs and PNGs, executable script neutralization for PDFs, and per-operator storage quota enforcement.
+* **Universal Search, Custom Fields & Team Permissions**: Keyboard-navigated typeahead search (`Ctrl+K`), validated metadata custom fields engine, and granular operator user permissions with activity audit trails.
+* **Public Tenant Self-Service Portal & Field Operations**: Mobile-first tenant portal on `portal.<domain>`, technician timecards, work order checklists, and physical access inventory.
+* **Core Pre-1.0 Digital Signing, Payments & Affordable Housing**: Native cryptographic eSignatures, integrated electronic NACHA autopay rails, and Section 8 (HUD) dual-payer vouchers.
 * **Admin Management GUI & System Observability**: Dedicated `/admin` dashboard displaying real-time Node.js process health (uptime, CPU load, RSS, heap), operator storage quota gauges, rate limiter observability metrics, dead-letter failure queue from `EventBus`, and dynamic module inspection.
 * **Backup, Portability & Disaster Recovery**: SQLite online `VACUUM INTO` snapshots with safe WAL checkpointing, unified `.tar.gz` archives bundling the database and physical media attachments with SHA-256 verification, in-process automated `BackupScheduler` daemon with retention pruning, and standalone CLI restore utility (`scripts/restore.js`).
 * **Turnkey Deployment**: Zero-dependency Alpine Docker container, Docker Compose, hardened Systemd service unit, Caddy (automatic Let's Encrypt TLS) and Nginx reverse proxy configurations.
@@ -259,13 +272,49 @@ GarrisonOS is architected with **zero external runtime package dependencies**.
 * **Security & Session Hygiene**: Cryptographic CSRF validation on state-modifying requests, timing-safe credential verification, sliding-window rate limiting, and HTTP-only cookie sessions.
 * **Responsive UI Design System**: Vanilla CSS design tokens, light/dark theme toggle, native HTML `<dialog>` modals, and accessible ledger tables.
 
+### 10. Accounts Payable, Check Printing & Bank Deposits (`modules/accounting`)
+
+* **Accounts Payable Lifecycle**: Full bill management (`draft` $\to$ `unapproved` $\to$ `approved` $\to$ `paid` $\to$ `voided`), multi-property expense allocations (`bill_allocations`), and recurring bill templates.
+* **ANSI X9.100-140 Check Printing**: Native zero-dependency vector PDF check generator with MICR font lines, check stock layout configuration, batch check printing, and check register audit logging.
+* **Bank Deposits & Batched Clearing**: Statement-reconciled deposit batches (`bank_deposits`) grouping cash/check/electronic receipts with printable deposit slips and remitter receipts.
+
+### 11. Universal Search, Navigation & Custom Fields (`api/search.ts`, `core/custom-fields.ts`)
+
+* **Live Typeahead Search**: Instant debounce search with live preview dropdown, hotkey activation (`Ctrl+K`, `/`), and dedicated `/search` results view with syntax filters.
+* **Dynamic Custom Fields**: Flexible schema-driven custom fields (`custom_field_definitions`) supporting text, number, date, boolean, and select types with inline validation.
+* **Amenities & Marketing Profiles**: Standardized 5-category amenities catalog, property-to-unit inheritance with exclusions, and branded property marketing flyer PDF generation.
+
+### 12. Team Management, Granular Permissions & Activity Audits (`web/pages/admin.ts`, `audit_logs`)
+
+* **Operator User Directory**: Comprehensive user management interface with "+ Add Team Member" modal, password reset, and role assignment.
+* **Dual-Scoping Permissions**: Fine-grained access control with module whitelists (`user_module_access`) and portfolio access scopes (`user_portfolio_access`).
+* **User Activity Audit Trail**: Chronological audit logging (`audit_logs`) recording user actions (creation, modification, deletion) with structured diffs and IP tracking.
+
 ---
 
 ## Project Milestones & Roadmap
 
 Implementation planning, sprint tracking, deliverable scorecards, and future roadmap phases are maintained canonically in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-Please refer to the [Canonical Roadmap](docs/ROADMAP.md) for current sprint deliverables, feature completion status, and release milestones.
+### Release Milestone Summary
+
+| Milestone | Target Version | Scope & Focus | Status |
+| :--- | :---: | :--- | :---: |
+| **Milestone 1: Core Engine Alpha** | `v0.1.0-alpha` | Zero-dependency engine, double-entry GL, trust accounting, 3-way reconciliation, backup daemon, TypeScript SSR rebase. | **COMPLETED** |
+| **Milestone 2: Foundational Operator MVP** | `v0.3.0-alpha` | Accounts Payable, check printing, deposits, Universal Importer, Tier 1 Reports (Rent Roll, P&L, GL Detail, Delinquency), mobile UI, timecards. | **IN PROGRESS** |
+| **Milestone 3: Field Operations & Portals Beta** | `v0.5.0-beta` | Property condition inspections, Client Portal, 1-click owner distributions, Tier 2 Reports (Owner Statement, Balance Sheet), parking & asset management. | Planned |
+| **Milestone 4: Leasing CRM & eSign Beta** | `v0.7.0-beta` | Lead-to-lease CRM, public listings, rental applications, legal notices, native cryptographic eSignatures, Tier 3 Reports (Cash Flow, Schedule E). | Planned |
+| **Milestone 5: Enterprise Automation & Payments Beta** | `v0.9.0-beta` | Integrated electronic NACHA payments/autopay, Section 8 (HUD) vouchers, RUBS utility billing, Tier 4 Reports (Budget vs. Actual, CapEx Schedule). | Planned |
+| **Milestone 6: General Availability (GA)** | `v1.0.0` | Turnkey click-through GUI installers (Win/Mac/Linux), managed update network, modular plugin foundation. | Planned |
+
+### Post-1.0 Horizons
+
+* **Horizon A (`v1.1.0`)**: Syndication plugins (`plugin-syndication-zillow`, `plugin-syndication-apartments`, `plugin-syndication-realtor`), telephony, 24/7 leasing AI widget, community board.
+* **Horizon B (`v1.2.0`)**: Automated bank transaction feeds (Plaid/Teller), S3 media storage adapter, calendar sync, package lockers, utility web scraping.
+* **Horizon C (`v1.3.0`)**: FCRA tenant screening, on-time rent credit reporting, insurance policy verification, pet DNA registry, QuickBooks two-way sync.
+* **Horizon D (`v1.4.0`)**: Commercial real estate (CRE NNN/CAM reconciliations), HOA/Condo association management, vendor RFQ bidding.
+* **Horizon E (`v1.5.0`)**: Local AI invoice OCR copilot, after-hours emergency triage bot, virtual staging, enterprise DocuSign adapter.
+* **Horizon F (`v1.6.0`)**: Smart lock IoT hub, video intercom integration, IoT water leak auto-shutoff, electronic key cabinets, municipal ESG energy benchmarking.
 
 ---
 

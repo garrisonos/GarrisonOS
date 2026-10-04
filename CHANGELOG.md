@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned (Closing Sprint 5 & Sprint 6 Foundational Operator MVP)
+
+- **Standardized Bulk Ingestion & Temporal Query Conventions (Task 34)**:
+  - Atomic transactional bulk creation (`POST /api/v1/:resource/bulk`) wrapping operations in `withTransaction()`.
+  - Millisecond interval filtering (`*_start`, `*_end`) across entity collection endpoints.
+  - Multi-key sort parsing (`order_by=field:asc,field2:desc`) with column whitelist guards.
+- **Public-Facing Tenant Self-Service Portal (Task 36)**:
+  - Isolated subdomain routing (`portal.<domain>`) with magic-link passwordless email login.
+  - Mobile-first tenant dashboard with balance check, itemized charges, and notification preferences.
+  - Safe mobile maintenance photo request form and Resident Troubleshooting Self-Help Wizard.
+- **Universal Self-Service Data Migration Importer (Task 37)**:
+  - Zero-dependency CSV/Excel dry-run validator and schema mapper for properties, units, leases, tenants, and vendors.
+  - Opening balance General Ledger importer with zero-sum proof validation.
+- **Core Financial & Operational Reports - Tier 1 (Task 38)**:
+  - Interactive & printable Rent Roll (HTML/PDF/CSV) with contract vs. market rent and deposit liabilities.
+  - Income Statement (P&L) engine with cash vs. accrual toggle and Schedule E line mappings.
+  - General Ledger Detail Report with running balance proofs.
+  - Delinquency Aging Report with 30/60/90+ day aging buckets and direct tenant communication links.
+- **Field Operations, Responsive Layout & Ergonomics (Tasks 39–44)**:
+  - Responsive table layout containment with mobile card fallbacks and sticky summary bars.
+  - Native datepicker and currency input masks retaining integer-cents under the hood.
+  - Work order task checklists (`work_order_tasks`) and field technician timecards (`technician_timecards`).
+  - Unit turnover checklist templates and multi-stage make-ready dependency Gantt schedule.
+  - Key/fob/lockbox access inventory, pet registry with Fair Housing ESA compliance, and operator regional locales.
+
+## [0.2.0-alpha] - 2026-10-04
+
+### Added & Enhanced (Sprint 5 Deliverables & Reviews)
+
 > *Note on UI/UX Maturity*: The user interfaces and presentation views included in this milestone represent an initial foundational tier. While end-to-end operational workflows (search, previews, maintenance tracking, AP bill allocations, check printing, bank deposits, and administration) are fully functional, they serve as a baseline. Significant ongoing work remains on the development roadmap for comprehensive mobile/tablet responsiveness, refined component ergonomics, accessibility audits, and the public-facing tenant portal.
 
 - **Code Review Resolutions, Security Hardening & Defect Rectification**:
@@ -349,7 +378,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Scheduled **Admin Management GUI Subsystem** (error reporting, health telemetry, dynamic module status) and **Configurable Role-Based Access Control (RBAC)** in Sprint 3.
   - Scheduled **Deprecation & Removal of Legacy Single-Entry Accounting** (`transactions` table sunset and `tenants` view cleanup) in Sprint 4.
   - Cataloged clean-room Post-MVP Future Horizons (SMS Messaging Rails, Client Portal, Property Inspections, Prospects CRM, Work Order Tasks & Timecards, Enterprise Bulk APIs).
-  - Synchronized `docs/ROADMAP.md`, `docs/LLMREVIEW20260915.md`, `docs/architecture/bootstrap-spec.md`, `docs/modules/overview.md`, and `docs/README.md`.
+  - Synchronized `docs/ROADMAP.md`, `docs/architecture/bootstrap-spec.md`, `docs/modules/overview.md`, and `docs/README.md`.
 
 - **Sprint 2: Production Readiness, Operator Workflows & Release Candidate (v0.1.0-RC1)**:
   - **Turnkey Production Packaging**: Introduced production-grade Systemd service unit (`deploy/systemd/garrison.service`) with full security sandboxing, multi-stage zero-dependency Alpine Dockerfile (`Dockerfile`) executing under an unprivileged `garrison` system user, turnkey `docker-compose.yml`, production reverse proxy configurations for automatic Let's Encrypt TLS in Caddy (`deploy/caddy/Caddyfile`) and hardened Nginx (`deploy/nginx/nginx.conf`), and a comprehensive Self-Hosting Operator Runbook (`docs/deployment/production-guide.md`).
@@ -367,7 +396,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Maintained backward compatibility via an ANSI SQL view (`CREATE VIEW tenants AS SELECT * FROM operators`), aliases for `RequestContext.getTenantId()`, dual-header support (`X-Operator-ID` and `X-Tenant-ID`), and fallback session getters.
   - Hardened multi-operator security: fail-closed token creation requiring explicit operator claims, defensive operator stamping on EventBus emissions, cross-operator IDOR validation on work orders, bounded numeric query parsing, and 100% TSDoc docstring coverage on all public exports.
   - Updated all migrations, database seeders, API middleware, repositories, services, web presentation templates, hygiene scanners (`scripts/check-hygiene.js`), and test suites across all modules.
-- Synchronized project documentation across `docs/ROADMAP.md`, `docs/LLMREVIEW20260915.md`, `docs/architecture/technical-debt.md`, and `README.md` to establish the comprehensive execution roadmap for all planned sprints (Sprints 1 through 6) through MVP v0.1.0 GA and post-MVP releases.
+- Synchronized project documentation across `docs/ROADMAP.md`, `docs/architecture/technical-debt.md`, and `README.md` to establish the comprehensive execution roadmap for all planned sprints (Sprints 1 through 6) through MVP v0.1.0 GA and post-MVP releases.
 - Hardened presentation-layer validation, error handling, session and API transport security, multipart upload preservation, and filtered accounting exports.
 - **Complete Rebase to 100% Pure TypeScript**: Eliminated all 39 legacy PHP files (4,318 lines of code) across `web/` and all domain modules (`modules/*/frontend/`), transitioning the entire presentation layer to a native Server-Side Rendered (SSR) TypeScript architecture.
 - **Zero-Dependency Presentation Subsystem**: Implemented native TypeScript web presentation server (`web/server.ts`), front controller and router (`web/router.ts`), safe HTML tagged template system with automatic contextual XSS escaping (`web/lib/html.ts`), HMAC-SHA256 signed cookie session manager (`web/lib/session.ts`), timing-safe constant-time CSRF guard (`web/lib/csrf.ts`), dynamic UI hook registry (`web/lib/hooks.ts`), and static asset streaming handler with directory traversal guards (`web/static.ts`).
@@ -375,13 +404,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Presentation Layer Test Suite**: Added dedicated automated unit test suites for the web presentation layer (`web/test/html.test.ts`, `web/test/session.test.ts`, `web/test/csrf.test.ts`, `web/test/router.test.ts`), bringing total automated test suites to 26 passing with 0 failures.
 - Added dedicated **Automation & Maintenance** operator card in `modules/backup/frontend/pages/index.ts` providing real-time daemon status, cadence indicators, and CSRF-protected triggers for on-demand scheduled backups and vacuum routines.
 - Updated module manifest (`modules/backup/module.json`) and deployment documentation (`docs/deployment/backup-and-maintenance.md`) to reflect automated in-process scheduling and worker-thread maintenance routines.
-- Updated project review analysis (`docs/LLMREVIEW20260915.md`) marking Phase 6 complete and Backup module health at 98% (A+).
+- Updated project review analysis marking Phase 6 complete and Backup module health at 98% (A+).
 - Harden the backup scheduler with bounded configuration, owner-only manual triggers, mutually exclusive worker-thread maintenance, independent retention error reporting, and shutdown waits for active operations.
 - Handle natural and compound unique key conflicts during merge restores in `modules/backup/backend/service.ts` to replace conflicting rows cleanly without unique constraint failures.
 - Fail closed on signal termination (`code === null`) in `scripts/test.js` to report runner termination and prevent CI false-passes.
 - Enforce cryptographic digest computation, comparison, and fail-closed abort verification patterns for installer scripts in `scripts/check-hygiene.js`.
 - Convert dynamic table queries and backup restoration queries in `modules/backup/backend/service.ts` to ANSI-standard PostgreSQL-compatible SQL (`ON CONFLICT (id) DO UPDATE` instead of `INSERT OR REPLACE`).
-- Resolve markdownlint formatting errors across all documentation and root markdown files (`AGENTS.md`, `README.md`, `docs/LLMREVIEW20260915.md`).
+- Resolve markdownlint formatting errors across all documentation and root markdown files (`AGENTS.md`, `README.md`, `docs/ROADMAP.md`).
 - Enforce strict token-derived `userId` in `tenantContextMiddleware` and reject mismatched `X-User-ID` headers to prevent identity spoofing.
 - Require owner role verification for system backup endpoint (`/api/v1/system/backup`).
 - Fix `EventBus.publish` to synchronously capture and inherit active `RequestContext` (`tenantId`, `correlationId`, `userId`) when payloads omit explicit context.

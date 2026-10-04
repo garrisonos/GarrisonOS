@@ -1,7 +1,7 @@
 # Strict Multi-Operator Isolation & Domain Tenancy
- 
+
 GarrisonOS is architected from first principles to guarantee strict logical multi-operator isolation while eliminating conceptual confusion with real-estate rental tenants.
- 
+
 ---
 
 ## 1. Architectural Distinction: Operator vs. Tenant
@@ -17,15 +17,16 @@ To prevent cognitive ambiguity across the software and property management domai
 ---
 
 ## 2. Core Principles
- 
+
 1. **Mandatory Operator Column**: Every operational database table contains an `operator_id TEXT NOT NULL` column referencing `operators(id)`.
 2. **Implicit Context Propagation**: Business logic and repositories must NEVER accept `operator_id` or `tenant_id` from client request bodies or URL route parameters. It is always resolved implicitly from `RequestContext.getOperatorId()`.
 3. **Compound Operator Indexing**: Every operational table features compound indexes where `operator_id` is the leading column:
- 
+
    ```sql
    CREATE INDEX IF NOT EXISTS idx_units_operator_property ON units(operator_id, property_id);
    CREATE INDEX IF NOT EXISTS idx_tx_operator_lease_date ON transactions(operator_id, lease_id, transaction_date);
    ```
+
 4. **Zero Parameter Leakage**: Parameter leakage checks run during CI/CD (`node scripts/check-hygiene.js`) to guarantee `:operator_id` is never present in route URLs.
 
 ---
@@ -34,7 +35,7 @@ To prevent cognitive ambiguity across the software and property management domai
 
 GarrisonOS enforces a three-tier governance architecture separating infrastructure administration, property management operations, and granular subuser duties:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                       PLATFORM PLANE                        │
 │   • Master Instance Owner (system_owner)                    │
@@ -60,13 +61,16 @@ GarrisonOS enforces a three-tier governance architecture separating infrastructu
 ```
 
 ### 3.1 Platform Plane (`is_system_user = 1`)
+
 - **Master Instance Owner (`system_owner`)**: Complete system authority. Can provision, configure, and soft-delete operators and platform managers. Accesses system-wide performance telemetry, error queues, and global backups.
 - **Platform System Managers (`system_manager`)**: Designated platform administrators who assist the master owner with daily operations, monitoring, and cross-operator support without owner-destruction privileges.
 
 ### 3.2 Operator Plane
+
 - **Operator Admins & Managers (`owner`, `manager`)**: Authority bounded strictly to their property management company dataset (`operator_id`). Manages client portfolios, properties, units, leases, accounting, and staff accounts.
 
 ### 3.3 Subuser Plane (Dual-Scoped Team Members)
+
 - **Granular Roles**: `leasing_agent`, `assistant`, `maintenance`, `auditor`, `viewer`.
 - **Dual Scoping**:
   - **Module Whitelist**: Only authorized business modules can be accessed.
