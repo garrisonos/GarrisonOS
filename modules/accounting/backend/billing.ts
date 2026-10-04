@@ -2,6 +2,7 @@ import { getDatabase, withTransaction } from '../../../database/client.js';
 import { RequestContext } from '../../../core/context.js';
 import { generateUUIDv7 } from '../../../core/crypto.js';
 import { AccountingRepository } from './repository.js';
+import { assertUnitQuota } from '../../../core/license.js';
 
 export interface RecurringRentGenerationResult {
   month: string;
@@ -36,6 +37,7 @@ export function calculateProratedRent(
 export function generateMonthlyRentCharges(targetYearMonth?: string): RecurringRentGenerationResult {
   const operatorId = RequestContext.getOperatorId();
   const db = getDatabase();
+  assertUnitQuota(db);
 
   let year: number;
   let monthIndex: number;

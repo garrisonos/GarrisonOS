@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "editions": {
+    "community": {
+      "id": "community",
+      "name": "GarrisonOS Community Edition",
+      "license": "AGPL-3.0-or-later",
+      "licenseFile": "LICENSE.AGPL",
+      "description": "100% Free and Open Source property management platform under GNU AGPLv3 for independent landlords and developers.",
+      "telemetry": "opt_in_value_exchange",
+      "telemetryFeatures": [
+        "security_bulletins",
+        "update_notifications"
+      ],
+      "unitLimit": null,
+      "graceLimit": null,
+      "offlineKeyRequired": false,
+      "modules": [
+        "properties",
+        "contacts",
+        "leases",
+        "attachments",
+        "accounting",
+        "maintenance",
+        "conversations",
+        "backup"
+      ]
+    },
+    "standard": {
+      "id": "standard",
+      "name": "GarrisonOS Standard Edition",
+      "license": "GarrisonOS-Fair-Code-1.0",
+      "licenseFile": "LICENSE.FAIRCODE",
+      "description": "Official Fair-Code distribution. Free for production up to 50 units with automated update heartbeat. Prohibits commercial SaaS hosting.",
+      "telemetry": "heartbeat",
+      "unitLimit": 50,
+      "graceLimit": 60,
+      "offlineKeyRequired": false,
+      "modules": [
+        "*"
+      ]
+    },
+    "enterprise": {
+      "id": "enterprise",
+      "name": "GarrisonOS Enterprise Edition",
+      "license": "GarrisonOS-Enterprise-1.0",
+      "licenseFile": "LICENSE.FAIRCODE",
+      "description": "Commercial Enterprise Edition for scaled portfolios (61+ units), institutional managers, and private/air-gapped deployments.",
+      "telemetry": "optional_or_airgapped",
+      "unitLimit": "custom",
+      "graceLimit": null,
+      "offlineKeyRequired": true,
+      "modules": [
+        "*"
+      ]
+    }
+  }
+}

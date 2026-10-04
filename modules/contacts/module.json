@@ -1,6 +1,8 @@
 {
   "id": "contacts",
   "name": "Contacts & Directory",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Directory for tenants, property owners, contractors, vendors, and emergency contacts.",
   "navigation": [
     {

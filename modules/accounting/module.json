@@ -1,6 +1,8 @@
 {
   "id": "accounting",
   "name": "Accounting & Ledger",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Cash-basis ledger, double-entry general ledger, statutory trust accounting, IRS Schedule E reporting, and rent collection.",
   "navigation": [
     {

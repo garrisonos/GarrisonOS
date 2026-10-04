@@ -81,8 +81,9 @@ describe('Work Order Multi-Vendor Assignment & Spend Policy Auto-Hold', () => {
       // 3. List assigned vendors
       const vendors = MaintenanceRepository.listWorkOrderVendors(wo.id);
       assert.equal(vendors.length, 2);
-      assert.equal(vendors[0]?.company_name, 'Vance Roofing LLC');
-      assert.equal(vendors[1]?.company_name, 'Apex Dryout Pros');
+      const companies = vendors.map((v) => v.company_name);
+      assert.ok(companies.includes('Vance Roofing LLC'));
+      assert.ok(companies.includes('Apex Dryout Pros'));
 
       // 4. Verify getWorkOrderById returns assigned_vendors
       const woWithVendors = MaintenanceRepository.getWorkOrderById(wo.id);

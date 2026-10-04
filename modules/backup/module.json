@@ -1,6 +1,8 @@
 {
   "id": "backup",
   "name": "Backup & Disaster Recovery",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Zero-dependency point-in-time database snapshots, tenant data portability, automated scheduling, and integrity verification.",
   "navigation": [
     {

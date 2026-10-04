@@ -1,6 +1,8 @@
 {
   "id": "maintenance",
   "name": "Maintenance & Repairs",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Work orders, repair requests, vendor dispatches, and maintenance cost tracking.",
   "navigation": [
     {

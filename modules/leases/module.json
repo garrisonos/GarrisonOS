@@ -1,6 +1,8 @@
 {
   "id": "leases",
   "name": "Leases & Tenants",
+  "edition": "community",
+  "license": "AGPL-3.0-or-later",
   "description": "Lease agreements, terms, rent rules, and signatory management.",
   "navigation": [
     {
