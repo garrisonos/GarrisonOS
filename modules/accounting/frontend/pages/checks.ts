@@ -77,11 +77,21 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     error = error || err.message;
   }
 
-  // Fetch all checks for accurate filter counts
+  // Fetch all checks for accurate filter counts and next check number calculation across the entire register
   let allChecksForCounts: any[] = [];
   try {
-    const allRes = await ctx.api.get('/api/v1/accounting/checks?limit=500');
-    allChecksForCounts = allRes?.data || [];
+    let offset = 0;
+    const fetchLimit = 200;
+    while (offset < 10000) {
+      const pageRes = await ctx.api.get(`/api/v1/accounting/checks?limit=${fetchLimit}&offset=${offset}`);
+      const items = pageRes?.data || [];
+      allChecksForCounts.push(...items);
+      const total = pageRes?.meta?.total ?? items.length;
+      if (items.length === 0 || allChecksForCounts.length >= total) {
+        break;
+      }
+      offset += items.length;
+    }
   } catch (_) {
     allChecksForCounts = checks;
   }

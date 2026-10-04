@@ -73,7 +73,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       </div>
     </div>
 
-    ${renderCustomFields('contact', contact.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
+    ${renderCustomFields('contact', typeof contact.custom_fields === 'string' ? JSON.parse(contact.custom_fields || '{}') : contact.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <div class="grid-2-col">
       <div class="card">

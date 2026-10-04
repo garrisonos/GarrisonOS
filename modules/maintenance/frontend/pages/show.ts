@@ -503,7 +503,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
       </div>
     </div>
 
-    ${renderCustomFields('work_order', workOrder.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
+    ${renderCustomFields('work_order', typeof workOrder.custom_fields === 'string' ? JSON.parse(workOrder.custom_fields || '{}') : workOrder.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <!-- 2-Column Details Grid -->
     <div class="grid-2-col">

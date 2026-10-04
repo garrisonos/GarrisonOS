@@ -197,6 +197,24 @@ function normalizeDateValue(raw: any): string | null {
   if (trimmed.includes('T')) {
     const d = new Date(trimmed);
     if (isNaN(d.getTime())) return null;
+
+    // Strict validation of the calendar date components before 'T'
+    const datePartMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+    if (!datePartMatch) return null;
+    const strYear = parseInt(datePartMatch[1]!, 10);
+    const strMonth = parseInt(datePartMatch[2]!, 10);
+    const strDay = parseInt(datePartMatch[3]!, 10);
+
+    if (strYear < 1000 || strYear > 9999) return null;
+    if (strMonth < 1 || strMonth > 12) return null;
+
+    const daysInMonths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const isLeap = (strYear % 4 === 0 && strYear % 100 !== 0) || strYear % 400 === 0;
+    if (isLeap) {
+      daysInMonths[1] = 29;
+    }
+    if (strDay < 1 || strDay > daysInMonths[strMonth - 1]!) return null;
+
     const year = d.getUTCFullYear();
     if (year < 1000 || year > 9999) return null;
     const month = String(d.getUTCMonth() + 1).padStart(2, '0');

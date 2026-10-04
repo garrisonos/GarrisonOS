@@ -41,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Cleared stale `selectedPropertyId` when switching portfolios on the dashboard.
     - Clamped pagination indices to `[1, totalPages]`.
     - Deferred screenshot directory cleanup in `live-browser-tour.js` until after CDP connection is established.
+  - **CodeRabbit Review Resolutions & Secret Scanner Compliance**:
+    - Enforced strict calendar date component validation on ISO datetimes in `core/custom-fields.ts`, rejecting invalid calendar rollover dates.
+    - Updated `isTradeCompatible` in `modules/maintenance/backend/repository.ts` to normalize vendor specialties through `normalizeCategory`.
+    - Selected accessible property in `/properties/amenities` fallback redirect using `canAccessPortfolio`.
+    - Handled serialized `custom_fields` JSON strings safely across detail views in contacts, leases, properties, and maintenance show pages.
+    - Implemented full-register bounded pagination for check counting and next check number calculation in `/accounting/checks`.
+    - Staged browser tour screenshots in temporary directory, preserving published assets until verified completion.
+    - Cleared stale dashboard property selection when the active portfolio has zero properties.
+    - Formatted roadmap headings with MD022 compliance and registered test credential commit fingerprints in `.betterleaksignore`.
 
 - **User Management, Activity Audit Logs, Work Order Collaboration, Multi-Vendor Assignment & Spend Policy Auto-Hold**:
   - **Operator User Management & Granular Permissions UI (`web/pages/admin.ts`, `api/server.ts`)**:

@@ -78,11 +78,16 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
   const propertyId = (ctx.query['property_id'] || ctx.query['id'] || '').trim();
   const unitId = (ctx.query['unit_id'] || '').trim();
 
-  // If no property or unit specified, route gracefully to first available property
+  // If no property or unit specified, route gracefully to first available property accessible to the user
   if (!propertyId && !unitId) {
-    const firstProp = db.prepare('SELECT id FROM properties WHERE operator_id = ? AND deleted_at IS NULL ORDER BY name ASC LIMIT 1').get(opId) as { id: string } | undefined;
-    if (firstProp) {
-      return { redirect: `/properties/amenities?property_id=${encodeURIComponent(firstProp.id)}`, content: '' };
+    const sessionUserId = ctx.session.user?.id;
+    const allProps = db.prepare('SELECT id, portfolio_id FROM properties WHERE operator_id = ? AND deleted_at IS NULL ORDER BY name ASC').all(opId) as Array<{ id: string; portfolio_id?: string | null }>;
+    const accessibleProp = allProps.find(p => {
+      if (!p.portfolio_id || !sessionUserId || sessionUserId === 'system') return true;
+      return canAccessPortfolio(sessionUserId, p.portfolio_id, opId, db);
+    });
+    if (accessibleProp) {
+      return { redirect: `/properties/amenities?property_id=${encodeURIComponent(accessibleProp.id)}`, content: '' };
     }
   }
 

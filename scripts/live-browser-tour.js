@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readdirSync, unlinkSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -197,13 +197,9 @@ async function runLiveTour() {
     const cdp = new CdpClient(target.webSocketDebuggerUrl);
     await cdp.waitForOpen();
     console.log('[tour] Connected to live browser session.');
-    mkdirSync(screenshotsDir, { recursive: true });
-    const existingFiles = readdirSync(screenshotsDir);
-    for (const f of existingFiles) {
-      if (f.endsWith('.png')) {
-        unlinkSync(path.join(screenshotsDir, f));
-      }
-    }
+    const tempScreenshotsDir = path.join(os.tmpdir(), `garrison-tour-screenshots-${Date.now()}`);
+    mkdirSync(tempScreenshotsDir, { recursive: true });
+    const capturedFilenames = [];
 
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
@@ -228,7 +224,7 @@ async function runLiveTour() {
       await sleep(700);
       const dateStr = '2026-10-02';
       const filename = `${dateStr}_${name}.png`;
-      const filepath = path.join(screenshotsDir, filename);
+      const filepath = path.join(tempScreenshotsDir, filename);
 
       let params = { format: 'png', quality: 90 };
       if (fullPage) {
@@ -247,7 +243,8 @@ async function runLiveTour() {
       }
       const res = await cdp.send('Page.captureScreenshot', params);
       safeWriteFileSync(filepath, Buffer.from(res.data, 'base64'));
-      console.log(`[tour] Screen captured: ${filename}`);
+      capturedFilenames.push(filename);
+      console.log(`[tour] Screen captured to staging: ${filename}`);
     };
 
     const navigateAndWait = async (url, pauseMs = 1500) => {
@@ -554,10 +551,21 @@ async function runLiveTour() {
     await navigateAndWait('http://localhost:8080/admin?tab=modules', 1500);
     await capture('31_admin_modules');
 
-    console.log('[tour] Full visual UI tour completed successfully!');
+    console.log('[tour] Full visual UI tour completed successfully! Promoting staged screenshots...');
+    mkdirSync(screenshotsDir, { recursive: true });
+    for (const filename of capturedFilenames) {
+      const src = path.join(tempScreenshotsDir, filename);
+      const dest = path.join(screenshotsDir, filename);
+      safeWriteFileSync(dest, readFileSync(src));
+      console.log(`[tour] Published: ${filename}`);
+    }
+
     await sleep(3000);
     cdp.close();
   } finally {
+    try {
+      rmSync(tempScreenshotsDir, { recursive: true, force: true });
+    } catch (_) {}
     try {
       browserProc.kill();
     } catch (_) {}

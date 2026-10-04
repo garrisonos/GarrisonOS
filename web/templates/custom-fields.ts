@@ -12,15 +12,26 @@ export interface RenderCustomFieldsOptions {
  * rendering typed input form controls inside structured fieldset cards.
  *
  * @param entityType - Target domain entity type ('property', 'unit', 'lease', 'contact', 'work_order', 'bill').
- * @param currentValues - Existing custom field values dictionary from the entity record.
+ * @param currentValues - Existing custom field values dictionary or serialized JSON string from the entity record.
  * @param options - Optional rendering flags (disabled, operatorId).
  * @returns SafeHtml template component.
  */
 export function renderCustomFields(
   entityType: CustomFieldEntityType,
-  currentValues: Record<string, any> = {},
+  currentValues: Record<string, any> | string = {},
   options: RenderCustomFieldsOptions = {}
 ): SafeHtml {
+  let parsedValues: Record<string, any> = {};
+  if (typeof currentValues === 'string') {
+    try {
+      parsedValues = JSON.parse(currentValues || '{}');
+    } catch (_) {
+      parsedValues = {};
+    }
+  } else if (currentValues && typeof currentValues === 'object') {
+    parsedValues = currentValues;
+  }
+
   const opId = options.operatorId || RequestContext.tryGet()?.operatorId;
   if (!opId) {
     return raw('');
@@ -51,7 +62,7 @@ export function renderCustomFields(
   }
 
   const renderSingleField = (def: CustomFieldDefinitionRecord): SafeHtml => {
-    const val = currentValues[def.field_name] ?? def.default_value ?? '';
+    const val = parsedValues[def.field_name] ?? def.default_value ?? '';
     const fieldId = `cf_${def.field_name}`;
     const fieldName = `cf_${def.field_name}`;
     const requiredAttr = def.is_required ? raw('required') : raw('');

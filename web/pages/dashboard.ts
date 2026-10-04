@@ -704,13 +704,12 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
     const propQuery = propParams.toString() ? `?${propParams.toString()}` : '';
     const propRes = await ctx.api.get(`/api/v1/properties${propQuery}`);
     properties = propRes?.data?.properties || [];
+    // Clear stale property selection if property does not belong to selected portfolio (including when portfolio has 0 properties)
+    if (selectedPropertyId && !properties.some((p) => p.id === selectedPropertyId)) {
+      selectedPropertyId = undefined;
+    }
   } catch {
     properties = [];
-  }
-
-  // Clear stale property selection if property does not belong to selected portfolio
-  if (selectedPropertyId && properties.length > 0 && !properties.some((p) => p.id === selectedPropertyId)) {
-    selectedPropertyId = undefined;
   }
 
   // 2. Fetch Filtered Occupancy Metrics

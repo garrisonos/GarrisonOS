@@ -286,7 +286,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
     ${errorAlert}
 
-    ${renderCustomFields('lease', lease.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
+    ${renderCustomFields('lease', typeof lease.custom_fields === 'string' ? JSON.parse(lease.custom_fields || '{}') : lease.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <div class="grid-2-col">
       <div class="card">

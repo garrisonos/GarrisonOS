@@ -349,12 +349,13 @@ export class MaintenanceRepository {
    */
   public static isTradeCompatible(vendorSpecialty?: string | null, category?: string | null): boolean {
     if (!vendorSpecialty || !category) return false;
-    const spec = vendorSpecialty.toLowerCase().trim();
+    const rawSpec = vendorSpecialty.toLowerCase().trim();
+    const spec = MaintenanceRepository.normalizeCategory(rawSpec);
     const cat = category.toLowerCase().trim();
-    if (spec === cat) return true;
-    if (spec === 'general contractor' || spec === 'general repair' || spec === 'handyman') return true;
-    if ((cat === 'cosmetic' || cat === 'other') && (spec === 'make_ready' || spec === 'turnkey' || spec === 'cleaning' || spec === 'painting' || spec === 'general contractor')) return true;
-    return spec.includes(cat) || cat.includes(spec);
+    if (spec === cat || rawSpec === cat) return true;
+    if (spec === 'general contractor' || spec === 'general repair' || spec === 'handyman' || rawSpec === 'handyman') return true;
+    if ((cat === 'cosmetic' || cat === 'other') && (rawSpec === 'make_ready' || rawSpec === 'turnkey' || rawSpec === 'cleaning' || rawSpec === 'painting' || rawSpec === 'general contractor' || rawSpec === 'landscaping')) return true;
+    return spec.includes(cat) || cat.includes(spec) || rawSpec.includes(cat) || cat.includes(rawSpec);
   }
 
   /**

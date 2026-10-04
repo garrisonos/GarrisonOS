@@ -197,7 +197,7 @@ export async function handle(ctx: PageContext): Promise<PageResult> {
 
     ${errorAlert}
 
-    ${renderCustomFields('property', property.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
+    ${renderCustomFields('property', typeof property.custom_fields === 'string' ? JSON.parse(property.custom_fields || '{}') : property.custom_fields || {}, { operatorId: ctx.session.operatorId, disabled: true })}
 
     <div class="card">
       <div class="card-header">

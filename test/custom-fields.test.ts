@@ -175,6 +175,27 @@ describe('Core - Dynamic Custom Fields Engine', () => {
       assert.equal(leapValid.valid, true);
       assert.equal(leapValid.formatted['inspection_date'], '2024-02-29');
 
+      // 5b. Strict Date format: accepts valid ISO datetime
+      const isoValid = CustomFieldsService.validateAndFormat('contact', {
+        inspection_date: '2026-10-15T14:30:00Z'
+      });
+      assert.equal(isoValid.valid, true);
+      assert.equal(isoValid.formatted['inspection_date'], '2026-10-15');
+
+      // 5c. Strict Date format: rejects invalid calendar ISO datetime (e.g., Feb 31 rollover)
+      const isoInvalidCal = CustomFieldsService.validateAndFormat('contact', {
+        inspection_date: '2026-02-31T12:00:00Z'
+      });
+      assert.equal(isoInvalidCal.valid, false);
+      assert.ok(isoInvalidCal.errors.some((e) => /YYYY-MM-DD/.test(e)));
+
+      // 5d. Strict Date format: rejects non-leap Feb 29 ISO datetime
+      const isoNonLeap = CustomFieldsService.validateAndFormat('contact', {
+        inspection_date: '2025-02-29T12:00:00Z'
+      });
+      assert.equal(isoNonLeap.valid, false);
+      assert.ok(isoNonLeap.errors.some((e) => /YYYY-MM-DD/.test(e)));
+
       // 6. Select validation: rejects invalid option
       const badSelect = CustomFieldsService.validateAndFormat('contact', {
         parking_tier: 'Platinum'
